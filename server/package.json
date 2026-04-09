@@ -1,0 +1,16 @@
+{
+  "name": "monastir-crew-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "multer": "^2.1.1",
+    "ws": "^8.18.0"
+  }
+}
