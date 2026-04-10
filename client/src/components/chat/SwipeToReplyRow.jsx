@@ -97,7 +97,6 @@ export default function SwipeToReplyRow({ children, disabled, onReply }) {
   return (
     <div
       style={{
-        width: '100%',
         maxWidth: '100%',
         minWidth: 0,
         flexShrink: 0,
@@ -108,7 +107,6 @@ export default function SwipeToReplyRow({ children, disabled, onReply }) {
     >
       <div
         style={{
-          width: '100%',
           minWidth: 0,
           boxSizing: 'border-box',
           transform: `translateX(${tx}px)`,
