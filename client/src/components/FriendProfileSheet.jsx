@@ -10,6 +10,12 @@ function formatJoined(ts) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function profileRoleCaption(displayRole) {
+  if (displayRole === 'developer') return 'Разработчик';
+  if (displayRole === 'beta') return 'Бета-тестер';
+  return 'Пользователь';
+}
+
 export default function FriendProfileSheet({ targetUserId, viewerId, onClose, onFriendshipChanged }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -157,6 +163,7 @@ export default function FriendProfileSheet({ targetUserId, viewerId, onClose, on
                   '—'
                 )}
               </div>
+              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--muted)' }}>{profileRoleCaption(profile.displayRole)}</p>
             </div>
             {isSelf && profile.phone && (
               <div className="muted" style={{ fontSize: 11 }}>

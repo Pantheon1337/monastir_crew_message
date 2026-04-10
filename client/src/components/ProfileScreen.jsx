@@ -9,6 +9,12 @@ import { formatPhoneRu } from '../formatPhone.js';
 
 const MAX_ABOUT = 100;
 
+function profileRoleCaption(displayRole) {
+  if (displayRole === 'developer') return 'Разработчик';
+  if (displayRole === 'beta') return 'Бета-тестер';
+  return 'Пользователь';
+}
+
 export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriendsChanged, onUserUpdated, onOpenArchive }) {
   const fileRef = useRef(null);
   const [incoming, setIncoming] = useState([]);
@@ -137,19 +143,26 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
           Никнейм
         </p>
-        <div style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--accent)' }}>
-          {user?.nickname ? (
-            <NicknameWithBadge nickname={user.nickname} affiliationEmoji={user?.affiliationEmoji} />
-          ) : (
-            '—'
-          )}
+        <div style={{ margin: '0 0 12px' }}>
+          <div style={{ fontSize: 14, color: 'var(--accent)' }}>
+            {user?.nickname ? (
+              <NicknameWithBadge nickname={user.nickname} affiliationEmoji={user?.affiliationEmoji} />
+            ) : (
+              '—'
+            )}
+          </div>
+          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+            {profileRoleCaption(user?.displayRole)}
+          </p>
         </div>
 
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          Роль
+          {user?.displayRole === 'developer' ? 'Роль' : 'Сменить роль'}
         </p>
         {user?.displayRole === 'developer' ? (
-          <p style={{ margin: '0 0 12px', fontSize: 13 }}>Разработчик — назначается автоматически.</p>
+          <p style={{ margin: '0 0 12px', fontSize: 12 }} className="muted">
+            Назначается автоматически для аккаунта разработчика.
+          </p>
         ) : (
           <div style={{ marginBottom: 12 }}>
             <select

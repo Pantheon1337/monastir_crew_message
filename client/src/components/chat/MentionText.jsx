@@ -24,6 +24,9 @@ function splitMentions(text) {
 }
 
 const textWrapStyle = {
+  display: 'block',
+  width: '100%',
+  minWidth: 0,
   whiteSpace: 'pre-wrap',
   overflowWrap: 'break-word',
   wordBreak: 'normal',

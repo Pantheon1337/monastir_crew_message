@@ -437,6 +437,8 @@ function MessageBubble({
       style={{
         display: 'flex',
         justifyContent: mine ? 'flex-end' : 'flex-start',
+        width: '100%',
+        minWidth: 0,
         marginBottom: 8,
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -465,7 +467,10 @@ function MessageBubble({
             onOpenActionMenu?.(m, e.clientX, e.clientY);
           }}
           style={{
+            display: 'inline-block',
             maxWidth: '92%',
+            minWidth: 0,
+            verticalAlign: 'top',
             border: isMediaShell ? 'none' : '1px solid var(--border)',
             borderRadius: isMediaShell ? 0 : 'var(--radius)',
             padding: isMediaShell ? 0 : '8px 10px',
