@@ -878,6 +878,9 @@ export function recordStoryView(viewerId, storyId) {
   if (st.feedHidden === 1 && String(st.userId) !== String(viewerId)) {
     return { error: 'История недоступна' };
   }
+  if (String(st.userId) !== String(viewerId) && !canViewerSeeUserStories(viewerId, st.userId)) {
+    return { error: 'История недоступна' };
+  }
   const now = Date.now();
   getDb()
     .prepare(
@@ -1513,20 +1516,34 @@ export function archiveStoryForFeed(storyId, userId) {
 }
 
 /**
- * Кружки историй: все пользователи с неистёкшими кадрами (видно всем в приложении).
+ * Истории видны только себе и друзьям (активный личный чат с friends_active = 1).
+ * Лента постов по-прежнему общая, если у поста не включено «только для друзей».
+ */
+function canViewerSeeUserStories(viewerId, authorId) {
+  if (String(viewerId) === String(authorId)) return true;
+  const peers = listPeerUserIds(viewerId);
+  return peers.some((id) => String(id) === String(authorId));
+}
+
+/**
+ * Кружки историй: пользователи с неистёкшими кадрами среди себя и друзей.
  */
 export function listStoryBucketsForViewer(viewerId) {
   const now = Date.now();
+  const peers = listPeerUserIds(viewerId);
+  const allowed = [viewerId, ...peers];
+  const ph = allowed.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
       `SELECT user_id AS userId, COUNT(*) AS cnt, MAX(created_at) AS lastAt
        FROM stories
        WHERE expires_at > ? AND COALESCE(feed_hidden, 0) = 0
+       AND user_id IN (${ph})
        GROUP BY user_id
        ORDER BY lastAt DESC
        LIMIT 200`
     )
-    .all(now);
+    .all(now, ...allowed);
 
   const db = getDb();
   const out = [];
@@ -1568,8 +1585,9 @@ export function listStoryBucketsForViewer(viewerId) {
   return out;
 }
 
-/** Просмотр историй любого пользователя (неистёкшие кадры). */
-export function listActiveStoryItems(_viewerId, authorId) {
+/** Просмотр историй пользователя (неистёкшие кадры), только если друг или это вы сами. */
+export function listActiveStoryItems(viewerId, authorId) {
+  if (!canViewerSeeUserStories(viewerId, authorId)) return [];
   const now = Date.now();
   const rows = getDb()
     .prepare(
@@ -1586,9 +1604,12 @@ export function listActiveStoryItems(_viewerId, authorId) {
   }));
 }
 
-/** Архив: истёкшие по времени и снятые с ленты (ещё не истекшие по TTL). */
+/** Архив: истёкшие по времени и снятые с ленты — только свои и друзей. */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const now = Date.now();
+  const peers = listPeerUserIds(viewerId);
+  const allowed = [viewerId, ...peers];
+  const ph = allowed.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
@@ -1597,11 +1618,12 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
         u.display_role AS authorRole, u.display_role_emoji AS authorEmoji
       FROM stories s
       JOIN users u ON u.id = s.user_id
-      WHERE s.expires_at <= ? OR COALESCE(s.feed_hidden, 0) = 1
+      WHERE (s.expires_at <= ? OR COALESCE(s.feed_hidden, 0) = 1)
+      AND s.user_id IN (${ph})
       ORDER BY COALESCE(s.feed_hidden_at, s.expires_at) DESC
       LIMIT ?`
     )
-    .all(now, limit);
+    .all(now, ...allowed, limit);
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,

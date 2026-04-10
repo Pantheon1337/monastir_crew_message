@@ -423,7 +423,7 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
         <div className="block" style={{ padding: 14, marginBottom: 12 }}>
           <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Истории</p>
           <p className="muted" style={{ margin: '0 0 10px', fontSize: 10, lineHeight: 1.4 }}>
-            Активные истории видны всем в приложении. Архив — истёкшие за 24 часа (общая лента).
+            Активные истории видны только друзьям. Архив — истёкшие за 24 часа и снятые с ленты (свои и друзей).
           </p>
           <button type="button" className="btn-outline" onClick={() => onOpenArchive()}>
             Архив историй

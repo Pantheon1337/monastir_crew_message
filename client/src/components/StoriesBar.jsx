@@ -39,7 +39,7 @@ function AvatarRing({ children, variant = 'new' }) {
 
 /**
  * Первая кнопка — всегда только создание новой истории.
- * Далее — кружки всех пользователей с активными историями.
+ * Далее — кружки друзей (и вы) с активными историями.
  */
 export default function StoriesBar({ user, buckets = [], presenceOnline = {}, onAddStory, onOpenAuthor }) {
   const openBucket = useCallback(
