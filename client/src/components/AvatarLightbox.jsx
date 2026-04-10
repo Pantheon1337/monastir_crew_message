@@ -1,7 +1,8 @@
 /**
- * Полноэкранный просмотр аватара (тап вне картинки — закрыть).
+ * Полноэкранный просмотр изображения (тап вне картинки — закрыть).
+ * fullSize — почти на весь экран (чат, вложения); иначе компактно (аватар).
  */
-export default function AvatarLightbox({ url, onClose }) {
+export default function AvatarLightbox({ url, onClose, fullSize = false }) {
   if (url == null || String(url).trim() === '') return null;
   const src = String(url).trim();
 
@@ -9,7 +10,7 @@ export default function AvatarLightbox({ url, onClose }) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Аватар"
+      aria-label={fullSize ? 'Изображение' : 'Аватар'}
       className="modal-overlay"
       style={{
         position: 'fixed',
@@ -47,15 +48,27 @@ export default function AvatarLightbox({ url, onClose }) {
       <img
         src={src}
         alt=""
-        style={{
-          maxWidth: 'min(92vw, 420px)',
-          maxHeight: 'min(78dvh, 520px)',
-          width: 'auto',
-          height: 'auto',
-          objectFit: 'contain',
-          borderRadius: 8,
-          border: '1px solid rgba(255,255,255,0.12)',
-        }}
+        style={
+          fullSize
+            ? {
+                maxWidth: 'min(98vw, 1600px)',
+                maxHeight: 'min(94dvh, 98vh)',
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.12)',
+              }
+            : {
+                maxWidth: 'min(92vw, 420px)',
+                maxHeight: 'min(78dvh, 520px)',
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+                borderRadius: 8,
+                border: '1px solid rgba(255,255,255,0.12)',
+              }
+        }
         onClick={(e) => e.stopPropagation()}
       />
     </div>

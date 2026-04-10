@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Header from './components/Header.jsx';
 import StoriesBar from './components/StoriesBar.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import HomeSocialShortcuts from './components/HomeSocialShortcuts.jsx';
 import Feed from './components/Feed.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import ProfileScreen from './components/ProfileScreen.jsx';
@@ -619,11 +618,6 @@ export default function App() {
             presenceOnline={presenceOnline}
             onAddStory={() => setStoryCreateOpen(true)}
             onOpenAuthor={openStoryAuthor}
-          />
-          <HomeSocialShortcuts
-            onOpenChats={() => setNav('chats')}
-            onOpenRooms={() => setNav('rooms')}
-            chatUnread={chatUnreadTotal}
           />
           <Feed
             posts={feed}

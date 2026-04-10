@@ -243,6 +243,18 @@ a:hover {
   content-visibility: auto;
 }
 
+/* Превью фото в пузыре чата — не на всю ширину экрана; полный размер по тапу (AvatarLightbox) */
+.chat-message-bubble-shell .chat-media-inline-img {
+  max-width: min(280px, 100%);
+  max-height: min(280px, 42vh);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 10px;
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Многострочный композер (аналог TextComposer): min/max; точная высота — из JS */
 textarea.chat-composer-textarea {
   min-height: 40px;

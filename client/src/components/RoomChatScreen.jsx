@@ -8,6 +8,7 @@ import ChatScaffold from './chat/ChatScaffold.jsx';
 import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
 import SwipeToReplyRow from './chat/SwipeToReplyRow.jsx';
 import ChatReadReceipt from './chat/ChatReadReceipt.jsx';
+import AvatarLightbox from './AvatarLightbox.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
@@ -302,6 +303,7 @@ function MessageBubble({
   onMentionProfile,
   allowSwipeReply = true,
   onSwipeReply,
+  onOpenImagePreview,
   isFirstInGroup = true,
   isLastInGroup = true,
 }) {
@@ -360,17 +362,16 @@ function MessageBubble({
         <img
           className="chat-media-inline-img"
           src={m.mediaUrl}
-          alt={m.body?.trim() ? m.body : ''}
+          alt={m.body?.trim() ? m.body : 'Фото'}
+          title="Открыть полностью"
           loading="lazy"
           decoding="async"
-          sizes="(max-width: 480px) 92vw, 560px"
-          style={{
-            maxWidth: '100%',
-            width: 'auto',
-            height: 'auto',
-            borderRadius: 10,
-            display: 'block',
-            verticalAlign: 'top',
+          sizes="280px"
+          style={{ display: 'block', verticalAlign: 'top' }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenImagePreview?.(m.mediaUrl);
           }}
         />
         {m.body?.trim() ? (
@@ -580,6 +581,7 @@ export default function RoomChatScreen({
   const [caretPos, setCaretPos] = useState(0);
   const [roomMembers, setRoomMembers] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
   /** Не скроллить ленту сразу после отправки — иначе iOS снимает фокус с поля и закрывает клавиатуру. */
@@ -1404,6 +1406,7 @@ export default function RoomChatScreen({
                   }
                   onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
                   onMentionProfile={onMentionProfile}
+                  onOpenImagePreview={(url) => setImagePreviewUrl(url)}
                 />
                 );
               })
@@ -1985,6 +1988,10 @@ export default function RoomChatScreen({
           messageId={forwardMessageId}
           onAfterForward={() => onAfterChange?.()}
         />
+      ) : null}
+
+      {imagePreviewUrl ? (
+        <AvatarLightbox fullSize url={imagePreviewUrl} onClose={() => setImagePreviewUrl(null)} />
       ) : null}
     </>
   );
