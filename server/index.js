@@ -82,6 +82,13 @@ import {
   markRoomRead,
   toggleRoomMessageReaction,
   listRoomMemberUserIds,
+  togglePostReaction,
+  listPostReactionUsers,
+  listMessageReactionUsers,
+  listPostComments,
+  createPostComment,
+  updatePostComment,
+  deletePostComment,
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
@@ -427,6 +434,108 @@ app.delete('/api/feed/:postId', (req, res) => {
   }
   notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId, deleted: true } });
   res.json({ ok: true });
+});
+
+app.post('/api/feed/:postId/reaction', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const reaction = typeof req.body?.reaction === 'string' ? req.body.reaction.trim() : '';
+  const out = togglePostReaction(req.params.postId, userId, reaction);
+  if (out.error) {
+    const st =
+      out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : out.error.includes('Неизвестная') ? 400 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  res.json({ ok: true, reactions: out.reactions });
+});
+
+app.get('/api/feed/:postId/reactions', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = listPostReactionUsers(req.params.postId, userId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : 403;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  res.json(out);
+});
+
+app.get('/api/feed/:postId/comments', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = listPostComments(req.params.postId, userId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : 403;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  res.json(out);
+});
+
+app.post('/api/feed/:postId/comments', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = createPostComment(req.params.postId, userId, req.body?.body);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  res.status(201).json(out);
+});
+
+app.patch('/api/feed/:postId/comments/:commentId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = updatePostComment(req.params.commentId, userId, req.body?.body);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  res.json(out);
+});
+
+app.delete('/api/feed/:postId/comments/:commentId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = deletePostComment(req.params.commentId, userId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  res.json({ ok: true });
+});
+
+app.get('/api/chats/:chatId/messages/:messageId/reactions', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = listMessageReactionUsers(req.params.messageId, userId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : 403;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  res.json(out);
+});
+
+app.get('/api/rooms/:roomId/messages/:messageId/reactions', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = listMessageReactionUsers(req.params.messageId, userId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : 403;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  res.json(out);
 });
 
 app.get('/api/users/:targetId/profile', (req, res) => {
@@ -1163,8 +1272,24 @@ app.post('/api/stories/upload', (req, res) => {
   });
 });
 
-app.get('/api/users/presence', (_req, res) => {
-  res.json({ users: [] });
+app.get('/api/users/presence', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const raw = req.query.ids;
+  if (!raw || typeof raw !== 'string') {
+    res.json({ online: {} });
+    return;
+  }
+  const ids = raw
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const online = {};
+  for (const id of ids) {
+    const set = socketsByUser.get(id);
+    online[id] = Boolean(set && set.size > 0);
+  }
+  res.json({ online });
 });
 
 const server = http.createServer(app);
@@ -1185,7 +1310,13 @@ wss.on('connection', (ws, req) => {
   const userId = url.searchParams.get('userId') || 'guest-' + randomUUID().slice(0, 8);
 
   if (!socketsByUser.has(userId)) socketsByUser.set(userId, new Set());
-  socketsByUser.get(userId).add(ws);
+  const setBefore = socketsByUser.get(userId);
+  const wasOnline = setBefore.size > 0;
+  setBefore.add(ws);
+
+  if (!wasOnline && !userId.startsWith('guest-') && findUserById(userId)) {
+    notifyPeers(userId, { type: 'presence', payload: { userId, online: true } });
+  }
 
   ws.send(
     JSON.stringify({
@@ -1237,7 +1368,12 @@ wss.on('connection', (ws, req) => {
     const set = socketsByUser.get(userId);
     if (set) {
       set.delete(ws);
-      if (set.size === 0) socketsByUser.delete(userId);
+      if (set.size === 0) {
+        socketsByUser.delete(userId);
+        if (!userId.startsWith('guest-') && findUserById(userId)) {
+          notifyPeers(userId, { type: 'presence', payload: { userId, online: false } });
+        }
+      }
     }
   });
 });

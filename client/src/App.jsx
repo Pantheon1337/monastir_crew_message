@@ -59,6 +59,8 @@ export default function App() {
   const [appTheme, setAppTheme] = useState(getTheme);
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const [roomDetailId, setRoomDetailId] = useState(null);
+  /** userId → в сети (WebSocket-сессия), для друзей в ленте/чатах/историях */
+  const [presenceOnline, setPresenceOnline] = useState({});
   const [networkOnline, setNetworkOnline] = useState(
     () => typeof navigator !== 'undefined' && navigator.onLine,
   );
@@ -199,6 +201,30 @@ export default function App() {
     };
   }, [session, user?.id]);
 
+  const presenceIdKey = useMemo(() => {
+    const s = new Set();
+    for (const c of chats) if (c.peerUserId) s.add(String(c.peerUserId));
+    for (const b of storyBuckets) if (b.userId) s.add(String(b.userId));
+    for (const p of feed) if (p.authorId) s.add(String(p.authorId));
+    return [...s].sort().join(',');
+  }, [chats, storyBuckets, feed]);
+
+  useEffect(() => {
+    if (session !== 'in' || !user?.id || !presenceIdKey) return undefined;
+    const ids = presenceIdKey.split(',').filter(Boolean);
+    if (ids.length === 0) return undefined;
+    let cancelled = false;
+    (async () => {
+      const r = await api(`/api/users/presence?ids=${ids.map(encodeURIComponent).join(',')}`, { userId: user.id });
+      if (!cancelled && r.ok && r.data?.online) {
+        setPresenceOnline((prev) => ({ ...prev, ...r.data.online }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, user?.id, presenceIdKey]);
+
   const wsEnabled = session === 'in' && Boolean(user?.id);
   const wsUserId = useMemo(() => user?.id || '', [user?.id]);
   const { status: wsStatus, send, lastEvent } = useWebSocket(null, { userId: wsUserId, enabled: wsEnabled });
@@ -290,6 +316,10 @@ export default function App() {
     }
     if (lastEvent.type === 'feed:new' || lastEvent.type === 'feed:changed') refreshFeed();
     if (lastEvent.type === 'stories:new') refreshStories();
+    if (lastEvent.type === 'presence' && lastEvent.payload?.userId != null) {
+      const { userId: pid, online } = lastEvent.payload;
+      setPresenceOnline((prev) => ({ ...prev, [pid]: online }));
+    }
   }, [lastEvent, refreshSocial, refreshFeed, refreshStories]);
 
   const storyRefreshTimerRef = useRef(null);
@@ -444,23 +474,31 @@ export default function App() {
           <StoriesBar
             user={user}
             buckets={storyBuckets}
+            presenceOnline={presenceOnline}
             onAddStory={() => setStoryCreateOpen(true)}
             onOpenAuthor={openStoryAuthor}
           />
           <Dashboard
             chats={chats}
             rooms={rooms}
+            presenceOnline={presenceOnline}
             onOpenChat={handleOpenChat}
             onCreateRoom={() => setCreateRoomOpen(true)}
             onOpenRoom={handleOpenRoom}
           />
-          <Feed posts={feed} userId={user.id} onPosted={refreshFeed} />
+          <Feed posts={feed} userId={user.id} presenceOnline={presenceOnline} onPosted={refreshFeed} />
         </>
       )}
 
       {nav === 'chats' && showMainChrome && (
         <section style={{ padding: '8px 12px 16px' }}>
-          <Dashboard chats={chats} rooms={[]} singleColumn="chats" onOpenChat={handleOpenChat} />
+          <Dashboard
+            chats={chats}
+            rooms={[]}
+            singleColumn="chats"
+            presenceOnline={presenceOnline}
+            onOpenChat={handleOpenChat}
+          />
         </section>
       )}
 
@@ -496,6 +534,7 @@ export default function App() {
           peerAffiliationEmoji={openChat.peerAffiliationEmoji}
           peerUserId={openChat.peerUserId}
           peerAvatarUrl={openChat.peerAvatarUrl}
+          peerOnline={openChat.peerUserId != null ? Boolean(presenceOnline[String(openChat.peerUserId)]) : undefined}
           canMessage={openChat.canMessage !== false}
           friendsActive={openChat.friendsActive !== false}
           onClose={() => setOpenChat(null)}

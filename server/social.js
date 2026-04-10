@@ -410,6 +410,41 @@ function loadReactionSummaryForMessages(messageIds, viewerId) {
   };
 }
 
+function loadPostReactionSummaryForPosts(postIds, viewerId) {
+  if (postIds.length === 0) {
+    return () => ({ counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
+  }
+  const ph = postIds.map(() => '?').join(',');
+  const raw = getDb()
+    .prepare(
+      `SELECT post_id AS postId, user_id AS userId, reaction FROM post_reactions WHERE post_id IN (${ph})`
+    )
+    .all(...postIds);
+  const byPost = new Map();
+  for (const x of raw) {
+    if (!byPost.has(x.postId)) byPost.set(x.postId, []);
+    byPost.get(x.postId).push(x);
+  }
+  return (postId) => {
+    const arr = byPost.get(postId) || [];
+    const counts = { up: 0, down: 0, fire: 0, poop: 0 };
+    let mine = null;
+    for (const x of arr) {
+      if (counts[x.reaction] != null) counts[x.reaction]++;
+      if (x.userId === viewerId) mine = x.reaction;
+    }
+    return { counts, mine };
+  };
+}
+
+function assertViewerCanSeePost(viewerId, postId) {
+  const row = getDb().prepare(`SELECT author_id AS authorId FROM posts WHERE id = ?`).get(postId);
+  if (!row) return { error: 'Пост не найден' };
+  if (String(row.authorId) === String(viewerId)) return { ok: true, authorId: row.authorId };
+  if (!areFriends(viewerId, row.authorId)) return { error: 'Нет доступа' };
+  return { ok: true, authorId: row.authorId };
+}
+
 function previewLineForMessage(kind, body) {
   const k = kind || 'text';
   if (k === 'revoked') return 'Сообщение удалено';
@@ -1017,7 +1052,8 @@ export function listFeedPostsForViewer(viewerId) {
     .prepare(
       `SELECT p.id, p.author_id AS authorId, p.body, p.created_at AS createdAt, p.media_path AS mediaPath, p.edited_at AS editedAt,
         u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
-        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji,
+        (SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id) AS commentCount
       FROM posts p
       JOIN users u ON u.id = p.author_id
       WHERE p.author_id IN (${ph})
@@ -1025,6 +1061,8 @@ export function listFeedPostsForViewer(viewerId) {
       LIMIT 200`
     )
     .all(...ids);
+  const postIds = rows.map((x) => x.id);
+  const getPostReact = loadPostReactionSummaryForPosts(postIds, viewerId);
   return rows.map((r) => ({
     id: r.id,
     authorId: r.authorId,
@@ -1037,6 +1075,8 @@ export function listFeedPostsForViewer(viewerId) {
     authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
     authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
     authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+    commentCount: Number(r.commentCount) || 0,
+    reactions: getPostReact(r.id),
   }));
 }
 
@@ -1084,8 +1124,184 @@ export function deleteFeedPost(postId, authorId) {
     .get(postId);
   if (!row) return { error: 'Пост не найден' };
   if (String(row.authorId) !== String(authorId)) return { error: 'Нет доступа' };
-  getDb().prepare(`DELETE FROM posts WHERE id = ?`).run(postId);
+  const db = getDb();
+  db.prepare(`DELETE FROM post_reactions WHERE post_id = ?`).run(postId);
+  db.prepare(`DELETE FROM post_comments WHERE post_id = ?`).run(postId);
+  db.prepare(`DELETE FROM posts WHERE id = ?`).run(postId);
   return { ok: true, mediaPath: row.mediaPath || null };
+}
+
+export function togglePostReaction(postId, userId, reactionKey) {
+  if (!MESSAGE_REACTION_KEYS.includes(reactionKey)) {
+    return { error: 'Неизвестная реакция' };
+  }
+  const gate = assertViewerCanSeePost(userId, postId);
+  if (gate.error) return { error: gate.error };
+
+  const db = getDb();
+  const existing = db
+    .prepare(`SELECT reaction FROM post_reactions WHERE post_id = ? AND user_id = ?`)
+    .get(postId, userId);
+  const now = Date.now();
+
+  if (existing?.reaction === reactionKey) {
+    db.prepare(`DELETE FROM post_reactions WHERE post_id = ? AND user_id = ?`).run(postId, userId);
+  } else if (existing) {
+    db.prepare(`UPDATE post_reactions SET reaction = ?, created_at = ? WHERE post_id = ? AND user_id = ?`).run(
+      reactionKey,
+      now,
+      postId,
+      userId
+    );
+  } else {
+    db.prepare(`INSERT INTO post_reactions (post_id, user_id, reaction, created_at) VALUES (?, ?, ?, ?)`).run(
+      postId,
+      userId,
+      reactionKey,
+      now
+    );
+  }
+
+  const getReact = loadPostReactionSummaryForPosts([postId], userId);
+  return {
+    ok: true,
+    postId,
+    reactions: getReact(postId),
+  };
+}
+
+export function listPostReactionUsers(postId, viewerId) {
+  const gate = assertViewerCanSeePost(viewerId, postId);
+  if (gate.error) return { error: gate.error };
+  const rows = getDb()
+    .prepare(
+      `SELECT pr.user_id AS userId, pr.reaction, u.nickname AS authorNickname,
+        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+       FROM post_reactions pr
+       JOIN users u ON u.id = pr.user_id
+       WHERE pr.post_id = ?
+       ORDER BY pr.created_at ASC`
+    )
+    .all(postId);
+  return {
+    ok: true,
+    users: rows.map((r) => ({
+      userId: r.userId,
+      reaction: r.reaction,
+      nickname: r.authorNickname,
+      affiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+    })),
+  };
+}
+
+export function listMessageReactionUsers(messageId, viewerId) {
+  const chatRow = getDb().prepare(`SELECT chat_id AS cid FROM messages WHERE id = ?`).get(messageId);
+  if (chatRow) {
+    if (!userInDirectChat(chatRow.cid, viewerId)) return { error: 'Нет доступа' };
+  } else {
+    const roomRow = getDb().prepare(`SELECT room_id AS rid FROM room_messages WHERE id = ?`).get(messageId);
+    if (!roomRow) return { error: 'Сообщение не найдено' };
+    if (!userInRoom(roomRow.rid, viewerId)) return { error: 'Нет доступа' };
+  }
+  const rows = getDb()
+    .prepare(
+      `SELECT mr.user_id AS userId, mr.reaction, u.nickname AS authorNickname,
+        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+       FROM message_reactions mr
+       JOIN users u ON u.id = mr.user_id
+       WHERE mr.message_id = ?
+       ORDER BY mr.created_at ASC`
+    )
+    .all(messageId);
+  return {
+    ok: true,
+    users: rows.map((r) => ({
+      userId: r.userId,
+      reaction: r.reaction,
+      nickname: r.authorNickname,
+      affiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+    })),
+  };
+}
+
+export function listPostComments(postId, viewerId) {
+  const gate = assertViewerCanSeePost(viewerId, postId);
+  if (gate.error) return { error: gate.error };
+  const rows = getDb()
+    .prepare(
+      `SELECT c.id, c.author_id AS authorId, c.body, c.created_at AS createdAt, c.edited_at AS editedAt,
+        u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
+        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+       FROM post_comments c
+       JOIN users u ON u.id = c.author_id
+       WHERE c.post_id = ?
+       ORDER BY c.created_at ASC
+       LIMIT 500`
+    )
+    .all(postId);
+  return {
+    ok: true,
+    comments: rows.map((r) => ({
+      id: r.id,
+      authorId: r.authorId,
+      body: r.body,
+      createdAt: r.createdAt,
+      editedAt: r.editedAt ?? null,
+      authorNickname: r.authorNickname,
+      authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
+      authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+      authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
+      authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+    })),
+  };
+}
+
+export function createPostComment(postId, authorId, body) {
+  const gate = assertViewerCanSeePost(authorId, postId);
+  if (gate.error) return { error: gate.error };
+  const t = String(body ?? '').trim();
+  if (!t) return { error: 'Пустой комментарий' };
+  if (t.length > 4000) return { error: 'Не длиннее 4000 символов' };
+  const id = randomUUID();
+  const createdAt = Date.now();
+  getDb()
+    .prepare(`INSERT INTO post_comments (id, post_id, author_id, body, created_at, edited_at) VALUES (?, ?, ?, ?, ?, NULL)`)
+    .run(id, postId, authorId, t, createdAt);
+  const list = listPostComments(postId, authorId);
+  const c = list.comments?.find((x) => x.id === id);
+  return { ok: true, comment: c };
+}
+
+export function updatePostComment(commentId, userId, body) {
+  const row = getDb()
+    .prepare(
+      `SELECT c.id, c.post_id AS postId, c.author_id AS authorId FROM post_comments c WHERE c.id = ?`
+    )
+    .get(commentId);
+  if (!row) return { error: 'Комментарий не найден' };
+  if (String(row.authorId) !== String(userId)) return { error: 'Нет доступа' };
+  const gate = assertViewerCanSeePost(userId, row.postId);
+  if (gate.error) return { error: gate.error };
+  const t = String(body ?? '').trim();
+  if (!t) return { error: 'Пустой комментарий' };
+  if (t.length > 4000) return { error: 'Не длиннее 4000 символов' };
+  const editedAt = Date.now();
+  getDb().prepare(`UPDATE post_comments SET body = ?, edited_at = ? WHERE id = ?`).run(t, editedAt, commentId);
+  const list = listPostComments(row.postId, userId);
+  const c = list.comments?.find((x) => x.id === commentId);
+  return { ok: true, comment: c };
+}
+
+export function deletePostComment(commentId, userId) {
+  const row = getDb()
+    .prepare(`SELECT id, post_id AS postId, author_id AS authorId FROM post_comments WHERE id = ?`)
+    .get(commentId);
+  if (!row) return { error: 'Комментарий не найден' };
+  if (String(row.authorId) !== String(userId)) return { error: 'Нет доступа' };
+  const gate = assertViewerCanSeePost(userId, row.postId);
+  if (gate.error) return { error: gate.error };
+  getDb().prepare(`DELETE FROM post_comments WHERE id = ?`).run(commentId);
+  return { ok: true, postId: row.postId };
 }
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;

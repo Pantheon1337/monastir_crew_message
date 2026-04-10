@@ -25,15 +25,159 @@ git push -u origin main
 
 ---
 
-## 2. Сервер: что нужно
+## Пошаговый план на VPS (тестирование и обновления)
 
-- **Ubuntu 22.04+** (или другой Linux) с доступом по SSH.
-- **Node.js 20 LTS** (или 18+): `curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -` и `sudo apt install -y nodejs`.
-- **nginx** (рекомендуется) для HTTPS и прокси на Node; для внутренних тестов можно открыть порт приложения напрямую.
+Ниже порядок для **Ubuntu 22.04/24.04** по SSH. Подставьте свой IP, домен и путь к клону (пример: `/opt/monastir-crew`). Репозиторий: `Pantheon1337/monastir_crew_message`.
 
-Данные на сервере (создайте каталоги и права под пользователя `deploy` или `www-data`):
+### Этап 0 — доступ и обновление системы
 
-- каталог для БД и загрузок, **вне** репозитория, например `/var/lib/monastir/` с подкаталогами или переменными `SQLITE_PATH` и существующим `server/uploads` (см. ниже).
+```bash
+ssh user@ВАШ_IP
+sudo apt update && sudo apt upgrade -y
+```
+
+### Этап 1 — пакеты: git, nginx, файрвол, сборка C++
+
+```bash
+sudo apt install -y git nginx ufw curl build-essential
+```
+
+- **git** — клонирование и `git pull`
+- **nginx** — прокси и HTTPS (можно подключить после первого успешного запуска Node)
+- **ufw** — файрвол
+- **build-essential** — сборка нативных модулей npm (**better-sqlite3** и др.)
+
+Certbot (когда будет домен и nginx):
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+```
+
+### Этап 2 — Node.js 20 LTS
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+node -v && npm -v
+```
+
+### Этап 3 — файрвол
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'
+sudo ufw enable
+sudo ufw status
+```
+
+Если **временно** тестируете без nginx напрямую на порт приложения:
+
+```bash
+sudo ufw allow 3001/tcp
+```
+
+В продакшене с nginx снаружи обычно открыты только **22, 80, 443**; порт **3001** остаётся только на `127.0.0.1`.
+
+### Этап 4 — каталоги данных (вне git)
+
+База и загрузки не должны теряться при `git pull`.
+
+```bash
+sudo mkdir -p /var/lib/monastir
+sudo chown www-data:www-data /var/lib/monastir
+```
+
+Каталог репозитория (пример):
+
+```bash
+sudo mkdir -p /opt/monastir-crew
+sudo chown $USER:$USER /opt/monastir-crew
+```
+
+### Этап 5 — клонирование
+
+```bash
+cd /opt
+git clone https://github.com/Pantheon1337/monastir_crew_message.git monastir-crew
+cd monastir-crew
+```
+
+Для приватного репозитория: [Personal Access Token](https://github.com/settings/tokens) при `git clone` по HTTPS или [SSH-ключ](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) на сервере.
+
+### Этап 6 — зависимости и сборка фронта
+
+```bash
+npm run install:all
+npm run build
+```
+
+При ошибке сборки нативных модулей проверьте **build-essential** и повторите `npm run install:all`.
+
+### Этап 7 — права на uploads
+
+```bash
+sudo mkdir -p /opt/monastir-crew/server/uploads
+sudo chown -R www-data:www-data /opt/monastir-crew/server/uploads
+```
+
+(Путь к репо замените на свой, пользователь — тот же, что в `User=` в systemd.)
+
+### Этап 8 — пробный запуск вручную
+
+```bash
+cd /opt/monastir-crew/server
+export NODE_ENV=production
+export PORT=3001
+export SQLITE_PATH=/var/lib/monastir/app.db
+node index.js
+```
+
+Проверка API: `curl -s http://127.0.0.1:3001/api/health`. В браузере — `http://ВАШ_IP:3001`, если открыт порт **3001** в ufw. Остановка: **Ctrl+C**.
+
+### Этап 9 — systemd
+
+Создайте юнит по разделу **«5. systemd»** ниже (`WorkingDirectory`, `Environment`, `User=www-data`), затем:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now monastir.service
+sudo systemctl status monastir.service
+sudo journalctl -u monastir.service -n 80 --no-pager
+```
+
+### Этап 10 — nginx и HTTPS
+
+1. DNS: **A**-запись домена на IP VPS.
+2. Конфиг — раздел **«6. nginx»** ниже; `server_name` — ваш домен; `proxy_pass` на `127.0.0.1:3001`.
+3. `sudo nginx -t && sudo systemctl reload nginx`
+4. `sudo certbot --nginx -d ваш.домен`
+
+Сайт: `https://ваш.домен` — и страница, и `/api`, и WebSocket `/ws` с одного origin.
+
+### Этап 11 — цикл после разработки (`git push`)
+
+На сервере:
+
+```bash
+cd /opt/monastir-crew
+git pull
+npm run install:all
+npm run build
+sudo systemctl restart monastir.service
+```
+
+### Разработка на VPS (опционально)
+
+Для постоянного тестового стенда обычно достаточно **production-сборки** (этапы 6–11). Отладка «как на локалке» (Vite `npm run dev` + `node --watch`) возможна в **screen/tmux** и с пробросом портов по SSH; для ежедневной работы удобнее править код **локально**, пушить в Git и выполнять этап **11** на VPS.
+
+---
+
+## 2. Сервер: что нужно (кратко)
+
+- **Ubuntu 22.04+** с SSH.
+- **Node.js 20 LTS** — см. этап 2 выше.
+- **nginx** — прокси и TLS; для быстрого теста можно обойтись портом **3001** и ufw.
+- Каталог для БД (**`/var/lib/monastir`** или `SQLITE_PATH`) и **`server/uploads`** с правами пользователя сервиса.
 
 ---
 
@@ -99,6 +243,42 @@ sudo systemctl status monastir.service
 ```
 
 Убедитесь, что каталог `server/uploads` существует и доступен записи (аватары и истории): например `sudo mkdir -p /opt/monastir-crew/server/uploads && sudo chown -R www-data:www-data /opt/monastir-crew/server/uploads`.
+
+### Управление службой: вкл / выкл / перезапуск
+
+Имя юнита в примерах: **`monastir.service`** (коротко в командах: **`monastir`**).
+
+| Действие | Команда |
+|----------|---------|
+| **Запустить** | `sudo systemctl start monastir` |
+| **Остановить** | `sudo systemctl stop monastir` |
+| **Перезапустить** (после `git pull`, сборки или правок) | `sudo systemctl restart monastir` |
+| **Статус** (работает ли, последние ошибки) | `sudo systemctl status monastir` |
+| **Логи в реальном времени** | `sudo journalctl -u monastir -f` (выход: **Ctrl+C**) |
+| **Последние 80 строк логов** | `sudo journalctl -u monastir -n 80 --no-pager` |
+| **Включить автозапуск при загрузке VPS** | `sudo systemctl enable monastir` |
+| **Выключить автозапуск** | `sudo systemctl disable monastir` |
+
+Первый запуск после создания файла службы:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now monastir.service
+```
+
+Перед этим выполните **`npm run build`** в каталоге проекта (иначе при `NODE_ENV=production` не будет `client/dist`).
+
+**Типичный цикл после внесения изменений** (на сервере):
+
+```bash
+cd /opt/monastir-crew
+git pull
+npm run install:all    # только если менялись зависимости в package.json
+npm run build          # если менялся фронт (client)
+sudo systemctl restart monastir.service
+```
+
+Если правили **только** файлы в `server/` и зависимости не трогали — достаточно `git pull` и **`sudo systemctl restart monastir`**. Если меняли **клиент** — обязательно **`npm run build`**, затем перезапуск.
 
 ---
 

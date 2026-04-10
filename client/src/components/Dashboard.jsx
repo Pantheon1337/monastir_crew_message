@@ -1,7 +1,7 @@
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
-function ChatRow({ chat, onOpen }) {
+function ChatRow({ chat, onOpen, peerOnline }) {
   const unread = (chat.unreadCount ?? 0) > 0;
   return (
     <button
@@ -22,7 +22,11 @@ function ChatRow({ chat, onOpen }) {
         cursor: 'pointer',
       }}
     >
-      <UserAvatar src={chat.peerAvatarUrl} size={52} />
+      <UserAvatar
+        src={chat.peerAvatarUrl}
+        size={52}
+        presenceOnline={typeof peerOnline === 'boolean' ? peerOnline : undefined}
+      />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: unread ? 700 : 500 }}>
           {chat.peerNickname ? (
@@ -183,7 +187,7 @@ function Panel({ title, children, headerAction }) {
   );
 }
 
-export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpenChat, onCreateRoom, onOpenRoom }) {
+export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpenChat, onCreateRoom, onOpenRoom, presenceOnline = {} }) {
   /** На главной (две колонки) — не больше двух последних чатов/комнат; в разделах «Чаты»/«Комнаты» — полный список. */
   const isHomeGrid = !singleColumn;
   const chatsShown = isHomeGrid ? chats.slice(0, 2) : chats;
@@ -196,7 +200,14 @@ export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpen
           Нет диалогов
         </p>
       ) : (
-        chatsShown.map((c) => <ChatRow key={c.id} chat={c} onOpen={onOpenChat} />)
+        chatsShown.map((c) => (
+          <ChatRow
+            key={c.id}
+            chat={c}
+            onOpen={onOpenChat}
+            peerOnline={c.peerUserId != null ? Boolean(presenceOnline[String(c.peerUserId)]) : undefined}
+          />
+        ))
       )}
     </Panel>
   );

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import PostCard from './PostCard.jsx';
 import { api, apiUpload } from '../api.js';
 
-export default function Feed({ posts = [], userId, onPosted }) {
+export default function Feed({ posts = [], userId, onPosted, presenceOnline = {} }) {
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState(null);
   const [sending, setSending] = useState(false);
@@ -93,7 +93,15 @@ export default function Feed({ posts = [], userId, onPosted }) {
           В ленте пока пусто — добавьте друзей и посты появятся здесь.
         </p>
       ) : (
-        posts.map((p) => <PostCard key={p.id} post={p} viewerId={userId} onChanged={onPosted} />)
+        posts.map((p) => (
+          <PostCard
+            key={p.id}
+            post={p}
+            viewerId={userId}
+            onChanged={onPosted}
+            authorOnline={p.authorId != null ? Boolean(presenceOnline[String(p.authorId)]) : undefined}
+          />
+        ))
       )}
     </section>
   );

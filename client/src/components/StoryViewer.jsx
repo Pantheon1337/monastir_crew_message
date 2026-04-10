@@ -1,11 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
+import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 
 const SLIDE_MS = 4800;
-
-const REACTION_ICONS = { up: '👍', down: '👎', fire: '🔥', poop: '💩' };
-const REACTION_KEYS = ['up', 'down', 'fire', 'poop'];
 
 function formatStoryArchiveEta(expiresAt) {
   if (expiresAt == null) return null;
@@ -25,6 +23,7 @@ function formatStoryArchiveEta(expiresAt) {
 export default function StoryViewer({ story, userId, onClose, onProgress, onAfterLastItem }) {
   const [slide, setSlide] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
+  const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const items = story?.items ?? [];
   const total = items.length;
   const stagePtrStartX = useRef(null);
@@ -280,9 +279,9 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           className="story-viewer-chrome"
           style={{
             display: 'flex',
-            justifyContent: 'center',
-            flexWrap: 'wrap',
-            gap: 10,
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 8,
             padding: '12px 16px',
             borderTop: '1px solid rgba(255,255,255,0.08)',
           }}
@@ -290,26 +289,51 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           <span style={{ width: '100%', textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
             Реакция уйдёт в чат автору
           </span>
-          {REACTION_KEYS.map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => void sendReact(k)}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: '50%',
-                border: '1px solid rgba(255,255,255,0.2)',
-                background: 'rgba(255,255,255,0.06)',
-                fontSize: 20,
-                cursor: 'pointer',
-                color: 'inherit',
-              }}
-              aria-label={`Реакция ${k}`}
-            >
-              {REACTION_ICONS[k]}
-            </button>
-          ))}
+          <button
+            type="button"
+            aria-expanded={reactionBarOpen}
+            onClick={() => setReactionBarOpen((v) => !v)}
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.25)',
+              background: 'rgba(255,255,255,0.08)',
+              fontSize: 22,
+              cursor: 'pointer',
+              color: 'inherit',
+            }}
+            title="Реакции"
+          >
+            ☺
+          </button>
+          {reactionBarOpen ? (
+            <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 10 }}>
+              {REACTION_KEYS.map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    void sendReact(k);
+                    setReactionBarOpen(false);
+                  }}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: '50%',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    background: 'rgba(255,255,255,0.06)',
+                    fontSize: 20,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                  }}
+                  aria-label={`Реакция ${k}`}
+                >
+                  {REACTION_ICONS[k]}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

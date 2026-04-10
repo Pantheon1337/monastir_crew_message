@@ -5,6 +5,8 @@ import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
 import MentionText from './chat/MentionText.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
+import ReactionUsersModal from './ReactionUsersModal.jsx';
+import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 import {
   getOrCreateCameraStream,
@@ -120,9 +122,6 @@ function looksLikeVideoFileName(name) {
   return /\.(mp4|webm|mov|m4v|mkv|ogv)$/i.test(name.trim());
 }
 
-const REACTION_KEYS = ['up', 'down', 'fire', 'poop'];
-const REACTION_ICONS = { up: '👍', down: '👎', fire: '🔥', poop: '💩' };
-
 function useLongPress(onLongPress, { ms = 450, moveTol = 14 } = {}) {
   const timerRef = useRef(null);
   const startRef = useRef(null);
@@ -186,10 +185,13 @@ function clampMenuPosition(x, y, w, h) {
 }
 
 function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, align = 'flex-start' }) {
+  const [whoOpen, setWhoOpen] = useState(false);
+  const [whoList, setWhoList] = useState([]);
   const counts = reactions?.counts ?? { up: 0, down: 0, fire: 0, poop: 0 };
   const mine = reactions?.mine ?? null;
   const keysToShow = REACTION_KEYS.filter((k) => (counts[k] ?? 0) > 0);
   if (keysToShow.length === 0) return null;
+  const totalReactions = REACTION_KEYS.reduce((a, k) => a + (counts[k] ?? 0), 0);
 
   async function pick(key) {
     const path = `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reaction`;
@@ -201,42 +203,63 @@ function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, 
     if (ok && data?.reactions) onUpdate?.(data.reactions);
   }
 
+  async function openWho() {
+    const path = `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reactions`;
+    const { ok, data } = await api(path, { userId });
+    if (ok) setWhoList(data?.users || []);
+    setWhoOpen(true);
+  }
+
   return (
-    <div
-      onPointerDown={(e) => e.stopPropagation()}
-      style={{
-        display: 'flex',
-        gap: 4,
-        marginTop: 6,
-        flexWrap: 'wrap',
-        justifyContent: align,
-      }}
-    >
-      {keysToShow.map((key) => {
-        const n = counts[key] ?? 0;
-        const active = mine === key;
-        return (
+    <>
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{
+          display: 'flex',
+          gap: 4,
+          marginTop: 6,
+          flexWrap: 'wrap',
+          justifyContent: align,
+          alignItems: 'center',
+        }}
+      >
+        {keysToShow.map((key) => {
+          const n = counts[key] ?? 0;
+          const active = mine === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => void pick(key)}
+              style={{
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 999,
+                background: active ? 'rgba(193, 123, 75, 0.2)' : 'transparent',
+                padding: '2px 8px',
+                fontSize: 13,
+                cursor: 'pointer',
+                color: 'inherit',
+                lineHeight: 1.3,
+              }}
+            >
+              {REACTION_ICONS[key]}
+              {n > 0 ? <span className="muted" style={{ fontSize: 10, marginLeft: 2 }}>{n}</span> : null}
+            </button>
+          );
+        })}
+        {totalReactions > 0 ? (
           <button
-            key={key}
             type="button"
-            onClick={() => void pick(key)}
-            style={{
-              border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-              borderRadius: 999,
-              background: active ? 'rgba(193, 123, 75, 0.2)' : 'transparent',
-              padding: '2px 8px',
-              fontSize: 13,
-              cursor: 'pointer',
-              color: 'inherit',
-              lineHeight: 1.3,
-            }}
+            className="btn-outline"
+            style={{ fontSize: 10, padding: '2px 8px', minHeight: 0 }}
+            onClick={() => void openWho()}
           >
-            {REACTION_ICONS[key]}
-            {n > 0 ? <span className="muted" style={{ fontSize: 10, marginLeft: 2 }}>{n}</span> : null}
+            Кто
           </button>
-        );
-      })}
-    </div>
+        ) : null}
+      </div>
+      <ReactionUsersModal open={whoOpen} users={whoList} onClose={() => setWhoOpen(false)} />
+    </>
   );
 }
 
@@ -377,6 +400,8 @@ function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, 
         display: 'flex',
         justifyContent: mine ? 'flex-end' : 'flex-start',
         marginBottom: 8,
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
       }}
     >
       <div
@@ -1177,7 +1202,7 @@ export default function RoomChatScreen({
                 onReactionsLocalUpdate={(id, reactions) =>
                   setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
                 }
-                onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y })}
+                onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
                 onMentionProfile={onMentionProfile}
               />
             ))
@@ -1512,38 +1537,53 @@ export default function RoomChatScreen({
               background: 'var(--bg)',
               padding: 10,
               boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
             }}
           >
-            <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-              {REACTION_KEYS.map((k) => (
+            <div style={{ marginBottom: 10 }}>
+              {!messageMenu.showReactions ? (
                 <button
-                  key={k}
                   type="button"
-                  onClick={async () => {
-                    const msg = messageMenu.m;
-                    const { ok, data } = await api(
-                      `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(msg.id)}/reaction`,
-                      { method: 'POST', body: { reaction: k }, userId },
-                    );
-                    if (ok && data?.reactions) {
-                      setMessages((prev) => prev.map((x) => (x.id === msg.id ? { ...x, reactions: data.reactions } : x)));
-                    }
-                    setMessageMenu(null);
-                  }}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    border: '1px solid var(--border)',
-                    background: 'rgba(255,255,255,0.04)',
-                    fontSize: 18,
-                    cursor: 'pointer',
-                    color: 'inherit',
-                  }}
+                  className="btn-outline"
+                  style={{ width: '100%', fontSize: 12 }}
+                  onClick={() => setMessageMenu((prev) => (prev ? { ...prev, showReactions: true } : null))}
                 >
-                  {REACTION_ICONS[k]}
+                  Реакция…
                 </button>
-              ))}
+              ) : (
+                <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                  {REACTION_KEYS.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={async () => {
+                        const msg = messageMenu.m;
+                        const { ok, data } = await api(
+                          `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(msg.id)}/reaction`,
+                          { method: 'POST', body: { reaction: k }, userId },
+                        );
+                        if (ok && data?.reactions) {
+                          setMessages((prev) => prev.map((x) => (x.id === msg.id ? { ...x, reactions: data.reactions } : x)));
+                        }
+                        setMessageMenu(null);
+                      }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        border: '1px solid var(--border)',
+                        background: 'rgba(255,255,255,0.04)',
+                        fontSize: 18,
+                        cursor: 'pointer',
+                        color: 'inherit',
+                      }}
+                    >
+                      {REACTION_ICONS[k]}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             {messageMenu.m.kind !== 'revoked' && !messageMenu.m.revokedForAll ? (
               <button

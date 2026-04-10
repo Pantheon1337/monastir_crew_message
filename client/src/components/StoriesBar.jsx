@@ -41,7 +41,7 @@ function AvatarRing({ children, variant = 'new' }) {
  * Первая кнопка — всегда только создание новой истории.
  * Далее — кружки всех с активными историями (вы и друзья), как в ленте.
  */
-export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAuthor }) {
+export default function StoriesBar({ user, buckets = [], presenceOnline = {}, onAddStory, onOpenAuthor }) {
   const openBucket = useCallback(
     (authorId) => {
       if (!authorId) return;
@@ -105,6 +105,7 @@ export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAutho
           const isSelf = Boolean(b.isSelf) || String(b.userId) === String(user?.id);
           const label = isSelf ? 'Вы' : b.label;
           const ringVariant = isSelf ? 'self' : b.allViewed ? 'seen' : 'new';
+          const peerOn = !isSelf && b.userId != null ? Boolean(presenceOnline[String(b.userId)]) : null;
           return (
             <button
               key={b.userId}
@@ -123,13 +124,29 @@ export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAutho
                 flexShrink: 0,
               }}
             >
-              <AvatarRing variant={ringVariant}>
-                <UserAvatar
-                  src={b.avatarUrl}
-                  borderless
-                  style={{ width: '100%', height: '100%' }}
-                />
-              </AvatarRing>
+              <div style={{ position: 'relative', width: 56, flexShrink: 0 }}>
+                <AvatarRing variant={ringVariant}>
+                  <UserAvatar src={b.avatarUrl} borderless style={{ width: '100%', height: '100%' }} />
+                </AvatarRing>
+                {peerOn != null ? (
+                  <span
+                    aria-hidden
+                    title={peerOn ? 'в сети' : 'не в сети'}
+                    style={{
+                      position: 'absolute',
+                      right: 2,
+                      bottom: 2,
+                      width: 11,
+                      height: 11,
+                      borderRadius: '50%',
+                      background: peerOn ? 'var(--online)' : 'rgba(160, 160, 170, 0.85)',
+                      border: '2px solid var(--bg)',
+                      boxSizing: 'border-box',
+                      pointerEvents: 'none',
+                    }}
+                  />
+                ) : null}
+              </div>
               <span className="muted" style={{ fontSize: 10, maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {label}
                 {b.affiliationEmoji ? ` ${b.affiliationEmoji}` : ''}

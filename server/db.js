@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 let db;
 
@@ -349,6 +349,30 @@ function migrate(database) {
       database.exec(`ALTER TABLE room_messages ADD COLUMN forward_json TEXT;`);
     }
     setSchemaVersion(database, 15);
+    ver = 15;
+  }
+
+  if (ver < 16) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS post_reactions (
+        post_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        reaction TEXT NOT NULL CHECK(reaction IN ('up','down','fire','poop')),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (post_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_post_react_post ON post_reactions(post_id);
+      CREATE TABLE IF NOT EXISTS post_comments (
+        id TEXT PRIMARY KEY NOT NULL,
+        post_id TEXT NOT NULL,
+        author_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        edited_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_post_comments_post ON post_comments(post_id, created_at);
+    `);
+    setSchemaVersion(database, 16);
   }
 }
 

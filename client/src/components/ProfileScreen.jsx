@@ -21,6 +21,8 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
   const [aboutSaving, setAboutSaving] = useState(false);
   const [roleSaving, setRoleSaving] = useState(false);
   const [emojiSaving, setEmojiSaving] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const emojiPickerRef = useRef(null);
 
   useEffect(() => {
     setAboutDraft(user?.about != null ? String(user.about) : '');
@@ -45,6 +47,15 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
     document.addEventListener('visibilitychange', sync);
     return () => document.removeEventListener('visibilitychange', sync);
   }, []);
+
+  useEffect(() => {
+    if (!emojiPickerOpen) return;
+    function onDoc(e) {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) setEmojiPickerOpen(false);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [emojiPickerOpen]);
 
   async function accept(id) {
     setActionId(id);
@@ -180,7 +191,7 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
         <p style={{ margin: '0 0 6px', fontSize: 11 }} className="muted">
           Смайлик у ника (как в Telegram; набор совместим с iOS)
         </p>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        <div ref={emojiPickerRef} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12, position: 'relative' }}>
           <button
             type="button"
             className="btn-outline"
@@ -196,6 +207,7 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
               void (async () => {
                 if (!user?.id) return;
                 setEmojiSaving(true);
+                setEmojiPickerOpen(false);
                 const { ok, data } = await api('/api/users/me', {
                   method: 'PATCH',
                   body: { affiliationEmoji: '' },
@@ -215,46 +227,89 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
           >
             По умолчанию
           </button>
-          {AFFILIATION_EMOJI_CHOICES.map((em) => (
-            <button
-              key={em}
-              type="button"
-              className="btn-outline"
-              title={em}
+          <button
+            type="button"
+            className="btn-outline"
+            aria-expanded={emojiPickerOpen}
+            aria-haspopup="listbox"
+            style={{
+              minWidth: 44,
+              height: 40,
+              padding: '0 12px',
+              fontSize: 22,
+              lineHeight: 1,
+              opacity: emojiSaving ? 0.6 : 1,
+              borderColor: user?.customAffiliationEmoji != null ? 'var(--accent)' : undefined,
+            }}
+            disabled={emojiSaving}
+            title="Выбрать смайлик"
+            onClick={() => setEmojiPickerOpen((v) => !v)}
+          >
+            {user?.customAffiliationEmoji != null ? user.customAffiliationEmoji : '☺'}
+          </button>
+          {emojiPickerOpen ? (
+            <div
+              role="listbox"
               style={{
-                width: 40,
-                height: 40,
-                padding: 0,
-                fontSize: 20,
-                lineHeight: 1,
-                opacity: emojiSaving ? 0.6 : 1,
-                borderColor: user?.customAffiliationEmoji === em ? 'var(--accent)' : undefined,
-              }}
-              disabled={emojiSaving}
-              onClick={() => {
-                void (async () => {
-                  if (!user?.id) return;
-                  setEmojiSaving(true);
-                  const { ok, data } = await api('/api/users/me', {
-                    method: 'PATCH',
-                    body: { affiliationEmoji: em },
-                    userId: user.id,
-                  });
-                  setEmojiSaving(false);
-                  if (!ok) {
-                    alert(data?.error || 'Не удалось сохранить');
-                    return;
-                  }
-                  if (data?.user) {
-                    setStoredUser(data.user);
-                    onUserUpdated?.(data.user);
-                  }
-                })();
+                position: 'absolute',
+                left: 0,
+                top: '100%',
+                marginTop: 6,
+                zIndex: 30,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 6,
+                padding: 10,
+                maxWidth: 320,
+                background: 'var(--bg)',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                boxShadow: '0 8px 28px rgba(0,0,0,0.25)',
               }}
             >
-              {em}
-            </button>
-          ))}
+              {AFFILIATION_EMOJI_CHOICES.map((em) => (
+                <button
+                  key={em}
+                  type="button"
+                  className="btn-outline"
+                  title={em}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    padding: 0,
+                    fontSize: 20,
+                    lineHeight: 1,
+                    opacity: emojiSaving ? 0.6 : 1,
+                    borderColor: user?.customAffiliationEmoji === em ? 'var(--accent)' : undefined,
+                  }}
+                  disabled={emojiSaving}
+                  onClick={() => {
+                    void (async () => {
+                      if (!user?.id) return;
+                      setEmojiSaving(true);
+                      const { ok, data } = await api('/api/users/me', {
+                        method: 'PATCH',
+                        body: { affiliationEmoji: em },
+                        userId: user.id,
+                      });
+                      setEmojiSaving(false);
+                      if (!ok) {
+                        alert(data?.error || 'Не удалось сохранить');
+                        return;
+                      }
+                      if (data?.user) {
+                        setStoredUser(data.user);
+                        onUserUpdated?.(data.user);
+                      }
+                      setEmojiPickerOpen(false);
+                    })();
+                  }}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
 
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
