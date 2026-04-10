@@ -545,10 +545,9 @@ video.chat-video-note {
   opacity: 0.92;
 }
 
-/* Обёртка свайпа — не сужает проценты; лимит только на пузыре */
+/* Обёртка свайпа: без flex-shrink — иначе пузырь сжимается, текст ломается посередине слова */
 .chat-swipe-reply-row {
-  flex: 0 1 auto;
-  min-width: 0;
+  flex: 0 0 auto;
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -570,7 +569,7 @@ video.chat-video-note {
 
 .chat-swipe-reply-inner {
   display: block;
-  min-width: 0;
+  width: max-content;
   max-width: 100%;
   box-sizing: border-box;
 }

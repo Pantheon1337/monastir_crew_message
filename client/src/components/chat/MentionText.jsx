@@ -23,11 +23,9 @@ function splitMentions(text) {
   return parts;
 }
 
-/** Как в мессенджерах: pre-line, перенос по словам, без разрыва посередине слова (word-break: normal). */
+/** pre-line; без width:100% — иначе при сжатии flex-родителя текст принимает узкую колонку и рвёт слова. */
 const textWrapStyle = {
-  display: 'block',
-  width: '100%',
-  minWidth: 0,
+  display: 'inline',
   whiteSpace: 'pre-line',
   overflowWrap: 'break-word',
   wordBreak: 'normal',
