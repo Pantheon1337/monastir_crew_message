@@ -38,9 +38,13 @@ export default function StubMenuModal({ open, onClose, title, children }) {
             ×
           </button>
         </div>
-        <p className="muted" style={{ fontSize: 12, margin: 0, lineHeight: 1.45 }}>
-          {children || 'Раздел в разработке — скоро здесь появятся настройки.'}
-        </p>
+        {children != null ? (
+          <div style={{ fontSize: 13, lineHeight: 1.45 }}>{children}</div>
+        ) : (
+          <p className="muted" style={{ fontSize: 12, margin: 0, lineHeight: 1.45 }}>
+            Раздел в разработке — скоро здесь появятся настройки.
+          </p>
+        )}
       </div>
     </div>
   );

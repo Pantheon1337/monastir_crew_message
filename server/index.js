@@ -24,6 +24,8 @@ import {
   setUserAffiliationEmoji,
   normalizeAffiliationEmoji,
   setUserLastSeenAt,
+  setUserHideLastSeen,
+  userHidesLastSeen,
 } from './db.js';
 import { uploadsRoot, avatarUpload } from './avatarUpload.js';
 import { chatVoiceUpload, chatVideoNoteUpload, chatAttachmentUpload, chatMediaRelativePath } from './chatMediaUpload.js';
@@ -672,7 +674,11 @@ app.post('/api/users/me/avatar', (req, res) => {
   if (!userId) return;
   avatarUpload.single('avatar')(req, res, (err) => {
     if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      const msg =
+        err.code === 'LIMIT_FILE_SIZE'
+          ? 'Файл слишком большой (максимум 8 МБ). Выберите другое фото или уменьшите его в галерее.'
+          : err.message || 'Ошибка загрузки';
+      res.status(400).json({ error: msg });
       return;
     }
     if (!req.file) {
@@ -1331,7 +1337,7 @@ app.get('/api/users/presence', (req, res) => {
   if (!userId) return;
   const raw = req.query.ids;
   if (!raw || typeof raw !== 'string') {
-    res.json({ online: {}, lastSeenAt: {} });
+    res.json({ online: {}, lastSeenAt: {}, lastSeenHidden: {} });
     return;
   }
   const ids = raw
@@ -1340,18 +1346,34 @@ app.get('/api/users/presence', (req, res) => {
     .filter(Boolean);
   const online = {};
   const lastSeenAt = {};
-  const stmt = getDb().prepare(`SELECT last_seen_at AS lastSeenAt FROM users WHERE id = ?`);
+  const lastSeenHidden = {};
+  const stmt = getDb().prepare(`SELECT last_seen_at AS lastSeenAt, hide_last_seen AS hideLastSeen FROM users WHERE id = ?`);
   for (const id of ids) {
     const set = socketsByUser.get(id);
     online[id] = Boolean(set && set.size > 0);
     if (!online[id]) {
       const row = stmt.get(id);
-      if (row?.lastSeenAt != null) {
+      if (row?.hideLastSeen === 1) {
+        lastSeenHidden[id] = true;
+      } else if (row?.lastSeenAt != null) {
         lastSeenAt[id] = row.lastSeenAt;
       }
     }
   }
-  res.json({ online, lastSeenAt });
+  res.json({ online, lastSeenAt, lastSeenHidden });
+});
+
+app.patch('/api/users/me/privacy', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const hide = req.body?.hideLastSeen;
+  if (typeof hide !== 'boolean') {
+    res.status(400).json({ error: 'Ожидается hideLastSeen: boolean' });
+    return;
+  }
+  setUserHideLastSeen(userId, hide);
+  const user = findUserById(userId);
+  res.json({ user });
 });
 
 const server = http.createServer(app);
@@ -1435,7 +1457,13 @@ wss.on('connection', (ws, req) => {
         if (!userId.startsWith('guest-') && findUserById(userId)) {
           const ts = Date.now();
           setUserLastSeenAt(userId, ts);
-          notifyPeers(userId, { type: 'presence', payload: { userId, online: false, lastSeenAt: ts } });
+          const hide = userHidesLastSeen(userId);
+          notifyPeers(
+            userId,
+            hide
+              ? { type: 'presence', payload: { userId, online: false, lastSeenHidden: true } }
+              : { type: 'presence', payload: { userId, online: false, lastSeenAt: ts } },
+          );
         }
       }
     }

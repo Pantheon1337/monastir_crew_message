@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 let db;
 
@@ -397,6 +397,15 @@ function migrate(database) {
     }
     setSchemaVersion(database, 18);
   }
+
+  if (ver < 19) {
+    const uH = database.prepare('PRAGMA table_info(users)').all();
+    const uHN = new Set(uH.map((row) => row.name));
+    if (!uHN.has('hide_last_seen')) {
+      database.exec('ALTER TABLE users ADD COLUMN hide_last_seen INTEGER NOT NULL DEFAULT 0;');
+    }
+    setSchemaVersion(database, 19);
+  }
 }
 
 export function getDb() {
@@ -531,13 +540,15 @@ export function mapPublicUser(row) {
     affiliationEmoji,
     /** Явный выбор из списка; null — «по умолчанию для роли». */
     customAffiliationEmoji,
+    /** Не показывать точное время «был в сети» другим. */
+    hideLastSeen: (row.hideLastSeen ?? row.hide_last_seen) === 1,
   };
 }
 
 export function findUserByPhone(phone) {
   const row = getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE phone = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen FROM users WHERE phone = ?`
     )
     .get(phone);
   return mapPublicUser(row);
@@ -546,7 +557,7 @@ export function findUserByPhone(phone) {
 export function findUserByNickname(nickname) {
   const row = getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE nickname = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen FROM users WHERE nickname = ?`
     )
     .get(nickname);
   return mapPublicUser(row);
@@ -555,7 +566,7 @@ export function findUserByNickname(nickname) {
 export function findUserById(id) {
   const row = getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE id = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen FROM users WHERE id = ?`
     )
     .get(id);
   return mapPublicUser(row);
@@ -565,7 +576,7 @@ export function findUserById(id) {
 export function findUserWithSecretByNickname(nickname) {
   return getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, password_hash AS passwordHash FROM users WHERE nickname = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen, password_hash AS passwordHash FROM users WHERE nickname = ?`
     )
     .get(nickname);
 }
@@ -618,4 +629,13 @@ export function setUserAffiliationEmoji(userId, emojiOrNull) {
 /** Время «был в сети» при отключении последнего WebSocket-соединения. */
 export function setUserLastSeenAt(userId, atMs) {
   getDb().prepare(`UPDATE users SET last_seen_at = ? WHERE id = ?`).run(atMs, userId);
+}
+
+export function setUserHideLastSeen(userId, hide) {
+  getDb().prepare(`UPDATE users SET hide_last_seen = ? WHERE id = ?`).run(hide ? 1 : 0, userId);
+}
+
+export function userHidesLastSeen(userId) {
+  const row = getDb().prepare(`SELECT hide_last_seen AS h FROM users WHERE id = ?`).get(userId);
+  return (row?.h ?? 0) === 1;
 }

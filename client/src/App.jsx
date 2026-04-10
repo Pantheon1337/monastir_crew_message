@@ -63,6 +63,9 @@ export default function App() {
   const [presenceOnline, setPresenceOnline] = useState({});
   /** userId → lastSeenAt (мс), только для офлайн; подпись «был(а) в сети …» в чате */
   const [presenceLastSeen, setPresenceLastSeen] = useState({});
+  /** userId → скрыто точное время (показываем «был(а) недавно») */
+  const [presenceLastSeenHidden, setPresenceLastSeenHidden] = useState({});
+  const [privacySaving, setPrivacySaving] = useState(false);
   const [networkOnline, setNetworkOnline] = useState(
     () => typeof navigator !== 'undefined' && navigator.onLine,
   );
@@ -134,6 +137,27 @@ export default function App() {
       void Promise.all([refreshFeed(), refreshStories(), refreshSocial()]);
     },
     [refreshFeed, refreshStories, refreshSocial],
+  );
+
+  const savePrivacyHideLastSeen = useCallback(
+    async (hideLastSeen) => {
+      if (!user?.id) return;
+      setPrivacySaving(true);
+      try {
+        const r = await api('/api/users/me/privacy', {
+          method: 'PATCH',
+          body: { hideLastSeen },
+          userId: user.id,
+        });
+        if (r.ok && r.data?.user) {
+          setUser(r.data.user);
+          setStoredUser(r.data.user);
+        }
+      } finally {
+        setPrivacySaving(false);
+      }
+    },
+    [user?.id],
   );
 
   /** Открытый чат + актуальные peerNickname / peerAffiliationEmoji из списка `/api/chats` после refreshSocial. */
@@ -256,9 +280,19 @@ export default function App() {
           }
           return next;
         });
+        setPresenceLastSeenHidden((prev) => {
+          const next = { ...prev };
+          for (const id of Object.keys(on)) {
+            if (on[id]) delete next[id];
+          }
+          return next;
+        });
       }
       if (r.data?.lastSeenAt && typeof r.data.lastSeenAt === 'object') {
         setPresenceLastSeen((prev) => ({ ...prev, ...r.data.lastSeenAt }));
+      }
+      if (r.data?.lastSeenHidden && typeof r.data.lastSeenHidden === 'object') {
+        setPresenceLastSeenHidden((prev) => ({ ...prev, ...r.data.lastSeenHidden }));
       }
     })();
     return () => {
@@ -358,7 +392,7 @@ export default function App() {
     if (lastEvent.type === 'feed:new' || lastEvent.type === 'feed:changed') refreshFeed();
     if (lastEvent.type === 'stories:new') refreshStories();
     if (lastEvent.type === 'presence' && lastEvent.payload?.userId != null) {
-      const { userId: pid, online, lastSeenAt } = lastEvent.payload;
+      const { userId: pid, online, lastSeenAt, lastSeenHidden } = lastEvent.payload;
       setPresenceOnline((prev) => ({ ...prev, [pid]: online }));
       if (online) {
         setPresenceLastSeen((prev) => {
@@ -366,7 +400,24 @@ export default function App() {
           delete next[String(pid)];
           return next;
         });
+        setPresenceLastSeenHidden((prev) => {
+          const next = { ...prev };
+          delete next[String(pid)];
+          return next;
+        });
+      } else if (lastSeenHidden) {
+        setPresenceLastSeen((prev) => {
+          const next = { ...prev };
+          delete next[String(pid)];
+          return next;
+        });
+        setPresenceLastSeenHidden((prev) => ({ ...prev, [String(pid)]: true }));
       } else if (typeof lastSeenAt === 'number') {
+        setPresenceLastSeenHidden((prev) => {
+          const next = { ...prev };
+          delete next[String(pid)];
+          return next;
+        });
         setPresenceLastSeen((prev) => ({ ...prev, [String(pid)]: lastSeenAt }));
       }
     }
@@ -601,6 +652,11 @@ export default function App() {
               ? presenceLastSeen[String(openChatResolved.peerUserId)]
               : undefined
           }
+          peerLastSeenHidden={
+            openChatResolved.peerUserId != null
+              ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
+              : false
+          }
           canMessage={openChatResolved.canMessage !== false}
           friendsActive={openChatResolved.friendsActive !== false}
           onClose={() => setOpenChat(null)}
@@ -669,15 +725,41 @@ export default function App() {
             applyThemeToDocument(t);
           }}
         />
+      ) : menuStub === 'privacy' ? (
+        <StubMenuModal open onClose={() => setMenuStub(null)} title="Конфиденциальность">
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 14,
+              cursor: user?.id && !privacySaving ? 'pointer' : 'default',
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontWeight: 600, marginBottom: 6 }}>Время последнего визита</span>
+              <span className="muted" style={{ fontSize: 11, lineHeight: 1.45, display: 'block' }}>
+                Скрыть от всех точное «был(а) в сети». Вместо времени будет показано: был(а) недавно.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Скрыть время входа от всех"
+              checked={Boolean(user?.hideLastSeen)}
+              disabled={!user?.id || privacySaving}
+              onChange={(e) => void savePrivacyHideLastSeen(e.target.checked)}
+              style={{ width: 22, height: 22, flexShrink: 0, marginTop: 2, accentColor: 'var(--accent)' }}
+            />
+          </label>
+        </StubMenuModal>
       ) : menuStub ? (
         <StubMenuModal
           open
           onClose={() => setMenuStub(null)}
-          title={menuStub === 'privacy' ? 'Конфиденциальность' : 'Безопасность'}
+          title="Безопасность"
         >
-          {menuStub === 'privacy'
-            ? 'Здесь будут параметры конфиденциальности: кто видит профиль, истории и статус.'
-            : 'Здесь будут параметры безопасности: сессии, пароль и двухфакторная аутентификация.'}
+          Здесь будут параметры безопасности: сессии, пароль и двухфакторная аутентификация.
         </StubMenuModal>
       ) : null}
       {possibleFriendsOpen && user?.id ? (

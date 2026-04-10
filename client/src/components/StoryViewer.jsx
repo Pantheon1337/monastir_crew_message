@@ -102,22 +102,35 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
     } catch {
       /* ignore */
     }
-    stagePtrStart.current = { x: e.clientX, y: e.clientY };
+    stagePtrStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      pointerId: e.pointerId,
+    };
     setIsHolding(true);
+  }
+
+  function onStagePointerMove(e) {
+    const s = stagePtrStart.current;
+    if (!s || e.pointerId !== s.pointerId) return;
+    s.lastX = e.clientX;
+    s.lastY = e.clientY;
   }
 
   function onStagePointerUp(e) {
     const start = stagePtrStart.current;
     stagePtrStart.current = null;
     setIsHolding(false);
-    if (start == null) return;
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
+    if (start == null || e.pointerId !== start.pointerId) return;
+    const endX = start.lastX != null ? start.lastX : e.clientX;
+    const endY = start.lastY != null ? start.lastY : e.clientY;
+    const dx = endX - start.x;
+    const dy = endY - start.y;
     const move = Math.hypot(dx, dy);
-    const swipeTh = 44;
+    const swipeTh = 40;
     const tapMax = 22;
 
-    if (Math.abs(dx) >= swipeTh && Math.abs(dx) >= Math.abs(dy) * 0.85) {
+    if (Math.abs(dx) >= swipeTh && Math.abs(dx) >= Math.abs(dy) * 0.55) {
       if (dx < 0) goNext();
       else goPrev();
       return;
@@ -125,13 +138,18 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
 
     if (move < tapMax && Math.abs(dy) < 28) {
       const rect = e.currentTarget.getBoundingClientRect();
-      const relX = (e.clientX - rect.left) / Math.max(rect.width, 1);
+      const relX = (endX - rect.left) / Math.max(rect.width, 1);
       if (relX < 0.28) goPrev();
       else if (relX > 0.72) goNext();
     }
   }
 
   function onStagePointerCancel() {
+    stagePtrStart.current = null;
+    setIsHolding(false);
+  }
+
+  function onStageLostPointerCapture() {
     stagePtrStart.current = null;
     setIsHolding(false);
   }
@@ -250,8 +268,10 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           touchAction: 'none',
         }}
         onPointerDown={onStagePointerDown}
+        onPointerMove={onStagePointerMove}
         onPointerUp={onStagePointerUp}
         onPointerCancel={onStagePointerCancel}
+        onLostPointerCapture={onStageLostPointerCapture}
       >
         <div
           className="story-viewer-strip"
@@ -277,7 +297,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
                 padding: 16,
                 textAlign: 'center',
                 overflow: 'auto',
-                touchAction: 'pan-y',
+                touchAction: 'manipulation',
               }}
             >
               {it.mediaUrl ? (

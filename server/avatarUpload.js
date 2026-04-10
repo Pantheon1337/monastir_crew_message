@@ -20,9 +20,12 @@ const storage = multer.diskStorage({
   },
 });
 
+/** Лимит файла: фото с камеры часто 3–8+ МБ; превью в интерфейсе маленькое. */
+const AVATAR_MAX_BYTES = 8 * 1024 * 1024;
+
 export const avatarUpload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: AVATAR_MAX_BYTES },
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith('image/')) {
       cb(new Error('Допустимы только изображения'));

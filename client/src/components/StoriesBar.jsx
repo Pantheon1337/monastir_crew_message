@@ -62,8 +62,12 @@ export default function StoriesBar({ user, buckets = [], presenceOnline = {}, on
           display: 'flex',
           gap: 14,
           overflowX: 'auto',
+          overflowY: 'hidden',
           paddingBottom: 4,
           scrollbarWidth: 'thin',
+          touchAction: 'pan-x',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehaviorX: 'contain',
         }}
       >
         <button

@@ -54,8 +54,9 @@ function formatRuSeenAgo(ts) {
   }
 }
 
-function peerPresenceSubtitle(online, lastSeenAt) {
+function peerPresenceSubtitle(online, lastSeenAt, lastSeenHidden) {
   if (online === true) return 'онлайн';
+  if (lastSeenHidden) return 'был(а) недавно';
   if (online === false && typeof lastSeenAt === 'number' && lastSeenAt > 0) {
     return `был(а) в сети · ${formatRuSeenAgo(lastSeenAt)}`;
   }
@@ -605,6 +606,7 @@ export default function DirectChatScreen({
   peerAvatarUrl,
   peerOnline,
   peerLastSeenAt,
+  peerLastSeenHidden = false,
   onClose,
   lastEvent,
   onAfterChange,
@@ -1378,6 +1380,7 @@ export default function DirectChatScreen({
       ? peerPresenceSubtitle(
           typeof peerOnline === 'boolean' ? peerOnline : undefined,
           peerLastSeenAt,
+          peerLastSeenHidden,
         )
       : null;
 
