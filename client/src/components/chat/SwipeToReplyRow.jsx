@@ -99,18 +99,14 @@ export default function SwipeToReplyRow({ children, disabled, onReply }) {
     <div
       className="chat-swipe-reply-row"
       style={{
-        maxWidth: '100%',
-        minWidth: 0,
-        flexShrink: 0,
         overflow: 'visible',
         touchAction: 'pan-y',
       }}
       onPointerDownCapture={onPointerDownCapture}
     >
       <div
+        className="chat-swipe-reply-inner"
         style={{
-          minWidth: 0,
-          boxSizing: 'border-box',
           transform: `translateX(${tx}px)`,
           transition: smooth ? 'transform 0.22s cubic-bezier(0.25, 0.82, 0.2, 1)' : 'none',
           willChange: smooth ? 'auto' : 'transform',

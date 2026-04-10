@@ -24,7 +24,12 @@
   --chat-mention-bg: rgba(122, 184, 232, 0.2);
   --chat-mention-fg: #b8dafb;
   --chat-font-size: 14px;
-  --chat-line-height: 1.4;
+  --chat-line-height: 1.45;
+  /* Текст сообщений — пропорциональный UI-шрифт (как TG/VK), не моноширинный корень приложения */
+  --chat-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif;
+  /* Пузырь: ограничение как в мессенджерах — ~80% колонки, верхняя граница в px */
+  --chat-bubble-max-width: min(320px, 82%);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.45;
@@ -490,23 +495,61 @@ video.chat-video-note {
   overflow-wrap: break-word;
   word-wrap: break-word;
   word-break: normal;
-  hyphens: auto;
+  hyphens: none;
 }
 
-/* Меньше «лесенки» от переносов по буквам в моноширинном шрифте */
+/*
+ * Пузырь: типографика как в мессенджерах — normal + break-word, без break-all по буквам;
+ * длинные непрерывные строки (URL) ломаются через overflow-wrap, не через word-break.
+ */
 .chat-tg-bubble {
+  display: block;
+  width: fit-content;
+  max-width: var(--chat-bubble-max-width);
+  box-sizing: border-box;
+  font-family: var(--chat-font-family);
+  font-size: var(--chat-font-size);
+  line-height: var(--chat-line-height);
+  color: var(--chat-bubble-text);
+  text-align: start;
   word-break: normal;
   overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: none;
+  -webkit-hyphens: none;
 }
 
+/* Строка свайпа — по ширине пузыря, чтобы flex выравнивал влево/вправо к краю ленты */
 .chat-swipe-reply-row {
-  /* запас по горизонтали, чтобы сдвиг transform не обрезался у края ленты */
-  margin-left: -4px;
-  margin-right: -4px;
-  padding-left: 4px;
-  padding-right: 4px;
-  box-sizing: content-box;
-  max-width: calc(100% + 8px);
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.chat-message-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.chat-message-row--in {
+  justify-content: flex-start;
+}
+
+.chat-message-row--out {
+  justify-content: flex-end;
+}
+
+.chat-swipe-reply-inner {
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  vertical-align: top;
 }
 
 .chat-message-bubble-shell * {
@@ -534,7 +577,8 @@ video.chat-video-note {
   cursor: pointer;
   border-radius: 4px;
   vertical-align: baseline;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
   max-width: 100%;
   -webkit-user-select: none;
   user-select: none;

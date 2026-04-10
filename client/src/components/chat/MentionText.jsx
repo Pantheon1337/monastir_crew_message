@@ -23,18 +23,20 @@ function splitMentions(text) {
   return parts;
 }
 
-/** pre-line: переносы строк сохраняются, лишние пробелы схлопываются — аккуратнее в чате, чем pre-wrap. */
+/** Как в мессенджерах: pre-line, перенос по словам, без разрыва посередине слова (word-break: normal). */
 const textWrapStyle = {
   display: 'block',
   width: '100%',
   minWidth: 0,
   whiteSpace: 'pre-line',
   overflowWrap: 'break-word',
-  wordBreak: 'break-word',
-  lineHeight: 1.5,
-  letterSpacing: '0.01em',
-  hyphens: 'auto',
-  WebkitHyphens: 'auto',
+  wordBreak: 'normal',
+  lineHeight: 'inherit',
+  letterSpacing: 'normal',
+  hyphens: 'none',
+  WebkitHyphens: 'none',
+  fontFamily: 'var(--chat-font-family)',
+  fontSize: 'inherit',
 };
 
 export default function MentionText({ text, onMentionClick }) {

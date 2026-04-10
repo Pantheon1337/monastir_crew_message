@@ -446,11 +446,8 @@ function MessageBubble({
 
   return (
     <div
+      className={mine ? 'chat-message-row chat-message-row--out' : 'chat-message-row chat-message-row--in'}
       style={{
-        display: 'flex',
-        justifyContent: mine ? 'flex-end' : 'flex-start',
-        width: '100%',
-        minWidth: 0,
         marginBottom: isLastInGroup ? 12 : 3,
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -479,19 +476,13 @@ function MessageBubble({
             onOpenActionMenu?.(m, e.clientX, e.clientY);
           }}
           style={{
-            display: 'inline-block',
-            maxWidth: '92%',
-            minWidth: 0,
-            verticalAlign: 'top',
             border: isMediaShell ? 'none' : 'none',
             borderRadius: isMediaShell ? 0 : bubbleRadius,
             padding: isMediaShell ? 0 : '6px 10px 5px',
-            fontSize: 'var(--chat-font-size)',
-            lineHeight: 'var(--chat-line-height)',
-            color: 'var(--chat-bubble-text)',
             background: isMediaShell ? 'transparent' : bubbleBg,
             boxShadow: isMediaShell ? 'none' : '0 1px 0.5px var(--chat-bubble-shadow)',
             overflow: isMediaShell ? 'visible' : 'hidden',
+            maxWidth: isMediaShell ? 'min(340px, 92%)' : undefined,
             userSelect: 'none',
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
