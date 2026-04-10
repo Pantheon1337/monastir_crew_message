@@ -778,7 +778,7 @@ export default function ProfileScreen({
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-field-modal-title"
-        className="modal-overlay"
+        className="modal-overlay profile-field-modal-overlay"
         style={{
           position: 'fixed',
           inset: 0,
@@ -793,7 +793,7 @@ export default function ProfileScreen({
         onKeyDown={(e) => e.key === 'Escape' && closeProfileFieldModal()}
       >
         <div
-          className="block modal-panel"
+          className="block modal-panel profile-field-modal-panel"
           style={{ width: '100%', maxWidth: 380, padding: 16 }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -834,10 +834,10 @@ export default function ProfileScreen({
 
           {profileFieldModal === 'nickname' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-              <span style={{ fontSize: 15, color: 'var(--muted)', flexShrink: 0 }}>@</span>
+              <span style={{ fontSize: 16, color: 'var(--muted)', flexShrink: 0 }}>@</span>
               <input
                 className="text-input"
-                style={{ flex: 1, minWidth: 0, fontSize: 15 }}
+                style={{ flex: 1, minWidth: 0, fontSize: 16 }}
                 value={modalDraft}
                 onChange={(e) => setModalDraft(e.target.value.replace(/^@/, '').toLowerCase().slice(0, 30))}
                 placeholder="username"
@@ -851,7 +851,7 @@ export default function ProfileScreen({
           ) : (
             <input
               className="text-input"
-              style={{ width: '100%', fontSize: 15, marginBottom: 10 }}
+              style={{ width: '100%', fontSize: 16, marginBottom: 10 }}
               value={modalDraft}
               onChange={(e) => setModalDraft(e.target.value.slice(0, 60))}
               placeholder={profileFieldModal === 'firstName' ? 'Имя' : 'Фамилия'}

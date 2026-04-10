@@ -290,12 +290,6 @@ function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, 
   );
 }
 
-const TG_BUBBLE_OUT = '#E2F7CB';
-const TG_BUBBLE_IN = '#ffffff';
-const TG_TIME = '#8696a0';
-const TG_CHECK_DELIVERED = '#a0aeb8';
-const TG_CHECK_READ = '#34b47c';
-
 function MessageBubble({
   m,
   userId,
@@ -339,11 +333,11 @@ function MessageBubble({
   const bubbleRadius = telegramBubbleRadius(mine, isFirstInGroup, isLastInGroup);
   const bubbleBg = isRevoked
     ? mine
-      ? 'rgba(226, 247, 203, 0.55)'
-      : 'rgba(255, 255, 255, 0.85)'
+      ? 'var(--chat-bubble-revoked-out)'
+      : 'var(--chat-bubble-revoked-in)'
     : mine
-      ? TG_BUBBLE_OUT
-      : TG_BUBBLE_IN;
+      ? 'var(--chat-bubble-outgoing)'
+      : 'var(--chat-bubble-incoming)';
 
   let inner = null;
   if (isRevoked) {
@@ -492,11 +486,11 @@ function MessageBubble({
             border: isMediaShell ? 'none' : 'none',
             borderRadius: isMediaShell ? 0 : bubbleRadius,
             padding: isMediaShell ? 0 : '6px 10px 5px',
-            fontSize: 15,
-            lineHeight: 1.35,
-            color: '#000000',
+            fontSize: 'var(--chat-font-size)',
+            lineHeight: 'var(--chat-line-height)',
+            color: 'var(--chat-bubble-text)',
             background: isMediaShell ? 'transparent' : bubbleBg,
-            boxShadow: isMediaShell ? 'none' : '0 1px 0.5px rgba(0, 0, 0, 0.13)',
+            boxShadow: isMediaShell ? 'none' : '0 1px 0.5px var(--chat-bubble-shadow)',
             overflow: isMediaShell ? 'visible' : 'hidden',
             userSelect: 'none',
             WebkitUserSelect: 'none',
@@ -512,7 +506,7 @@ function MessageBubble({
         {m.replyTo ? (
           <div
             style={{
-              borderLeft: '3px solid #5294e2',
+              borderLeft: '3px solid var(--chat-bubble-reply-border)',
               paddingLeft: 8,
               marginBottom: 8,
               opacity: 0.95,
@@ -525,7 +519,7 @@ function MessageBubble({
           </div>
         ) : null}
         {!mine && !isRevoked && roomId && isFirstInGroup ? (
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: '#5288c1' }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: 'var(--chat-bubble-meta-name)' }}>
             @{m.senderNickname || 'user'}
             {m.senderAffiliationEmoji ? <span aria-hidden> {m.senderAffiliationEmoji}</span> : null}
           </div>
@@ -551,7 +545,7 @@ function MessageBubble({
             marginTop: 3,
           }}
         >
-          <span style={{ fontSize: 11, lineHeight: 1.2, color: TG_TIME, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 11, lineHeight: 1.2, color: 'var(--chat-bubble-time)', whiteSpace: 'nowrap' }}>
             {formatTime(m.createdAt)}
             {kind === 'text' && m.editedAt != null ? (
               <span title="Сообщение изменено" style={{ opacity: 0.9 }}>
@@ -565,7 +559,7 @@ function MessageBubble({
               style={{
                 fontSize: 14,
                 lineHeight: 1,
-                color: m.readByPeer ? TG_CHECK_READ : TG_CHECK_DELIVERED,
+                color: m.readByPeer ? 'var(--chat-check-read)' : 'var(--chat-check-delivered)',
               }}
               title={m.readByPeer ? 'Прочитано' : 'Доставлено'}
               aria-hidden

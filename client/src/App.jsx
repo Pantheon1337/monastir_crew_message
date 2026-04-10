@@ -882,8 +882,6 @@ export default function App() {
           }}
           onViewAvatar={(url) => setAvatarLightboxUrl(url)}
           onOpenStory={(authorId, startItemId) => {
-            setPeerFullProfileUserId(null);
-            setPeerFullProfileViewerPreview(false);
             void openStoryAuthor(authorId, startItemId);
           }}
           onStoriesUpdated={() => void refreshStories()}

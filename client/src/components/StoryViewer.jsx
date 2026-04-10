@@ -209,7 +209,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        zIndex: 200,
         background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
