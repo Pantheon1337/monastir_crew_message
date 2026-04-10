@@ -592,6 +592,7 @@ export default function RoomChatScreen({
   const suppressChatScrollUntilRef = useRef(0);
   /** Автоскролл при новых сообщениях / resize только если пользователь у нижней границы ленты. */
   const stickToBottomRef = useRef(true);
+  const loadEndedAtRef = useRef(0);
 
   const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -658,6 +659,7 @@ export default function RoomChatScreen({
 
   const load = useCallback(async () => {
     setLoading(true);
+    loadEndedAtRef.current = 0;
     setMessages([]);
     const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, { userId });
     if (!ok) {
@@ -667,6 +669,7 @@ export default function RoomChatScreen({
     }
     setMessages((data.messages || []).map(normalizeChatMessage));
     setErr(null);
+    loadEndedAtRef.current = Date.now();
     setLoading(false);
   }, [roomId, userId]);
 
@@ -822,6 +825,11 @@ export default function RoomChatScreen({
       return;
     }
     if (loading) return;
+    if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < 420) {
+      stickToBottomRef.current = true;
+      setShowScrollDownFab(false);
+      return;
+    }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = gap <= 96;
     setShowScrollDownFab(gap > 96);

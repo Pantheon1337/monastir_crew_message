@@ -162,6 +162,8 @@ function normalizeChatMessage(m) {
     replyTo: m.replyTo ?? null,
     forwardFrom: m.forwardFrom ?? null,
     editedAt: m.editedAt != null ? m.editedAt : null,
+    pinnedForMe: m.pinnedForMe === true,
+    pinnedShared: m.pinnedShared === true,
   };
 }
 
@@ -329,6 +331,16 @@ function ChatMessageReactions({ chatId, roomId, messageId, userId, reactions, on
   );
 }
 
+function pinChipPreview(m) {
+  const k = m.kind || 'text';
+  if (k === 'voice') return '🎤 Голосовое';
+  if (k === 'video_note') return '🎬 Видео';
+  if (k === 'image') return '🖼 Фото';
+  if (k === 'file') return '📎 Файл';
+  if (k === 'story_reaction') return 'История';
+  return (m.body || '').trim().slice(0, 36) || '…';
+}
+
 function MessageBubble({
   m,
   userId,
@@ -340,6 +352,7 @@ function MessageBubble({
   onMentionProfile,
   allowSwipeReply = true,
   onSwipeReply,
+  savedChat = false,
 }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
@@ -475,6 +488,7 @@ function MessageBubble({
 
   return (
     <div
+      id={m.id ? `chat-msg-${m.id}` : undefined}
       style={{
         display: 'flex',
         justifyContent: mine ? 'flex-end' : 'flex-start',
@@ -572,6 +586,11 @@ function MessageBubble({
           }}
         >
           <span className="muted" style={{ fontSize: 9 }}>
+            {m.pinnedForMe ? (
+              <span title={m.pinnedShared ? 'Закреплено для обоих' : 'Закреплено у вас'} aria-hidden>
+                📌{' '}
+              </span>
+            ) : null}
             {formatTime(m.createdAt)}
             {kind === 'text' && m.editedAt != null ? (
               <span title="Сообщение изменено" style={{ opacity: 0.85 }}>
@@ -580,7 +599,7 @@ function MessageBubble({
               </span>
             ) : null}
           </span>
-          {mine && !roomId ? (
+          {mine && !roomId && !savedChat ? (
             <span
               style={{
                 fontSize: 12,
@@ -619,6 +638,7 @@ export default function DirectChatScreen({
   onOpenProfileByUserId,
   canMessage = true,
   friendsActive = true,
+  isSavedMessages = false,
 }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -642,6 +662,8 @@ export default function DirectChatScreen({
   const suppressChatScrollUntilRef = useRef(0);
   /** Автоскролл при новых сообщениях / resize только если пользователь у нижней границы ленты. */
   const stickToBottomRef = useRef(true);
+  /** Первые мс после загрузки истории не сбрасываем «прилипание к низу» (иначе scrollTop=0 даёт ложный «не внизу»). */
+  const loadEndedAtRef = useRef(0);
 
   const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -708,6 +730,7 @@ export default function DirectChatScreen({
 
   const load = useCallback(async () => {
     setLoading(true);
+    loadEndedAtRef.current = 0;
     setMessages([]);
     const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, { userId });
     if (!ok) {
@@ -717,6 +740,7 @@ export default function DirectChatScreen({
     }
     setMessages((data.messages || []).map(normalizeChatMessage));
     setErr(null);
+    loadEndedAtRef.current = Date.now();
     setLoading(false);
   }, [chatId, userId]);
 
@@ -783,6 +807,12 @@ export default function DirectChatScreen({
     setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
     onAfterChange?.();
   }, [lastEvent, chatId, onAfterChange]);
+
+  useEffect(() => {
+    if (lastEvent?.type !== 'chat:pinsChanged') return;
+    if (lastEvent.payload?.chatId !== chatId) return;
+    void load();
+  }, [lastEvent, chatId, load]);
 
   useEffect(() => {
     if (!messageMenu) return undefined;
@@ -861,8 +891,26 @@ export default function DirectChatScreen({
 
   const messageMenuPosition = useMemo(() => {
     if (!messageMenu) return null;
-    return clampMenuPosition(messageMenu.x, messageMenu.y, 232, 200);
+    return clampMenuPosition(messageMenu.x, messageMenu.y, 232, 280);
   }, [messageMenu, vvRect]);
+
+  const pinnedChips = useMemo(() => {
+    return messages
+      .filter((m) => m.pinnedForMe && m.kind !== 'revoked' && !m.revokedForAll)
+      .slice()
+      .sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+  }, [messages]);
+
+  const scrollToPinnedMessage = useCallback((mid) => {
+    suppressChatScrollUntilRef.current = Date.now() + 700;
+    stickToBottomRef.current = false;
+    requestAnimationFrame(() => {
+      const el = typeof document !== 'undefined' ? document.getElementById(`chat-msg-${mid}`) : null;
+      if (el && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    });
+  }, []);
 
   const [showScrollDownFab, setShowScrollDownFab] = useState(false);
   const syncScrollDownFab = useCallback(() => {
@@ -872,6 +920,11 @@ export default function DirectChatScreen({
       return;
     }
     if (loading) return;
+    if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < 420) {
+      stickToBottomRef.current = true;
+      setShowScrollDownFab(false);
+      return;
+    }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = gap <= 96;
     setShowScrollDownFab(gap > 96);
@@ -1356,9 +1409,9 @@ export default function DirectChatScreen({
   const hasTypedText = Boolean(text.trim());
 
   const mentionCandidates = useMemo(() => {
-    if (!peerNickname) return [];
+    if (isSavedMessages || !peerNickname) return [];
     return [{ nickname: peerNickname, label: 'Собеседник' }];
-  }, [peerNickname]);
+  }, [peerNickname, isSavedMessages]);
 
   const handleMentionPick = useCallback(
     (nickname, mentionState) => {
@@ -1381,7 +1434,7 @@ export default function DirectChatScreen({
   );
 
   const peerPresenceLine =
-    peerUserId != null
+    !isSavedMessages && peerUserId != null
       ? peerPresenceSubtitle(
           typeof peerOnline === 'boolean' ? peerOnline : undefined,
           peerLastSeenAt,
@@ -1431,7 +1484,9 @@ export default function DirectChatScreen({
           disabled={!peerUserId || !onOpenPeerProfile}
         >
           <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {peerNickname ? (
+            {isSavedMessages ? (
+              'Избранное'
+            ) : peerNickname ? (
               <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
             ) : (
               peerLabel || 'Чат'
@@ -1472,28 +1527,54 @@ export default function DirectChatScreen({
               <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
             ) : messages.length === 0 ? (
               <p className="muted" style={{ fontSize: 12 }}>
-                Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
+                {isSavedMessages
+                  ? 'Заметки и сохранённые мысли — только для вас.'
+                  : 'Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).'}
               </p>
             ) : (
-              messages.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  m={m}
-                  userId={userId}
-                  chatId={chatId}
-                  formatTime={formatTime}
-                  allowSwipeReply={canMessage}
-                  onSwipeReply={(draft) => {
-                    setReplyDraft(draft);
-                    queueMicrotask(() => refocusComposer());
-                  }}
-                  onReactionsLocalUpdate={(id, reactions) =>
-                    setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
-                  }
-                  onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
-                  onMentionProfile={onMentionProfile}
-                />
-              ))
+              <>
+                {pinnedChips.length > 0 ? (
+                  <div style={{ width: '100%', flexShrink: 0, marginBottom: 8 }}>
+                    <div className="muted" style={{ fontSize: 10, marginBottom: 6 }}>
+                      Закреплено
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {pinnedChips.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className="btn-outline"
+                          style={{ fontSize: 11, maxWidth: '100%', textAlign: 'left', lineHeight: 1.3 }}
+                          onClick={() => scrollToPinnedMessage(m.id)}
+                        >
+                          {m.pinnedShared ? '📌 ' : ''}
+                          {pinChipPreview(m)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {messages.map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    m={m}
+                    userId={userId}
+                    chatId={chatId}
+                    formatTime={formatTime}
+                    savedChat={isSavedMessages}
+                    allowSwipeReply={canMessage}
+                    onSwipeReply={(draft) => {
+                      setReplyDraft(draft);
+                      queueMicrotask(() => refocusComposer());
+                    }}
+                    onReactionsLocalUpdate={(id, reactions) =>
+                      setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
+                    }
+                    onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
+                    onMentionProfile={onMentionProfile}
+                  />
+                ))}
+              </>
             )}
             <div
               ref={messagesEndRef}
@@ -1977,6 +2058,81 @@ export default function DirectChatScreen({
               >
                 Ответить
               </button>
+            ) : null}
+            {messageMenu.m.kind !== 'revoked' && !messageMenu.m.revokedForAll ? (
+              <>
+                {!messageMenu.m.pinnedForMe ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
+                      onClick={async () => {
+                        const msg = messageMenu.m;
+                        setMessageMenu(null);
+                        const { ok, data } = await api(
+                          `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(msg.id)}/pin`,
+                          { method: 'POST', body: { scope: 'self' }, userId },
+                        );
+                        if (!ok) {
+                          setErr(data?.error || 'Не удалось закрепить');
+                          return;
+                        }
+                        await load();
+                        onAfterChange?.();
+                      }}
+                    >
+                      Закрепить для себя
+                    </button>
+                    {!isSavedMessages ? (
+                      <button
+                        type="button"
+                        className="btn-outline"
+                        style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
+                        onClick={async () => {
+                          const msg = messageMenu.m;
+                          setMessageMenu(null);
+                          const { ok, data } = await api(
+                            `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(msg.id)}/pin`,
+                            { method: 'POST', body: { scope: 'both' }, userId },
+                          );
+                          if (!ok) {
+                            setErr(data?.error || 'Не удалось закрепить');
+                            return;
+                          }
+                          await load();
+                          onAfterChange?.();
+                        }}
+                      >
+                        Закрепить для обоих
+                      </button>
+                    ) : null}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
+                    onClick={async () => {
+                      const msg = messageMenu.m;
+                      setMessageMenu(null);
+                      const scope = msg.pinnedShared ? 'both' : 'self';
+                      const { ok, data } = await api(
+                        `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(msg.id)}/unpin`,
+                        { method: 'POST', body: { scope }, userId },
+                      );
+                      if (!ok) {
+                        setErr(data?.error || 'Не удалось открепить');
+                        return;
+                      }
+                      await load();
+                      onAfterChange?.();
+                    }}
+                  >
+                    {messageMenu.m.pinnedShared ? 'Открепить для обоих' : 'Открепить у себя'}
+                  </button>
+                )}
+              </>
             ) : null}
             {messageMenu.m.senderId === userId &&
             messageMenu.m.kind === 'text' &&

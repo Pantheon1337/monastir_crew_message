@@ -39,6 +39,23 @@ function findDirectChatByPair(userA, userB) {
     .get(a, b);
 }
 
+/** Личный чат «Избранное» (чат с собой): заметки и сохранённые сообщения. */
+export function ensureSavedMessagesChat(userId) {
+  const existing = findDirectChatByPair(userId, userId);
+  if (existing) return existing.id;
+  const id = randomUUID();
+  const now = Date.now();
+  const [a, b] = sortUserPair(userId, userId);
+  const db = getDb();
+  db.prepare(`INSERT INTO direct_chats (id, user_a, user_b, created_at, friends_active) VALUES (?, ?, ?, ?, 1)`).run(id, a, b, now);
+  db.prepare(`INSERT OR IGNORE INTO chat_last_read (user_id, chat_id, last_read_at) VALUES (?, ?, ?)`).run(userId, id, now);
+  return id;
+}
+
+function isSelfDirectChatRow(row) {
+  return Boolean(row && row.userA === row.userB);
+}
+
 /** Есть общий личный чат (в т.ч. после «удалить из друзья»). */
 export function haveDirectChatLink(userId1, userId2) {
   return Boolean(findDirectChatByPair(userId1, userId2));
@@ -59,6 +76,12 @@ function isUserBlockedBy(blockerId, blockedId) {
 
 /** Отправитель не может писать, если peer заблокировал отправителя. */
 export function assertCanSendDirectMessage(chatId, senderId) {
+  const dc = getDirectChatRow(chatId);
+  if (!dc) return { error: 'Нет доступа к чату' };
+  if (isSelfDirectChatRow(dc)) {
+    if (dc.userA !== senderId) return { error: 'Нет доступа к чату' };
+    return { ok: true, peerId: senderId };
+  }
   const peerId = getPeerIdInDirectChat(chatId, senderId);
   if (peerId == null) return { error: 'Нет доступа к чату' };
   const row = getDb().prepare(`SELECT friends_active AS friendsActive FROM direct_chats WHERE id = ?`).get(chatId);
@@ -246,6 +269,7 @@ function formatChatTime(ts) {
 }
 
 export function listDirectChatsForUser(userId) {
+  ensureSavedMessagesChat(userId);
   const rows = getDb()
     .prepare(
       `SELECT dc.id AS chatId, dc.created_at AS chatCreatedAt,
@@ -284,12 +308,14 @@ export function listDirectChatsForUser(userId) {
     const theyBlockedYou = isUserBlockedBy(row.peerId, userId);
     const canMessage = friendsActive && !theyBlockedYou;
     const peerAff = effectiveAffiliationEmoji(peer.nickname, peer.displayRole, peer.displayRoleEmoji);
+    const isSavedMessages = String(peer.id) === String(userId);
     out.push({
       id: row.chatId,
       kind: 'direct',
-      peerNickname: peer.nickname || null,
-      name: peer.nickname ? `@${peer.nickname}` : peer.firstName,
-      peerAffiliationEmoji: peerAff,
+      isSavedMessages,
+      peerNickname: isSavedMessages ? null : peer.nickname || null,
+      name: isSavedMessages ? 'Избранное' : peer.nickname ? `@${peer.nickname}` : peer.firstName,
+      peerAffiliationEmoji: isSavedMessages ? null : peerAff,
       lastMessage: formatLastMessagePreview(last),
       time: last ? formatChatTime(last.createdAt) : '',
       typing: false,
@@ -301,7 +327,11 @@ export function listDirectChatsForUser(userId) {
       _sortAt: lastActivityAt,
     });
   }
-  out.sort((a, b) => (b._sortAt ?? 0) - (a._sortAt ?? 0));
+  out.sort((a, b) => {
+    if (a.isSavedMessages && !b.isSavedMessages) return -1;
+    if (!a.isSavedMessages && b.isSavedMessages) return 1;
+    return (b._sortAt ?? 0) - (a._sortAt ?? 0);
+  });
   return out.map(({ _sortAt: _s, ...rest }) => rest);
 }
 
@@ -440,9 +470,12 @@ function loadPostReactionSummaryForPosts(postIds, viewerId) {
 }
 
 function assertViewerCanSeePost(viewerId, postId) {
-  const row = getDb().prepare(`SELECT author_id AS authorId FROM posts WHERE id = ?`).get(postId);
+  const row = getDb()
+    .prepare(`SELECT author_id AS authorId, COALESCE(friends_only, 0) AS friendsOnly FROM posts WHERE id = ?`)
+    .get(postId);
   if (!row) return { error: 'Пост не найден' };
   if (String(row.authorId) === String(viewerId)) return { ok: true, authorId: row.authorId };
+  if (row.friendsOnly !== 1) return { ok: true, authorId: row.authorId };
   if (!areFriends(viewerId, row.authorId)) return { error: 'Нет доступа' };
   return { ok: true, authorId: row.authorId };
 }
@@ -535,26 +568,47 @@ export function getMessageByIdForChat(chatId, messageId, viewerId = null) {
   const out = mapMessageRow(row, getReact);
   if (viewerId && row.senderId === viewerId) {
     const peerId = getPeerIdInDirectChat(chatId, viewerId);
-    const peerReadRow = peerId
-      ? getDb()
-          .prepare(`SELECT last_read_at AS t FROM chat_last_read WHERE user_id = ? AND chat_id = ?`)
-          .get(peerId, chatId)
-      : null;
-    const peerReadAt = peerReadRow?.t ?? 0;
-    out.readByPeer = peerReadAt >= (row.createdAt ?? 0);
+    if (peerId && peerId !== viewerId) {
+      const peerReadRow = getDb()
+        .prepare(`SELECT last_read_at AS t FROM chat_last_read WHERE user_id = ? AND chat_id = ?`)
+        .get(peerId, chatId);
+      const peerReadAt = peerReadRow?.t ?? 0;
+      out.readByPeer = peerReadAt >= (row.createdAt ?? 0);
+    }
   }
   return out;
+}
+
+function directPinLookup(chatId, viewerId) {
+  const priv = new Set(
+    getDb()
+      .prepare(`SELECT message_id AS id FROM dm_pin_private WHERE chat_id = ? AND user_id = ?`)
+      .all(chatId, viewerId)
+      .map((x) => x.id)
+  );
+  const shared = new Set(
+    getDb()
+      .prepare(`SELECT message_id AS id FROM dm_pin_shared WHERE chat_id = ?`)
+      .all(chatId)
+      .map((x) => x.id)
+  );
+  return (msgId) => ({
+    pinPrivate: priv.has(msgId),
+    pinShared: shared.has(msgId),
+  });
 }
 
 export function listMessagesForChat(chatId, userId, limit = 200) {
   if (!userInDirectChat(chatId, userId)) return null;
   const peerId = getPeerIdInDirectChat(chatId, userId);
-  const peerReadRow = peerId
-    ? getDb()
-        .prepare(`SELECT last_read_at AS t FROM chat_last_read WHERE user_id = ? AND chat_id = ?`)
-        .get(peerId, chatId)
-    : null;
+  const peerReadRow =
+    peerId && peerId !== userId
+      ? getDb()
+          .prepare(`SELECT last_read_at AS t FROM chat_last_read WHERE user_id = ? AND chat_id = ?`)
+          .get(peerId, chatId)
+      : null;
   const peerReadAt = peerReadRow?.t ?? 0;
+  const pinOf = directPinLookup(chatId, userId);
 
   const rows = getDb()
     .prepare(
@@ -581,11 +635,50 @@ export function listMessagesForChat(chatId, userId, limit = 200) {
   const getReact = loadReactionSummaryForMessages(ids, userId);
   return rows.map((r) => {
     const base = mapMessageRow(r, getReact);
-    if (r.senderId === userId) {
+    const p = pinOf(r.id);
+    base.pinnedForMe = p.pinPrivate || p.pinShared;
+    base.pinnedShared = p.pinShared;
+    if (r.senderId === userId && peerId && peerId !== userId) {
       base.readByPeer = peerReadAt >= (r.createdAt ?? 0);
     }
     return base;
   });
+}
+
+export function pinDirectMessage(chatId, userId, messageId, scopeRaw) {
+  const scope = scopeRaw === 'both' ? 'both' : 'self';
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const okMsg = getDb()
+    .prepare(`SELECT id FROM messages WHERE chat_id = ? AND id = ? AND COALESCE(revoked_for_all,0)=0`)
+    .get(chatId, messageId);
+  if (!okMsg) return { error: 'Сообщение не найдено' };
+  const now = Date.now();
+  try {
+    if (scope === 'self') {
+      getDb()
+        .prepare(`INSERT INTO dm_pin_private (chat_id, user_id, message_id, created_at) VALUES (?, ?, ?, ?)`)
+        .run(chatId, userId, messageId, now);
+    } else {
+      getDb()
+        .prepare(`INSERT INTO dm_pin_shared (chat_id, message_id, created_by, created_at) VALUES (?, ?, ?, ?)`)
+        .run(chatId, messageId, userId, now);
+    }
+  } catch (e) {
+    if (String(e.message || '').includes('UNIQUE')) return { error: 'Уже закреплено' };
+    throw e;
+  }
+  return { ok: true, peerId: getPeerIdInDirectChat(chatId, userId) };
+}
+
+export function unpinDirectMessage(chatId, userId, messageId, scopeRaw) {
+  const scope = scopeRaw === 'both' ? 'both' : 'self';
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  if (scope === 'self') {
+    getDb().prepare(`DELETE FROM dm_pin_private WHERE chat_id = ? AND user_id = ? AND message_id = ?`).run(chatId, userId, messageId);
+  } else {
+    getDb().prepare(`DELETE FROM dm_pin_shared WHERE chat_id = ? AND message_id = ?`).run(chatId, messageId);
+  }
+  return { ok: true, peerId: getPeerIdInDirectChat(chatId, userId) };
 }
 
 export function markChatRead(userId, chatId) {
@@ -780,10 +873,6 @@ export function recordStoryView(viewerId, storyId) {
     .get(storyId);
   if (!st) return { error: 'История не найдена' };
   if (st.expiresAt <= Date.now()) return { error: 'История недоступна' };
-  const authorId = st.userId;
-  if (String(authorId) !== String(viewerId) && !areFriends(viewerId, authorId)) {
-    return { error: 'Нет доступа' };
-  }
   const now = Date.now();
   getDb()
     .prepare(
@@ -1066,25 +1155,30 @@ export function listPeerUserIds(userId) {
   return rows.map((r) => r.peerId);
 }
 
-/** Лента: все посты вас и друзей по времени, без отсечки «только после принятия заявки». */
+/**
+ * Лента: по умолчанию посты видны всем пользователям приложения.
+ * При friends_only=1 — только автор и друзья (как раньше «только для друзей»).
+ */
 export function listFeedPostsForViewer(viewerId) {
   const peers = listPeerUserIds(viewerId);
-  const ids = [viewerId, ...peers];
-  if (ids.length === 0) return [];
-  const ph = ids.map(() => '?').join(',');
-  const rows = getDb()
-    .prepare(
-      `SELECT p.id, p.author_id AS authorId, p.body, p.created_at AS createdAt, p.media_path AS mediaPath, p.edited_at AS editedAt,
+  const peerPh = peers.length ? peers.map(() => '?').join(',') : '';
+  const sql = `SELECT p.id, p.author_id AS authorId, p.body, p.created_at AS createdAt, p.media_path AS mediaPath, p.edited_at AS editedAt,
+        COALESCE(p.friends_only, 0) AS friendsOnly,
         u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
         u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji,
         (SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id) AS commentCount
       FROM posts p
       JOIN users u ON u.id = p.author_id
-      WHERE p.author_id IN (${ph})
+      WHERE (
+        p.author_id = ?
+        OR COALESCE(p.friends_only, 0) = 0
+        ${peers.length ? `OR (p.friends_only = 1 AND p.author_id IN (${peerPh}))` : ''}
+      )
       ORDER BY p.created_at DESC
-      LIMIT 200`
-    )
-    .all(...ids);
+      LIMIT 200`;
+  const params = [viewerId];
+  if (peers.length) params.push(...peers);
+  const rows = getDb().prepare(sql).all(...params);
   const postIds = rows.map((x) => x.id);
   const getPostReact = loadPostReactionSummaryForPosts(postIds, viewerId);
   return rows.map((r) => {
@@ -1096,6 +1190,7 @@ export function listFeedPostsForViewer(viewerId) {
       body: r.body,
       createdAt: r.createdAt,
       editedAt: r.editedAt ?? null,
+      friendsOnly: Number(r.friendsOnly) === 1,
       mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
       authorNickname: r.authorNickname,
       authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
@@ -1116,16 +1211,17 @@ export function listFeedPostsForViewer(viewerId) {
   });
 }
 
-export function createPost(authorId, { body, mediaPath }) {
+export function createPost(authorId, { body, mediaPath, friendsOnly }) {
   const t = String(body ?? '').trim();
   const media = mediaPath ? String(mediaPath).trim() : '';
   if (!t && !media) return { error: 'Добавьте текст или файл' };
   if (t.length > 8000) return { error: 'Пост не длиннее 8000 символов' };
+  const fo = friendsOnly === true || friendsOnly === 1 || friendsOnly === '1' ? 1 : 0;
   const id = randomUUID();
   const createdAt = Date.now();
   getDb()
-    .prepare(`INSERT INTO posts (id, author_id, body, created_at, media_path) VALUES (?, ?, ?, ?, ?)`)
-    .run(id, authorId, t || '', createdAt, media || null);
+    .prepare(`INSERT INTO posts (id, author_id, body, created_at, media_path, friends_only) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(id, authorId, t || '', createdAt, media || null, fo);
   return {
     ok: true,
     post: {
@@ -1135,6 +1231,7 @@ export function createPost(authorId, { body, mediaPath }) {
       createdAt,
       mediaUrl: media ? `/uploads/${media}` : null,
       editedAt: null,
+      friendsOnly: fo === 1,
     },
   };
 }
@@ -1265,11 +1362,14 @@ export function listPostComments(postId, viewerId) {
   if (gate.error) return { error: gate.error };
   const rows = getDb()
     .prepare(
-      `SELECT c.id, c.author_id AS authorId, c.body, c.created_at AS createdAt, c.edited_at AS editedAt,
+      `SELECT c.id, c.parent_id AS parentId, c.author_id AS authorId, c.body, c.created_at AS createdAt, c.edited_at AS editedAt,
         u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
-        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji,
+        cp.body AS parentBodyRaw, pu.nickname AS parentAuthorNickname
        FROM post_comments c
        JOIN users u ON u.id = c.author_id
+       LEFT JOIN post_comments cp ON cp.id = c.parent_id AND cp.post_id = c.post_id
+       LEFT JOIN users pu ON pu.id = cp.author_id
        WHERE c.post_id = ?
        ORDER BY c.created_at ASC
        LIMIT 500`
@@ -1277,32 +1377,55 @@ export function listPostComments(postId, viewerId) {
     .all(postId);
   return {
     ok: true,
-    comments: rows.map((r) => ({
-      id: r.id,
-      authorId: r.authorId,
-      body: r.body,
-      createdAt: r.createdAt,
-      editedAt: r.editedAt ?? null,
-      authorNickname: r.authorNickname,
-      authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
-      authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
-      authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
-      authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
-    })),
+    comments: rows.map((r) => {
+      const parentId = r.parentId ?? null;
+      let parentPreview = null;
+      if (parentId && r.parentAuthorNickname) {
+        const pb = String(r.parentBodyRaw ?? '').trim();
+        parentPreview = {
+          authorNickname: r.parentAuthorNickname,
+          bodySnippet: pb ? pb.slice(0, 120) : '…',
+        };
+      }
+      return {
+        id: r.id,
+        parentId,
+        parentPreview,
+        authorId: r.authorId,
+        body: r.body,
+        createdAt: r.createdAt,
+        editedAt: r.editedAt ?? null,
+        authorNickname: r.authorNickname,
+        authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
+        authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+        authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
+        authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+      };
+    }),
   };
 }
 
-export function createPostComment(postId, authorId, body) {
+export function createPostComment(postId, authorId, body, options = {}) {
   const gate = assertViewerCanSeePost(authorId, postId);
   if (gate.error) return { error: gate.error };
   const t = String(body ?? '').trim();
   if (!t) return { error: 'Пустой комментарий' };
   if (t.length > 4000) return { error: 'Не длиннее 4000 символов' };
+  let parentId = null;
+  const rawParent = options.parentCommentId ?? options.replyToCommentId;
+  if (rawParent != null && String(rawParent).trim()) {
+    const pid = String(rawParent).trim();
+    const pr = getDb().prepare(`SELECT id, post_id AS postId FROM post_comments WHERE id = ?`).get(pid);
+    if (!pr || String(pr.postId) !== String(postId)) return { error: 'Ответ: комментарий не найден' };
+    parentId = pid;
+  }
   const id = randomUUID();
   const createdAt = Date.now();
   getDb()
-    .prepare(`INSERT INTO post_comments (id, post_id, author_id, body, created_at, edited_at) VALUES (?, ?, ?, ?, ?, NULL)`)
-    .run(id, postId, authorId, t, createdAt);
+    .prepare(
+      `INSERT INTO post_comments (id, post_id, author_id, body, created_at, edited_at, parent_id) VALUES (?, ?, ?, ?, ?, NULL, ?)`
+    )
+    .run(id, postId, authorId, t, createdAt, parentId);
   const list = listPostComments(postId, authorId);
   const c = list.comments?.find((x) => x.id === id);
   return { ok: true, comment: c };
@@ -1336,6 +1459,7 @@ export function deletePostComment(commentId, userId) {
   if (String(row.authorId) !== String(userId)) return { error: 'Нет доступа' };
   const gate = assertViewerCanSeePost(userId, row.postId);
   if (gate.error) return { error: gate.error };
+  getDb().prepare(`UPDATE post_comments SET parent_id = NULL WHERE parent_id = ?`).run(commentId);
   getDb().prepare(`DELETE FROM post_comments WHERE id = ?`).run(commentId);
   return { ok: true, postId: row.postId };
 }
@@ -1367,24 +1491,20 @@ export function createStory(userId, { body, mediaPath }) {
 }
 
 /**
- * Кружки историй в ленте: только вы и друзья (никакой публичной ленты).
- * Неистёкшие истории; своя история попадает сюда же, если есть активные кадры.
+ * Кружки историй: все пользователи с неистёкшими кадрами (видно всем в приложении).
  */
 export function listStoryBucketsForViewer(viewerId) {
   const now = Date.now();
-  const peers = listPeerUserIds(viewerId);
-  const ids = [viewerId, ...peers];
-  if (ids.length === 0) return [];
-  const ph = ids.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
       `SELECT user_id AS userId, COUNT(*) AS cnt, MAX(created_at) AS lastAt
        FROM stories
-       WHERE expires_at > ? AND user_id IN (${ph})
+       WHERE expires_at > ?
        GROUP BY user_id
-       ORDER BY lastAt DESC`
+       ORDER BY lastAt DESC
+       LIMIT 200`
     )
-    .all(now, ...ids);
+    .all(now);
 
   const db = getDb();
   const out = [];
@@ -1426,9 +1546,8 @@ export function listStoryBucketsForViewer(viewerId) {
   return out;
 }
 
-/** Просмотр чужих историй — только для друзей; свои — всегда. */
-export function listActiveStoryItems(viewerId, authorId) {
-  if (String(viewerId) !== String(authorId) && !areFriends(viewerId, authorId)) return null;
+/** Просмотр историй любого пользователя (неистёкшие кадры). */
+export function listActiveStoryItems(_viewerId, authorId) {
   const now = Date.now();
   const rows = getDb()
     .prepare(
@@ -1445,12 +1564,9 @@ export function listActiveStoryItems(viewerId, authorId) {
   }));
 }
 
-/** Истёкшие истории друзей и свои — «архив». */
+/** Архив истёкших историй — все пользователи (общая лента архива). */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
-  const peers = listPeerUserIds(viewerId);
-  const ids = [viewerId, ...peers];
   const now = Date.now();
-  const ph = ids.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
@@ -1458,11 +1574,11 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
         u.display_role AS authorRole, u.display_role_emoji AS authorEmoji
       FROM stories s
       JOIN users u ON u.id = s.user_id
-      WHERE s.expires_at <= ? AND s.user_id IN (${ph})
+      WHERE s.expires_at <= ?
       ORDER BY s.expires_at DESC
       LIMIT ?`
     )
-    .all(now, ...ids, limit);
+    .all(now, limit);
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,

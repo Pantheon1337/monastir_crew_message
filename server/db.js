@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 21;
 
 let db;
 
@@ -405,6 +405,42 @@ function migrate(database) {
       database.exec('ALTER TABLE users ADD COLUMN hide_last_seen INTEGER NOT NULL DEFAULT 0;');
     }
     setSchemaVersion(database, 19);
+  }
+
+  if (ver < 20) {
+    const pc = database.prepare('PRAGMA table_info(post_comments)').all();
+    const pcN = new Set(pc.map((row) => row.name));
+    if (!pcN.has('parent_id')) {
+      database.exec('ALTER TABLE post_comments ADD COLUMN parent_id TEXT;');
+    }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS dm_pin_private (
+        chat_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (chat_id, user_id, message_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dm_pin_priv_chat ON dm_pin_private(chat_id);
+      CREATE TABLE IF NOT EXISTS dm_pin_shared (
+        chat_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (chat_id, message_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dm_pin_shared_chat ON dm_pin_shared(chat_id);
+    `);
+    setSchemaVersion(database, 20);
+  }
+
+  if (ver < 21) {
+    const pi = database.prepare('PRAGMA table_info(posts)').all();
+    const pN = new Set(pi.map((row) => row.name));
+    if (!pN.has('friends_only')) {
+      database.exec('ALTER TABLE posts ADD COLUMN friends_only INTEGER NOT NULL DEFAULT 0;');
+    }
+    setSchemaVersion(database, 21);
   }
 }
 

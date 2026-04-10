@@ -148,6 +148,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
   const [commentSending, setCommentSending] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editCommentText, setEditCommentText] = useState('');
+  const [replyToComment, setReplyToComment] = useState(null);
 
   const [postMenu, setPostMenu] = useState(null);
 
@@ -281,9 +282,11 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
     const t = commentDraft.trim();
     if (!viewerId || !t) return;
     setCommentSending(true);
+    const body = { body: t };
+    if (replyToComment?.id) body.parentCommentId = replyToComment.id;
     const { ok, data } = await api(`/api/feed/${encodeURIComponent(post.id)}/comments`, {
       method: 'POST',
-      body: { body: t },
+      body,
       userId: viewerId,
     });
     setCommentSending(false);
@@ -292,6 +295,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
       return;
     }
     setCommentDraft('');
+    setReplyToComment(null);
     if (data?.comment) setComments((prev) => [...prev, data.comment]);
     onChanged?.();
   }
@@ -375,6 +379,21 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                 nick
               )}
               <span>· {formatPostTime(post.createdAt)}</span>
+              {post.friendsOnly ? (
+                <span
+                  title="Этот пост видят только ваши друзья"
+                  style={{
+                    marginLeft: 4,
+                    fontSize: 10,
+                    padding: '1px 6px',
+                    borderRadius: 4,
+                    border: '1px solid var(--border)',
+                    opacity: 0.9,
+                  }}
+                >
+                  только друзья
+                </span>
+              ) : null}
             </div>
           </div>
         </div>
@@ -618,34 +637,67 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                           fontSize: 13,
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4, alignItems: 'center' }}>
                           <span style={{ fontWeight: 600, fontSize: 12 }}>
                             <NicknameWithBadge nickname={c.authorNickname || 'user'} affiliationEmoji={c.authorAffiliationEmoji} />
                           </span>
-                          {isCommentMine ? (
-                            <span style={{ display: 'flex', gap: 6 }}>
+                          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            {viewerId ? (
                               <button
                                 type="button"
-                                className="icon-btn"
-                                style={{ width: 26, height: 26, fontSize: 11 }}
-                                onClick={() => {
-                                  setEditingCommentId(c.id);
-                                  setEditCommentText(c.body || '');
-                                }}
+                                className="btn-outline"
+                                style={{ fontSize: 10, padding: '2px 8px', minHeight: 0 }}
+                                onClick={() =>
+                                  setReplyToComment({
+                                    id: c.id,
+                                    label: c.authorNickname ? `@${c.authorNickname}` : 'комментарий',
+                                  })
+                                }
                               >
-                                ✎
+                                Ответить
                               </button>
-                              <button
-                                type="button"
-                                className="icon-btn"
-                                style={{ width: 26, height: 26, fontSize: 11 }}
-                                onClick={() => void deleteComment(c.id)}
-                              >
-                                ✕
-                              </button>
-                            </span>
-                          ) : null}
+                            ) : null}
+                            {isCommentMine ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="icon-btn"
+                                  style={{ width: 26, height: 26, fontSize: 11 }}
+                                  onClick={() => {
+                                    setEditingCommentId(c.id);
+                                    setEditCommentText(c.body || '');
+                                  }}
+                                >
+                                  ✎
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-btn"
+                                  style={{ width: 26, height: 26, fontSize: 11 }}
+                                  onClick={() => void deleteComment(c.id)}
+                                >
+                                  ✕
+                                </button>
+                              </>
+                            ) : null}
+                          </span>
                         </div>
+                        {c.parentId && c.parentPreview ? (
+                          <div
+                            className="muted"
+                            style={{
+                              fontSize: 10,
+                              marginBottom: 6,
+                              padding: '6px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(0,0,0,0.12)',
+                              borderLeft: '3px solid var(--accent)',
+                            }}
+                          >
+                            <div>↩ @{c.parentPreview.authorNickname || 'user'}</div>
+                            <div style={{ marginTop: 2, opacity: 0.95 }}>{c.parentPreview.bodySnippet}</div>
+                          </div>
+                        ) : null}
                         {editingCommentId === c.id ? (
                           <div>
                             <textarea
@@ -697,7 +749,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                 <textarea
                   className="text-input"
-                  placeholder="Написать комментарий…"
+                  placeholder={replyToComment ? `Ответ для ${replyToComment.label}…` : 'Написать комментарий…'}
                   value={commentDraft}
                   onChange={(e) => setCommentDraft(e.target.value.slice(0, 4000))}
                   rows={2}
@@ -710,15 +762,27 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                   }}
                   maxLength={4000}
                 />
-                <button
-                  type="button"
-                  className="btn-primary"
-                  style={{ width: 'auto', flexShrink: 0, fontSize: 12 }}
-                  disabled={commentSending || !commentDraft.trim()}
-                  onClick={() => void sendComment()}
-                >
-                  {commentSending ? '…' : 'Отпр.'}
-                </button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                  {replyToComment ? (
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      style={{ fontSize: 10, padding: '4px 8px' }}
+                      onClick={() => setReplyToComment(null)}
+                    >
+                      Без ответа
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    style={{ width: 'auto', fontSize: 12 }}
+                    disabled={commentSending || !commentDraft.trim()}
+                    onClick={() => void sendComment()}
+                  >
+                    {commentSending ? '…' : 'Отпр.'}
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -726,7 +790,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
       ) : null}
 
       <footer style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
-        <span>только для друзей</span>
+        <span>{post.friendsOnly ? 'Пост только для друзей · ' : ''}лента приложения</span>
       </footer>
 
       <ReactionUsersModal open={whoOpen} users={whoList} onClose={() => setWhoOpen(false)} title="Реакции на пост" />

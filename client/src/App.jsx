@@ -174,6 +174,7 @@ export default function App() {
       peerUserId: c.peerUserId ?? openChat.peerUserId,
       friendsActive: c.friendsActive !== false,
       canMessage: c.canMessage !== false,
+      isSavedMessages: c.isSavedMessages === true,
     };
   }, [openChat, chats]);
 
@@ -476,6 +477,7 @@ export default function App() {
       peerAffiliationEmoji: chat.peerAffiliationEmoji ?? null,
       friendsActive: chat.friendsActive !== false,
       canMessage: chat.canMessage !== false,
+      isSavedMessages: chat.isSavedMessages === true,
     });
   }, []);
 
@@ -496,6 +498,7 @@ export default function App() {
         peerUserId: c.peerUserId ?? prev.peerUserId,
         friendsActive: c.friendsActive !== false,
         canMessage: c.canMessage !== false,
+        isSavedMessages: c.isSavedMessages === true,
       };
     });
   }, [user?.id]);
@@ -639,8 +642,9 @@ export default function App() {
           peerLabel={openChatResolved.name}
           peerNickname={openChatResolved.peerNickname}
           peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
-          peerUserId={openChatResolved.peerUserId}
-          peerAvatarUrl={openChatResolved.peerAvatarUrl}
+          peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
+          peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
+          isSavedMessages={openChatResolved.isSavedMessages === true}
           peerOnline={
             openChatResolved.peerUserId != null &&
             Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))

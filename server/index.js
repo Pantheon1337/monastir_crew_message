@@ -94,6 +94,8 @@ import {
   createPostComment,
   updatePostComment,
   deletePostComment,
+  pinDirectMessage,
+  unpinDirectMessage,
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
@@ -131,6 +133,14 @@ function notifyPeers(userId, event) {
     sendToUser(pid, event);
   }
   sendToUser(userId, event);
+}
+
+/** WS: всем вошедшим пользователям (обновление ленты/историй для «общей» видимости). */
+function broadcastToAllAuthenticatedUsers(event) {
+  for (const uid of socketsByUser.keys()) {
+    if (uid.startsWith('guest-')) continue;
+    sendToUser(uid, event);
+  }
 }
 
 function broadcastRoom(roomId, event) {
@@ -399,12 +409,16 @@ app.post('/api/feed/upload', (req, res) => {
 app.post('/api/feed', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const out = createPost(userId, { body: req.body?.body, mediaPath: req.body?.mediaPath });
+  const out = createPost(userId, {
+    body: req.body?.body,
+    mediaPath: req.body?.mediaPath,
+    friendsOnly: req.body?.friendsOnly,
+  });
   if (out.error) {
     res.status(400).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'feed:new', payload: { postId: out.post.id } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:new', payload: { postId: out.post.id } });
   res.status(201).json({ post: out.post });
 });
 
@@ -417,7 +431,7 @@ app.patch('/api/feed/:postId', (req, res) => {
     res.status(st).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:changed', payload: { postId: req.params.postId } });
   res.json({ ok: true, editedAt: out.editedAt });
 });
 
@@ -438,7 +452,7 @@ app.delete('/api/feed/:postId', (req, res) => {
       /* ignore */
     }
   }
-  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId, deleted: true } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:changed', payload: { postId: req.params.postId, deleted: true } });
   res.json({ ok: true });
 });
 
@@ -453,7 +467,7 @@ app.post('/api/feed/:postId/reaction', (req, res) => {
     res.status(st).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:changed', payload: { postId: req.params.postId } });
   res.json({ ok: true, reactions: out.reactions });
 });
 
@@ -484,13 +498,15 @@ app.get('/api/feed/:postId/comments', (req, res) => {
 app.post('/api/feed/:postId/comments', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const out = createPostComment(req.params.postId, userId, req.body?.body);
+  const out = createPostComment(req.params.postId, userId, req.body?.body, {
+    parentCommentId: req.body?.parentCommentId,
+  });
   if (out.error) {
     const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
     res.status(st).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:changed', payload: { postId: req.params.postId } });
   res.status(201).json(out);
 });
 
@@ -503,7 +519,7 @@ app.patch('/api/feed/:postId/comments/:commentId', (req, res) => {
     res.status(st).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:changed', payload: { postId: req.params.postId } });
   res.json(out);
 });
 
@@ -516,7 +532,7 @@ app.delete('/api/feed/:postId/comments/:commentId', (req, res) => {
     res.status(st).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  broadcastToAllAuthenticatedUsers({ type: 'feed:changed', payload: { postId: req.params.postId } });
   res.json({ ok: true });
 });
 
@@ -588,7 +604,7 @@ app.post('/api/chats/:chatId/read', (req, res) => {
     return;
   }
   const peerId = getPeerIdInDirectChat(chatId, userId);
-  if (peerId && out.readAt != null) {
+  if (peerId && peerId !== userId && out.readAt != null) {
     sendToUser(peerId, {
       type: 'chat:peerRead',
       payload: { chatId, readAt: out.readAt },
@@ -701,6 +717,39 @@ app.get('/api/chats/:chatId/messages', (req, res) => {
     return;
   }
   res.json({ messages: msgs });
+});
+
+app.post('/api/chats/:chatId/messages/:messageId/pin', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const scope = req.body?.scope === 'both' ? 'both' : 'self';
+  const out = pinDirectMessage(req.params.chatId, userId, req.params.messageId, scope);
+  if (out.error) {
+    const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  const peerId = out.peerId;
+  if (peerId && peerId !== userId && scope === 'both') {
+    sendToUser(peerId, { type: 'chat:pinsChanged', payload: { chatId: req.params.chatId } });
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/chats/:chatId/messages/:messageId/unpin', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const scope = req.body?.scope === 'both' ? 'both' : 'self';
+  const out = unpinDirectMessage(req.params.chatId, userId, req.params.messageId, scope);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  const peerId = out.peerId;
+  if (peerId && peerId !== userId && scope === 'both') {
+    sendToUser(peerId, { type: 'chat:pinsChanged', payload: { chatId: req.params.chatId } });
+  }
+  res.json({ ok: true });
 });
 
 app.post('/api/chats/:chatId/messages', (req, res) => {
@@ -1289,11 +1338,7 @@ app.get('/api/stories/author/:authorId', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   const items = listActiveStoryItems(userId, req.params.authorId);
-  if (items === null) {
-    res.status(403).json({ error: 'Нет доступа' });
-    return;
-  }
-  res.json({ items });
+  res.json({ items: items || [] });
 });
 
 app.post('/api/stories', (req, res) => {
@@ -1304,7 +1349,7 @@ app.post('/api/stories', (req, res) => {
     res.status(400).json({ error: out.error });
     return;
   }
-  notifyPeers(userId, { type: 'stories:new', payload: { authorId: userId } });
+  broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
   res.status(201).json(out);
 });
 
@@ -1327,7 +1372,7 @@ app.post('/api/stories/upload', (req, res) => {
       res.status(400).json({ error: out.error });
       return;
     }
-    notifyPeers(userId, { type: 'stories:new', payload: { authorId: userId } });
+    broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
     res.status(201).json(out);
   });
 });

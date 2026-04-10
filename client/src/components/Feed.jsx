@@ -9,6 +9,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
   const [uploading, setUploading] = useState(false);
   const [pendingMediaPath, setPendingMediaPath] = useState(null);
   const [pendingName, setPendingName] = useState('');
+  const [friendsOnlyPost, setFriendsOnlyPost] = useState(false);
   const fileRef = useRef(null);
 
   const canSend = !!(draft.trim() || pendingMediaPath) && userId;
@@ -41,7 +42,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
     setErr(null);
     const { ok, data } = await api('/api/feed', {
       method: 'POST',
-      body: { body: draft.trim(), mediaPath: pendingMediaPath || undefined },
+      body: { body: draft.trim(), mediaPath: pendingMediaPath || undefined, friendsOnly: friendsOnlyPost },
       userId,
     });
     setSending(false);
@@ -51,6 +52,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
     }
     setDraft('');
     clearMedia();
+    setFriendsOnlyPost(false);
     onPosted?.();
   }
 
@@ -61,12 +63,31 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
         <textarea
           className="text-input"
           style={{ width: '100%', minHeight: 72, resize: 'vertical', marginBottom: 8 }}
-          placeholder="Что у вас нового? Можно прикрепить файл. Видно друзьям."
+          placeholder="Что у вас нового? Можно прикрепить файл. По умолчанию пост виден всем в приложении."
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={8000}
         />
         <input ref={fileRef} type="file" hidden onChange={onPickFile} />
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 8,
+            fontSize: 12,
+            cursor: userId ? 'pointer' : 'default',
+            userSelect: 'none',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={friendsOnlyPost}
+            disabled={!userId}
+            onChange={(e) => setFriendsOnlyPost(e.target.checked)}
+          />
+          <span>Показывать только друзьям</span>
+        </label>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <button type="button" className="btn-outline" style={{ width: 'auto', fontSize: 12 }} disabled={uploading || !userId} onClick={() => fileRef.current?.click()}>
             {uploading ? 'Загрузка…' : 'Прикрепить файл'}
@@ -90,7 +111,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
 
       {posts.length === 0 ? (
         <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-          В ленте пока пусто — добавьте друзей и посты появятся здесь.
+          В ленте пока пусто. Посты всех пользователей появляются здесь; свой пост можно ограничить только друзьями (галочка при публикации).
         </p>
       ) : (
         posts.map((p) => (

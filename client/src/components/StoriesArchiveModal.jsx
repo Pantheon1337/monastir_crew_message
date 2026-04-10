@@ -62,7 +62,7 @@ export default function StoriesArchiveModal({ userId, onClose }) {
           </button>
         </div>
         <p className="muted" style={{ fontSize: 11, margin: '0 0 12px' }}>
-          Истёкшие за 24 часа, доступны вам и друзьям как владельцам контента.
+          Истёкшие за 24 часа — общий архив по всем пользователям.
         </p>
         {loading ? (
           <p className="muted" style={{ fontSize: 12 }}>
