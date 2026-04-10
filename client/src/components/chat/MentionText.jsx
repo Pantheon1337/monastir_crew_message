@@ -23,11 +23,11 @@ function splitMentions(text) {
   return parts;
 }
 
-/** pre-line; без width:100% — иначе при сжатии flex-родителя текст принимает узкую колонку и рвёт слова. */
+/** pre-line; overflow-wrap normal — перенос по пробелам; длинные «слова» ломает оболочка пузыря при необходимости. */
 const textWrapStyle = {
   display: 'inline',
   whiteSpace: 'pre-line',
-  overflowWrap: 'break-word',
+  overflowWrap: 'normal',
   wordBreak: 'normal',
   lineHeight: 'inherit',
   letterSpacing: 'normal',

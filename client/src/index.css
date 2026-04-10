@@ -516,7 +516,6 @@ video.chat-video-note {
   user-select: none;
   -moz-user-select: none;
   -webkit-touch-callout: none;
-  min-width: 0;
   overflow-wrap: break-word;
   word-wrap: break-word;
   word-break: normal;
@@ -533,7 +532,9 @@ video.chat-video-note {
   box-sizing: border-box;
   max-width: var(--chat-bubble-max);
   width: auto;
-  min-width: 0;
+  /* flex-ребёнок: не сужать ниже слова — иначе break-word рвёт «Сообщени|е» */
+  flex-shrink: 0;
+  min-width: min-content;
   font-family: var(--chat-font-family);
   font-size: var(--chat-font-size);
   line-height: var(--chat-line-height);
