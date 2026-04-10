@@ -18,6 +18,7 @@ import {
   scheduleReleaseCameraStream,
   releaseCameraStreamNow,
 } from '../cameraSession.js';
+import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
@@ -341,6 +342,12 @@ function pinChipPreview(m) {
   return (m.body || '').trim().slice(0, 36) || '…';
 }
 
+const TG_BUBBLE_OUT = '#E2F7CB';
+const TG_BUBBLE_IN = '#ffffff';
+const TG_TIME = '#8696a0';
+const TG_CHECK_DELIVERED = '#a0aeb8';
+const TG_CHECK_READ = '#34b47c';
+
 function MessageBubble({
   m,
   userId,
@@ -353,6 +360,8 @@ function MessageBubble({
   allowSwipeReply = true,
   onSwipeReply,
   savedChat = false,
+  isFirstInGroup = true,
+  isLastInGroup = true,
 }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
@@ -379,8 +388,16 @@ function MessageBubble({
     { ms: 480, moveTol: 12 },
   );
 
-  const isMediaShell = kind === 'voice' || kind === 'video_note';
+  const isMediaShell = kind === 'video_note';
   const isRevoked = kind === 'revoked' || m.revokedForAll;
+  const bubbleRadius = telegramBubbleRadius(mine, isFirstInGroup, isLastInGroup);
+  const bubbleBg = isRevoked
+    ? mine
+      ? 'rgba(226, 247, 203, 0.55)'
+      : 'rgba(255, 255, 255, 0.85)'
+    : mine
+      ? TG_BUBBLE_OUT
+      : TG_BUBBLE_IN;
 
   let inner = null;
   if (isRevoked) {
@@ -405,10 +422,10 @@ function MessageBubble({
           loading="lazy"
           decoding="async"
           sizes="(max-width: 480px) 90vw, 280px"
-          style={{ maxWidth: '100%', borderRadius: 12, display: 'block', verticalAlign: 'top' }}
+          style={{ maxWidth: '100%', borderRadius: 10, display: 'block', verticalAlign: 'top' }}
         />
         {m.body?.trim() ? (
-          <div style={{ marginTop: 8 }}>
+          <div style={{ marginTop: 6 }}>
             <MentionText text={m.body} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
@@ -446,8 +463,9 @@ function MessageBubble({
           alignItems: 'center',
           gap: 8,
           padding: '10px 12px',
-          borderRadius: 12,
-          border: '1px solid var(--border)',
+          borderRadius: 10,
+          border: '1px solid rgba(0, 0, 0, 0.08)',
+          background: 'rgba(0, 0, 0, 0.03)',
           color: 'inherit',
           textDecoration: 'none',
           maxWidth: 280,
@@ -494,7 +512,7 @@ function MessageBubble({
         justifyContent: mine ? 'flex-end' : 'flex-start',
         width: '100%',
         minWidth: 0,
-        marginBottom: 8,
+        marginBottom: isLastInGroup ? 12 : 3,
         userSelect: 'none',
         WebkitUserSelect: 'none',
       }}
@@ -515,7 +533,7 @@ function MessageBubble({
       >
         <div
           ref={shellRef}
-          className="chat-message-bubble-shell"
+          className="chat-message-bubble-shell chat-tg-bubble"
           {...lp}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -526,12 +544,15 @@ function MessageBubble({
             maxWidth: '92%',
             minWidth: 0,
             verticalAlign: 'top',
-            border: isMediaShell ? 'none' : '1px solid var(--border)',
-            borderRadius: isMediaShell ? 0 : 'var(--radius)',
-            padding: isMediaShell ? 0 : '8px 10px',
-            fontSize: 13,
-            background: isMediaShell ? 'transparent' : mine ? 'rgba(193, 123, 75, 0.12)' : 'transparent',
-            boxShadow: 'none',
+            border: isMediaShell ? 'none' : 'none',
+            borderRadius: isMediaShell ? 0 : bubbleRadius,
+            padding: isMediaShell ? 0 : '6px 10px 5px',
+            fontSize: 15,
+            lineHeight: 1.35,
+            color: '#000000',
+            background: isMediaShell ? 'transparent' : bubbleBg,
+            boxShadow: isMediaShell ? 'none' : '0 1px 0.5px rgba(0, 0, 0, 0.13)',
+            overflow: isMediaShell ? 'visible' : 'hidden',
             userSelect: 'none',
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
@@ -546,10 +567,10 @@ function MessageBubble({
         {m.replyTo ? (
           <div
             style={{
-              borderLeft: '3px solid var(--accent)',
+              borderLeft: '3px solid #5294e2',
               paddingLeft: 8,
               marginBottom: 8,
-              opacity: 0.92,
+              opacity: 0.95,
             }}
           >
             <div className="muted" style={{ fontSize: 10 }}>
@@ -558,8 +579,8 @@ function MessageBubble({
             <div style={{ fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>{m.replyTo.preview}</div>
           </div>
         ) : null}
-        {!mine && !isRevoked ? (
-          <div className="muted" style={{ fontSize: 10, marginBottom: 4 }}>
+        {!mine && !isRevoked && roomId && isFirstInGroup ? (
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: '#5288c1' }}>
             @{m.senderNickname || 'user'}
             {m.senderAffiliationEmoji ? <span aria-hidden> {m.senderAffiliationEmoji}</span> : null}
           </div>
@@ -580,32 +601,36 @@ function MessageBubble({
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            marginTop: 6,
-            justifyContent: mine ? 'flex-end' : 'flex-start',
+            justifyContent: 'flex-end',
+            flexWrap: 'wrap',
+            gap: 5,
+            marginTop: 3,
           }}
         >
-          <span className="muted" style={{ fontSize: 9 }}>
-            {m.pinnedForMe ? (
-              <span title={m.pinnedShared ? 'Закреплено для обоих' : 'Закреплено у вас'} aria-hidden>
-                📌{' '}
-              </span>
-            ) : null}
+          {m.pinnedForMe ? (
+            <span
+              title={m.pinnedShared ? 'Закреплено для обоих' : 'Закреплено у вас'}
+              aria-hidden
+              style={{ fontSize: 11, lineHeight: 1 }}
+            >
+              📌
+            </span>
+          ) : null}
+          <span style={{ fontSize: 11, lineHeight: 1.2, color: TG_TIME, whiteSpace: 'nowrap' }}>
             {formatTime(m.createdAt)}
             {kind === 'text' && m.editedAt != null ? (
-              <span title="Сообщение изменено" style={{ opacity: 0.85 }}>
+              <span title="Сообщение изменено" style={{ opacity: 0.9 }}>
                 {' '}
-                · изменено
+                · изм.
               </span>
             ) : null}
           </span>
           {mine && !roomId && !savedChat ? (
             <span
               style={{
-                fontSize: 12,
+                fontSize: 14,
                 lineHeight: 1,
-                color: m.readByPeer ? 'var(--online)' : 'var(--muted)',
-                opacity: m.readByPeer ? 1 : 0.85,
+                color: m.readByPeer ? TG_CHECK_READ : TG_CHECK_DELIVERED,
               }}
               title={m.readByPeer ? 'Прочитано' : 'Доставлено'}
               aria-hidden
@@ -1547,7 +1572,9 @@ export default function DirectChatScreen({
                     </div>
                   </div>
                 ) : null}
-                {messages.map((m) => (
+                {messages.map((m, i) => {
+                  const g = messageGroupFlags(messages, i);
+                  return (
                   <MessageBubble
                     key={m.id}
                     m={m}
@@ -1555,6 +1582,8 @@ export default function DirectChatScreen({
                     chatId={chatId}
                     formatTime={formatTime}
                     savedChat={isSavedMessages}
+                    isFirstInGroup={g.isFirstInGroup}
+                    isLastInGroup={g.isLastInGroup}
                     allowSwipeReply={canMessage}
                     onSwipeReply={(draft) => {
                       setReplyDraft(draft);
@@ -1566,7 +1595,8 @@ export default function DirectChatScreen({
                     onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
                     onMentionProfile={onMentionProfile}
                   />
-                ))}
+                  );
+                })}
               </>
             )}
             <div

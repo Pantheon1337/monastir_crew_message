@@ -9,6 +9,20 @@ import { formatPhoneRu } from '../formatPhone.js';
 
 const MAX_ABOUT = 100;
 
+function PencilIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden style={{ flexShrink: 0 }}>
+      <path
+        d="M12 20h9M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4L16.5 3.5z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function profileRoleCaption(displayRole) {
   if (displayRole === 'developer') return 'Разработчик';
   if (displayRole === 'beta') return 'Бета-тестер';
@@ -38,21 +52,15 @@ export default function ProfileScreen({
   const [emojiSaving, setEmojiSaving] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const emojiPickerRef = useRef(null);
-  const [firstNameDraft, setFirstNameDraft] = useState('');
-  const [lastNameDraft, setLastNameDraft] = useState('');
-  const [nicknameDraft, setNicknameDraft] = useState('');
-  const [nameSaving, setNameSaving] = useState(false);
-  const [nicknameSaving, setNicknameSaving] = useState(false);
+  /** null | 'firstName' | 'lastName' | 'nickname' */
+  const [profileFieldModal, setProfileFieldModal] = useState(null);
+  const [modalDraft, setModalDraft] = useState('');
+  const [modalSaving, setModalSaving] = useState(false);
+  const [modalError, setModalError] = useState(null);
 
   useEffect(() => {
     setAboutDraft(user?.about != null ? String(user.about) : '');
   }, [user?.id, user?.about]);
-
-  useEffect(() => {
-    setFirstNameDraft(user?.firstName != null ? String(user.firstName) : '');
-    setLastNameDraft(user?.lastName != null ? String(user.lastName) : '');
-    setNicknameDraft(user?.nickname != null ? String(user.nickname) : '');
-  }, [user?.id, user?.firstName, user?.lastName, user?.nickname]);
 
   const loadIncoming = useCallback(async () => {
     if (!user?.id) return;
@@ -151,44 +159,118 @@ export default function ProfileScreen({
     return new Date(Number(last) + 7 * 24 * 60 * 60 * 1000);
   }
 
-  async function saveRealNames() {
+  function openProfileFieldModal(kind) {
     if (!user?.id) return;
-    setNameSaving(true);
-    const { ok, data } = await api('/api/users/me', {
-      method: 'PATCH',
-      body: { firstName: firstNameDraft.trim(), lastName: lastNameDraft.trim() },
-      userId: user.id,
-    });
-    setNameSaving(false);
-    if (!ok) {
-      alert(data?.error || 'Не удалось сохранить');
-      return;
-    }
-    if (data?.user) {
-      setStoredUser(data.user);
-      onUserUpdated?.(data.user);
-    }
+    setModalError(null);
+    setProfileFieldModal(kind);
+    if (kind === 'firstName') setModalDraft(String(user.firstName ?? ''));
+    else if (kind === 'lastName') setModalDraft(String(user.lastName ?? ''));
+    else setModalDraft(String(user.nickname ?? ''));
   }
 
-  async function saveNickname() {
-    if (!user?.id) return;
-    const raw = nicknameDraft.trim().replace(/^@/, '').toLowerCase();
-    if (raw === (user.nickname || '').toLowerCase()) return;
-    setNicknameSaving(true);
+  function closeProfileFieldModal() {
+    if (modalSaving) return;
+    setProfileFieldModal(null);
+    setModalError(null);
+  }
+
+  async function submitProfileFieldModal() {
+    if (!user?.id || !profileFieldModal) return;
+    setModalError(null);
+
+    if (profileFieldModal === 'firstName') {
+      const f = modalDraft.trim().slice(0, 60);
+      const l = String(user.lastName ?? '').trim().slice(0, 60);
+      if (f === String(user.firstName ?? '').trim()) {
+        closeProfileFieldModal();
+        return;
+      }
+      if (!f) {
+        setModalError('Введите имя');
+        return;
+      }
+      if (!l) {
+        setModalError('Фамилия не может быть пустой');
+        return;
+      }
+      setModalSaving(true);
+      const { ok, data } = await api('/api/users/me', {
+        method: 'PATCH',
+        body: { firstName: f, lastName: l },
+        userId: user.id,
+      });
+      setModalSaving(false);
+      if (!ok) {
+        setModalError(data?.error || 'Не удалось сохранить');
+        return;
+      }
+      if (data?.user) {
+        setStoredUser(data.user);
+        onUserUpdated?.(data.user);
+      }
+      closeProfileFieldModal();
+      return;
+    }
+
+    if (profileFieldModal === 'lastName') {
+      const f = String(user.firstName ?? '').trim().slice(0, 60);
+      const l = modalDraft.trim().slice(0, 60);
+      if (l === String(user.lastName ?? '').trim()) {
+        closeProfileFieldModal();
+        return;
+      }
+      if (!f) {
+        setModalError('Имя не может быть пустым');
+        return;
+      }
+      if (!l) {
+        setModalError('Введите фамилию');
+        return;
+      }
+      setModalSaving(true);
+      const { ok, data } = await api('/api/users/me', {
+        method: 'PATCH',
+        body: { firstName: f, lastName: l },
+        userId: user.id,
+      });
+      setModalSaving(false);
+      if (!ok) {
+        setModalError(data?.error || 'Не удалось сохранить');
+        return;
+      }
+      if (data?.user) {
+        setStoredUser(data.user);
+        onUserUpdated?.(data.user);
+      }
+      closeProfileFieldModal();
+      return;
+    }
+
+    const raw = modalDraft.trim().replace(/^@/, '').toLowerCase().slice(0, 30);
+    if (raw === (user.nickname || '').toLowerCase()) {
+      closeProfileFieldModal();
+      return;
+    }
+    if (!nicknameChangeAllowed(user)) {
+      setModalError('Сейчас нельзя сменить username');
+      return;
+    }
+    setModalSaving(true);
     const { ok, data } = await api('/api/users/me', {
       method: 'PATCH',
       body: { nickname: raw },
       userId: user.id,
     });
-    setNicknameSaving(false);
+    setModalSaving(false);
     if (!ok) {
-      alert(data?.error || 'Не удалось сменить username');
+      setModalError(data?.error || 'Не удалось сменить username');
       return;
     }
     if (data?.user) {
       setStoredUser(data.user);
       onUserUpdated?.(data.user);
     }
+    closeProfileFieldModal();
   }
 
   async function onPickAvatar(e) {
@@ -204,7 +286,21 @@ export default function ProfileScreen({
     onUserUpdated?.(data.user);
   }
 
+  const nicknameEditBlocked =
+    (user?.nicknameChangesRemaining ?? 0) <= 0 ||
+    (user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0);
+
+  const modalTitle =
+    profileFieldModal === 'firstName'
+      ? 'Редактировать имя'
+      : profileFieldModal === 'lastName'
+        ? 'Редактировать фамилию'
+        : profileFieldModal === 'nickname'
+          ? 'Редактировать username'
+          : '';
+
   return (
+    <>
     <section style={{ padding: 16 }}>
       <h2 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Профиль</h2>
 
@@ -229,82 +325,103 @@ export default function ProfileScreen({
           </button>
         </div>
 
-        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          Имя и фамилия
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
-          <input
-            className="text-input"
-            style={{ width: '100%', fontSize: 14 }}
-            value={firstNameDraft}
-            onChange={(e) => setFirstNameDraft(e.target.value.slice(0, 60))}
-            placeholder="Имя"
-            autoComplete="given-name"
-          />
-          <input
-            className="text-input"
-            style={{ width: '100%', fontSize: 14 }}
-            value={lastNameDraft}
-            onChange={(e) => setLastNameDraft(e.target.value.slice(0, 60))}
-            placeholder="Фамилия"
-            autoComplete="family-name"
-          />
-          <button
-            type="button"
-            className="btn-outline"
-            style={{ width: '100%', fontSize: 12 }}
-            disabled={
-              nameSaving ||
-              (firstNameDraft.trim() === (user?.firstName || '') && lastNameDraft.trim() === (user?.lastName || ''))
-            }
-            onClick={() => void saveRealNames()}
+        <div style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: 10,
+              marginBottom: 10,
+              flexWrap: 'wrap',
+            }}
           >
-            {nameSaving ? '…' : 'Сохранить имя'}
-          </button>
-        </div>
-
-        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          Username (@ник)
-        </p>
-        <div style={{ margin: '0 0 10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 14, color: 'var(--muted)', flexShrink: 0 }}>@</span>
-            <input
-              className="text-input"
-              style={{ flex: 1, minWidth: 0, fontSize: 14 }}
-              value={nicknameDraft}
-              onChange={(e) => setNicknameDraft(e.target.value.replace(/^@/, '').toLowerCase().slice(0, 30))}
-              placeholder="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-            />
+            <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+              <p style={{ margin: '0 0 2px', fontSize: 11 }} className="muted">
+                Имя
+              </p>
+              <p style={{ margin: 0, fontSize: 14, wordBreak: 'break-word' }}>{user?.firstName?.trim() || '—'}</p>
+            </div>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '8px 12px', flexShrink: 0 }}
+              onClick={() => openProfileFieldModal('firstName')}
+            >
+              <PencilIcon />
+              Редактировать
+            </button>
           </div>
-          <p className="muted" style={{ margin: '6px 0 0', fontSize: 10, lineHeight: 1.4 }}>
-            Латиница, цифры и _, 3–30 символов. Осталось смен username:{' '}
-            <strong style={{ color: 'var(--text)' }}>{user?.nicknameChangesRemaining ?? 0}</strong> из 2. Между сменами — не
-            чаще одного раза в 7 дней.
-            {user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0 && nextNicknameChangeAfter(user) ? (
-              <>
-                {' '}
-                Следующая смена: {nextNicknameChangeAfter(user).toLocaleString('ru-RU')}.
-              </>
-            ) : null}
-            {(user?.nicknameChangesRemaining ?? 0) <= 0 ? <> Лимит смен исчерпан.</> : null}
-          </p>
-          <button
-            type="button"
-            className="btn-outline"
-            style={{ width: '100%', fontSize: 12, marginTop: 8 }}
-            disabled={
-              nicknameSaving ||
-              !nicknameChangeAllowed(user) ||
-              nicknameDraft.trim().replace(/^@/, '').toLowerCase() === (user?.nickname || '').toLowerCase()
-            }
-            onClick={() => void saveNickname()}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: 10,
+              marginBottom: 10,
+              flexWrap: 'wrap',
+            }}
           >
-            {nicknameSaving ? '…' : 'Сохранить username'}
-          </button>
+            <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+              <p style={{ margin: '0 0 2px', fontSize: 11 }} className="muted">
+                Фамилия
+              </p>
+              <p style={{ margin: 0, fontSize: 14, wordBreak: 'break-word' }}>{user?.lastName?.trim() || '—'}</p>
+            </div>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '8px 12px', flexShrink: 0 }}
+              onClick={() => openProfileFieldModal('lastName')}
+            >
+              <PencilIcon />
+              Редактировать
+            </button>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              justifyContent: 'space-between',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ flex: '1 1 140px', minWidth: 0 }}>
+              <p style={{ margin: '0 0 2px', fontSize: 11 }} className="muted">
+                Username
+              </p>
+              <p style={{ margin: 0, fontSize: 14, wordBreak: 'break-all' }}>
+                {user?.nickname ? (
+                  <>
+                    <span style={{ color: 'var(--muted)' }}>@</span>
+                    {user.nickname}
+                  </>
+                ) : (
+                  '—'
+                )}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '8px 12px', flexShrink: 0 }}
+              disabled={nicknameEditBlocked}
+              title={
+                nicknameEditBlocked
+                  ? (user?.nicknameChangesRemaining ?? 0) <= 0
+                    ? 'Лимит смен username исчерпан'
+                    : nextNicknameChangeAfter(user)
+                      ? `Следующая смена: ${nextNicknameChangeAfter(user).toLocaleString('ru-RU')}`
+                      : 'Сейчас нельзя сменить username'
+                  : undefined
+              }
+              onClick={() => openProfileFieldModal('nickname')}
+            >
+              <PencilIcon />
+              Редактировать
+            </button>
+          </div>
         </div>
 
         <div style={{ margin: '0 0 12px' }}>
@@ -493,13 +610,6 @@ export default function ProfileScreen({
         </div>
 
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          Имя и фамилия
-        </p>
-        <p style={{ margin: '0 0 12px', fontSize: 13 }}>
-          {user?.firstName} {user?.lastName}
-        </p>
-
-        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
           Телефон
         </p>
         <p style={{ margin: '0 0 12px', fontSize: 13 }}>{displayPhone || '—'}</p>
@@ -662,5 +772,125 @@ export default function ProfileScreen({
         )}
       </div>
     </section>
+
+    {profileFieldModal ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-field-modal-title"
+        className="modal-overlay"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 200,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          paddingTop: 'max(48px, env(safe-area-inset-top))',
+        }}
+        onClick={() => closeProfileFieldModal()}
+        onKeyDown={(e) => e.key === 'Escape' && closeProfileFieldModal()}
+      >
+        <div
+          className="block modal-panel"
+          style={{ width: '100%', maxWidth: 380, padding: 16 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span id="profile-field-modal-title" style={{ fontSize: 14, fontWeight: 600 }}>
+              {modalTitle}
+            </span>
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ width: 36, height: 36 }}
+              disabled={modalSaving}
+              onClick={() => closeProfileFieldModal()}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+          </div>
+
+          {profileFieldModal === 'nickname' ? (
+            <p className="muted" style={{ margin: '0 0 12px', fontSize: 11, lineHeight: 1.45 }}>
+              Латиница, цифры и символ _. Длина 3–30. Осталось смен:{' '}
+              <strong style={{ color: 'var(--text)' }}>{user?.nicknameChangesRemaining ?? 0}</strong> из 2. Не чаще одного раза
+              в 7 дней.
+              {user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0 && nextNicknameChangeAfter(user) ? (
+                <>
+                  {' '}
+                  Следующая смена: {nextNicknameChangeAfter(user).toLocaleString('ru-RU')}.
+                </>
+              ) : null}
+              {(user?.nicknameChangesRemaining ?? 0) <= 0 ? <> Лимит смен исчерпан.</> : null}
+            </p>
+          ) : (
+            <p className="muted" style={{ margin: '0 0 12px', fontSize: 11, lineHeight: 1.45 }}>
+              До 60 символов. Пустые значения не допускаются.
+            </p>
+          )}
+
+          {profileFieldModal === 'nickname' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+              <span style={{ fontSize: 15, color: 'var(--muted)', flexShrink: 0 }}>@</span>
+              <input
+                className="text-input"
+                style={{ flex: 1, minWidth: 0, fontSize: 15 }}
+                value={modalDraft}
+                onChange={(e) => setModalDraft(e.target.value.replace(/^@/, '').toLowerCase().slice(0, 30))}
+                placeholder="username"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={modalSaving || nicknameEditBlocked}
+                autoFocus
+              />
+            </div>
+          ) : (
+            <input
+              className="text-input"
+              style={{ width: '100%', fontSize: 15, marginBottom: 10 }}
+              value={modalDraft}
+              onChange={(e) => setModalDraft(e.target.value.slice(0, 60))}
+              placeholder={profileFieldModal === 'firstName' ? 'Имя' : 'Фамилия'}
+              autoComplete={profileFieldModal === 'firstName' ? 'given-name' : 'family-name'}
+              disabled={modalSaving}
+              autoFocus
+            />
+          )}
+
+          {modalError ? (
+            <p style={{ margin: '0 0 10px', fontSize: 12, color: '#c45c5c' }}>{modalError}</p>
+          ) : null}
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+            <button type="button" className="btn-outline" disabled={modalSaving} onClick={() => closeProfileFieldModal()}>
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+              disabled={
+                modalSaving ||
+                (profileFieldModal === 'firstName' &&
+                  modalDraft.trim() === String(user?.firstName ?? '').trim()) ||
+                (profileFieldModal === 'lastName' &&
+                  modalDraft.trim() === String(user?.lastName ?? '').trim()) ||
+                (profileFieldModal === 'nickname' &&
+                  (nicknameEditBlocked ||
+                    modalDraft.trim().replace(/^@/, '').toLowerCase() === (user?.nickname || '').toLowerCase()))
+              }
+              onClick={() => void submitProfileFieldModal()}
+            >
+              {modalSaving ? 'Сохранение…' : 'Сохранить'}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }

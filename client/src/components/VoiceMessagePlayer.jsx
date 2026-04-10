@@ -74,7 +74,7 @@ export default function VoiceMessagePlayer({ src, durationMs, mine }) {
         maxWidth: 300,
         padding: '6px 10px 6px 6px',
         borderRadius: 22,
-        background: mine ? 'rgba(193, 123, 75, 0.28)' : 'rgba(255, 255, 255, 0.08)',
+        background: mine ? 'rgba(0, 0, 0, 0.07)' : 'rgba(0, 0, 0, 0.06)',
         border: 'none',
         boxSizing: 'border-box',
       }}
