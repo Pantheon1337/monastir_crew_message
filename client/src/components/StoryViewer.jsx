@@ -20,11 +20,12 @@ function formatStoryArchiveEta(expiresAt) {
   return `≈ ${m} мин до архива`;
 }
 
-export default function StoryViewer({ story, userId, onClose, onProgress, onAfterLastItem }) {
+export default function StoryViewer({ story, userId, onClose, onProgress, onAfterLastItem, onStoryArchived }) {
   const [slide, setSlide] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [reactionToast, setReactionToast] = useState(null);
+  const [archiving, setArchiving] = useState(false);
   const reactionToastTimerRef = useRef(null);
   const items = story?.items ?? [];
   const total = items.length;
@@ -161,6 +162,21 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   const canReact = Boolean(userId) && !story.isSelf;
   const pct = total > 0 ? (slide / total) * 100 : 0;
 
+  async function archiveCurrentToFeed() {
+    if (!userId || !cur?.id || !story?.isSelf) return;
+    setArchiving(true);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(cur.id)}/archive`, {
+      method: 'POST',
+      userId,
+    });
+    setArchiving(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось архивировать');
+      return;
+    }
+    onStoryArchived?.(story.authorId);
+  }
+
   async function sendReact(k) {
     if (!userId || !cur?.id) return;
     const { ok } = await api('/api/stories/react', {
@@ -242,20 +258,41 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>{archiveEta}</div>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{
-            border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 'var(--radius)',
-            padding: '6px 10px',
-            fontSize: 11,
-            background: 'transparent',
-            color: 'inherit',
-          }}
-        >
-          Закрыть
-        </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+          {story.isSelf ? (
+            <button
+              type="button"
+              disabled={archiving}
+              onClick={() => void archiveCurrentToFeed()}
+              style={{
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 'var(--radius)',
+                padding: '6px 10px',
+                fontSize: 11,
+                background: 'rgba(255,255,255,0.06)',
+                color: 'inherit',
+                opacity: archiving ? 0.6 : 1,
+              }}
+              title="Убрать этот кадр из ленты кружков; останется в архиве до истечения 24 ч"
+            >
+              {archiving ? '…' : 'Архивировать'}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: 'var(--radius)',
+              padding: '6px 10px',
+              fontSize: 11,
+              background: 'transparent',
+              color: 'inherit',
+            }}
+          >
+            Закрыть
+          </button>
+        </div>
       </div>
 
       <div
@@ -315,8 +352,10 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
                     margin: it.mediaUrl ? '14px 0 0' : 0,
                     maxWidth: 420,
                     fontSize: 15,
-                    whiteSpace: 'pre-wrap',
-                    lineHeight: 1.45,
+                    whiteSpace: 'pre-line',
+                    lineHeight: 1.5,
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
                   }}
                 >
                   {it.body}

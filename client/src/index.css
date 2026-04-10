@@ -127,6 +127,22 @@ a:hover {
   border-color: var(--accent);
 }
 
+/* Лента: композер — плейсхолдер чуть мельче основного текста */
+.feed-composer-wrap {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.feed-composer-wrap .feed-composer-textarea {
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.feed-composer-wrap .feed-composer-textarea::placeholder {
+  font-size: 12px;
+  opacity: 0.72;
+}
+
 /* Композер чата: плотнее к клавиатуре (visualViewport уже поднимает блок) */
 .chat-composer-bar .text-input {
   padding: 8px 10px;
@@ -431,14 +447,18 @@ video.chat-video-note {
 
 .chat-mention {
   display: inline;
-  padding: 0;
+  padding: 0 2px;
   margin: 0;
   border: none;
   background: rgba(193, 123, 75, 0.2);
   color: var(--accent);
   font: inherit;
+  line-height: inherit;
   cursor: pointer;
   border-radius: 4px;
+  vertical-align: baseline;
+  word-break: break-word;
+  max-width: 100%;
   -webkit-user-select: text;
   user-select: text;
 }

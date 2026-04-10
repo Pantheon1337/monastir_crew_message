@@ -397,7 +397,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
             </div>
           </div>
         </div>
-        {isMine ? (
+        {viewerId ? (
           <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               type="button"
@@ -417,7 +417,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                   right: 0,
                   top: '100%',
                   marginTop: 4,
-                  minWidth: 140,
+                  minWidth: 180,
                   padding: '6px 0',
                   background: 'var(--bg)',
                   border: '1px solid var(--border)',
@@ -429,9 +429,11 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                 <button
                   type="button"
                   role="menuitem"
+                  disabled={totalReactions <= 0}
                   onClick={() => {
-                    setEditing(true);
+                    if (totalReactions <= 0) return;
                     setMenuOpen(false);
+                    void openReactionWho();
                   }}
                   style={{
                     display: 'block',
@@ -442,29 +444,55 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                     background: 'none',
                     color: 'inherit',
                     fontSize: 13,
-                    cursor: 'pointer',
+                    cursor: totalReactions > 0 ? 'pointer' : 'not-allowed',
+                    opacity: totalReactions > 0 ? 1 : 0.45,
                   }}
                 >
-                  Изменить
+                  Кто поставил реакцию
                 </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => void removePost()}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '8px 12px',
-                    border: 'none',
-                    background: 'none',
-                    color: '#c45c5c',
-                    fontSize: 13,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Удалить
-                </button>
+                {isMine ? (
+                  <>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setEditing(true);
+                        setMenuOpen(false);
+                      }}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '8px 12px',
+                        border: 'none',
+                        background: 'none',
+                        color: 'inherit',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Изменить
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void removePost()}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '8px 12px',
+                        border: 'none',
+                        background: 'none',
+                        color: '#c45c5c',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Удалить
+                    </button>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -555,11 +583,6 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
               </button>
             );
           })}
-          {totalReactions > 0 ? (
-            <button type="button" className="btn-outline" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => void openReactionWho()}>
-              Кто
-            </button>
-          ) : null}
           <button
             type="button"
             className="btn-outline"

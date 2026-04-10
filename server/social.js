@@ -869,10 +869,15 @@ export function insertChatAttachmentMessage(chatId, userId, kind, mediaRelativeP
 /** Просмотр кадра истории (для кольца «все просмотрено»). */
 export function recordStoryView(viewerId, storyId) {
   const st = getDb()
-    .prepare(`SELECT id, user_id AS userId, expires_at AS expiresAt FROM stories WHERE id = ?`)
+    .prepare(
+      `SELECT id, user_id AS userId, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden FROM stories WHERE id = ?`
+    )
     .get(storyId);
   if (!st) return { error: 'История не найдена' };
   if (st.expiresAt <= Date.now()) return { error: 'История недоступна' };
+  if (st.feedHidden === 1 && String(st.userId) !== String(viewerId)) {
+    return { error: 'История недоступна' };
+  }
   const now = Date.now();
   getDb()
     .prepare(
@@ -889,10 +894,13 @@ export function insertStoryReactionMessage(viewerId, storyId, reactionKey) {
     return { error: 'Неизвестная реакция' };
   }
   const st = getDb()
-    .prepare(`SELECT id, user_id AS userId, expires_at AS expiresAt FROM stories WHERE id = ?`)
+    .prepare(
+      `SELECT id, user_id AS userId, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden FROM stories WHERE id = ?`
+    )
     .get(storyId);
   if (!st) return { error: 'История не найдена' };
   if (st.expiresAt <= Date.now()) return { error: 'История недоступна' };
+  if (st.feedHidden === 1) return { error: 'История недоступна' };
   const authorId = st.userId;
   if (String(authorId) === String(viewerId)) {
     return { error: 'Нельзя реагировать на свою историю' };
@@ -1490,6 +1498,20 @@ export function createStory(userId, { body, mediaPath }) {
   };
 }
 
+/** Убрать кадр из ленты кружков; в архиве остаётся до естественного истечения срока. */
+export function archiveStoryForFeed(storyId, userId) {
+  const row = getDb()
+    .prepare(`SELECT id, user_id AS userId, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden FROM stories WHERE id = ?`)
+    .get(storyId);
+  if (!row) return { error: 'История не найдена' };
+  if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
+  if (row.expiresAt <= Date.now()) return { error: 'Срок истории уже истёк' };
+  if (row.feedHidden === 1) return { error: 'Уже убрано из ленты' };
+  const t = Date.now();
+  getDb().prepare(`UPDATE stories SET feed_hidden = 1, feed_hidden_at = ? WHERE id = ?`).run(t, storyId);
+  return { ok: true };
+}
+
 /**
  * Кружки историй: все пользователи с неистёкшими кадрами (видно всем в приложении).
  */
@@ -1499,7 +1521,7 @@ export function listStoryBucketsForViewer(viewerId) {
     .prepare(
       `SELECT user_id AS userId, COUNT(*) AS cnt, MAX(created_at) AS lastAt
        FROM stories
-       WHERE expires_at > ?
+       WHERE expires_at > ? AND COALESCE(feed_hidden, 0) = 0
        GROUP BY user_id
        ORDER BY lastAt DESC
        LIMIT 200`
@@ -1521,7 +1543,7 @@ export function listStoryBucketsForViewer(viewerId) {
       const unseen = db
         .prepare(
           `SELECT COUNT(*) AS c FROM stories s
-           WHERE s.user_id = ? AND s.expires_at > ?
+           WHERE s.user_id = ? AND s.expires_at > ? AND COALESCE(s.feed_hidden, 0) = 0
            AND NOT EXISTS (SELECT 1 FROM story_views v WHERE v.viewer_id = ? AND v.story_id = s.id)`
         )
         .get(r.userId, now, viewerId);
@@ -1552,7 +1574,7 @@ export function listActiveStoryItems(_viewerId, authorId) {
   const rows = getDb()
     .prepare(
       `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
-       FROM stories WHERE user_id = ? AND expires_at > ? ORDER BY created_at ASC`
+       FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0 ORDER BY created_at ASC`
     )
     .all(authorId, now);
   return rows.map((s) => ({
@@ -1564,18 +1586,19 @@ export function listActiveStoryItems(_viewerId, authorId) {
   }));
 }
 
-/** Архив истёкших историй — все пользователи (общая лента архива). */
+/** Архив: истёкшие по времени и снятые с ленты (ещё не истекшие по TTL). */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const now = Date.now();
   const rows = getDb()
     .prepare(
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
+        COALESCE(s.feed_hidden, 0) AS feedHidden, s.feed_hidden_at AS feedHiddenAt,
         u.nickname AS nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
         u.display_role AS authorRole, u.display_role_emoji AS authorEmoji
       FROM stories s
       JOIN users u ON u.id = s.user_id
-      WHERE s.expires_at <= ?
-      ORDER BY s.expires_at DESC
+      WHERE s.expires_at <= ? OR COALESCE(s.feed_hidden, 0) = 1
+      ORDER BY COALESCE(s.feed_hidden_at, s.expires_at) DESC
       LIMIT ?`
     )
     .all(now, limit);
@@ -1586,6 +1609,8 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
     mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
+    archivedEarly: Number(r.feedHidden) === 1 && r.expiresAt > now,
+    feedHiddenAt: r.feedHiddenAt ?? null,
     authorLabel: r.nickname ? `@${r.nickname}` : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
     authorAffiliationEmoji: effectiveAffiliationEmoji(r.nickname, r.authorRole, r.authorEmoji),
     authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,

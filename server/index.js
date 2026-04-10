@@ -54,6 +54,7 @@ import {
   listStoryBucketsForViewer,
   listActiveStoryItems,
   listArchivedStoriesForViewer,
+  archiveStoryForFeed,
   createStory,
   areFriends,
   haveDirectChatLink,
@@ -1339,6 +1340,19 @@ app.get('/api/stories/author/:authorId', (req, res) => {
   if (!userId) return;
   const items = listActiveStoryItems(userId, req.params.authorId);
   res.json({ items: items || [] });
+});
+
+app.post('/api/stories/:storyId/archive', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = archiveStoryForFeed(req.params.storyId, userId);
+  if (out.error) {
+    const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
+  res.json({ ok: true });
 });
 
 app.post('/api/stories', (req, res) => {

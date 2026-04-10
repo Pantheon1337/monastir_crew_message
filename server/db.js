@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 22;
 
 let db;
 
@@ -441,6 +441,20 @@ function migrate(database) {
       database.exec('ALTER TABLE posts ADD COLUMN friends_only INTEGER NOT NULL DEFAULT 0;');
     }
     setSchemaVersion(database, 21);
+  }
+
+  if (ver < 22) {
+    let stInfo = database.prepare('PRAGMA table_info(stories)').all();
+    let names = new Set(stInfo.map((row) => row.name));
+    if (!names.has('feed_hidden')) {
+      database.exec('ALTER TABLE stories ADD COLUMN feed_hidden INTEGER NOT NULL DEFAULT 0;');
+    }
+    stInfo = database.prepare('PRAGMA table_info(stories)').all();
+    names = new Set(stInfo.map((row) => row.name));
+    if (!names.has('feed_hidden_at')) {
+      database.exec('ALTER TABLE stories ADD COLUMN feed_hidden_at INTEGER;');
+    }
+    setSchemaVersion(database, 22);
   }
 }
 

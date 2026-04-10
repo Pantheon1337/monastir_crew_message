@@ -62,7 +62,7 @@ export default function StoriesArchiveModal({ userId, onClose }) {
           </button>
         </div>
         <p className="muted" style={{ fontSize: 11, margin: '0 0 12px' }}>
-          Истёкшие за 24 часа — общий архив по всем пользователям.
+          Истёкшие по времени и кадры, убранные из ленты кнопкой «Архивировать» (до конца 24 ч).
         </p>
         {loading ? (
           <p className="muted" style={{ fontSize: 12 }}>
@@ -96,9 +96,20 @@ export default function StoriesArchiveModal({ userId, onClose }) {
                     {it.authorLabel}
                     {it.authorAffiliationEmoji ? ` ${it.authorAffiliationEmoji}` : ''}
                   </div>
-                  {it.body ? <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{it.body}</div> : null}
+                  {it.body ? (
+                    <div style={{ marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.45, wordBreak: 'break-word' }}>{it.body}</div>
+                  ) : null}
                   <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
-                    истекла {new Date(it.expiresAt).toLocaleString('ru-RU')}
+                    {it.archivedEarly ? (
+                      <>
+                        снято с ленты{' '}
+                        {it.feedHiddenAt != null
+                          ? new Date(it.feedHiddenAt).toLocaleString('ru-RU')
+                          : ''}
+                        {' · '}
+                      </>
+                    ) : null}
+                    истекает / истекла {new Date(it.expiresAt).toLocaleString('ru-RU')}
                   </div>
                 </div>
               </li>

@@ -204,6 +204,25 @@ export default function App() {
     [user?.id, user?.avatarUrl, storyBuckets]
   );
 
+  const onStoryArchivedFromViewer = useCallback(
+    async (authorId) => {
+      await refreshStories();
+      if (!user?.id || !authorId) {
+        setStoryViewer(null);
+        return;
+      }
+      const r = await api(`/api/stories/author/${encodeURIComponent(authorId)}`, { userId: user.id });
+      if (!r.ok || !(r.data.items || []).length) {
+        setStoryViewer(null);
+        return;
+      }
+      setStoryViewer((prev) =>
+        prev && String(prev.authorId) === String(authorId) ? { ...prev, items: r.data.items } : prev,
+      );
+    },
+    [refreshStories, user?.id],
+  );
+
   /** Последний кадр текущего автора → следующий кружок в ленте (все кадры API, в т.ч. уже просмотренные). */
   const goToNextStoryAuthor = useCallback(async () => {
     if (!user?.id) return;
@@ -694,6 +713,7 @@ export default function App() {
           }}
           onAfterLastItem={() => void goToNextStoryAuthor()}
           onProgress={onStoryProgress}
+          onStoryArchived={onStoryArchivedFromViewer}
         />
       )}
       {storyCreateOpen && (

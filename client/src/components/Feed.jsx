@@ -58,10 +58,14 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
 
   return (
     <section style={{ padding: '4px 12px 24px' }}>
-      <form style={{ padding: '12px 0', marginBottom: 8, borderBottom: '1px solid var(--border)' }} onSubmit={submit}>
+      <form
+        className="feed-composer-wrap"
+        style={{ padding: '12px 0', marginBottom: 8, borderBottom: '1px solid var(--border)' }}
+        onSubmit={submit}
+      >
         <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Новый пост</div>
         <textarea
-          className="text-input"
+          className="text-input feed-composer-textarea"
           style={{ width: '100%', minHeight: 72, resize: 'vertical', marginBottom: 8 }}
           placeholder="Что у вас нового? Можно прикрепить файл. По умолчанию пост виден всем в приложении."
           value={draft}
@@ -73,20 +77,24 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            justifyContent: 'space-between',
+            gap: 12,
             marginBottom: 8,
             fontSize: 12,
             cursor: userId ? 'pointer' : 'default',
             userSelect: 'none',
           }}
         >
+          <span>Показывать только друзьям</span>
           <input
             type="checkbox"
+            role="switch"
+            aria-label="Показывать пост только друзьям"
             checked={friendsOnlyPost}
             disabled={!userId}
             onChange={(e) => setFriendsOnlyPost(e.target.checked)}
+            style={{ width: 22, height: 22, flexShrink: 0, marginTop: 2, accentColor: 'var(--accent)' }}
           />
-          <span>Показывать только друзьям</span>
         </label>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <button type="button" className="btn-outline" style={{ width: 'auto', fontSize: 12 }} disabled={uploading || !userId} onClick={() => fileRef.current?.click()}>
