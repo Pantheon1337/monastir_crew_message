@@ -156,9 +156,25 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
     return clampMenuPosition(postMenu.x, postMenu.y, 220, 200);
   }, [postMenu, vvRect]);
 
+  const reactionsFromServerKey = useMemo(() => JSON.stringify(post.reactions ?? null), [post.id, post.reactions]);
+
   useEffect(() => {
-    setReactions(post.reactions ?? { counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
-  }, [post.id, post.reactions]);
+    const raw = post.reactions;
+    if (raw && typeof raw === 'object') {
+      const c = raw.counts || {};
+      setReactions({
+        counts: {
+          up: Number(c.up) || 0,
+          down: Number(c.down) || 0,
+          fire: Number(c.fire) || 0,
+          poop: Number(c.poop) || 0,
+        },
+        mine: raw.mine ?? null,
+      });
+    } else {
+      setReactions({ counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
+    }
+  }, [post.id, reactionsFromServerKey]);
 
   useEffect(() => {
     setEditText(post.body || '');

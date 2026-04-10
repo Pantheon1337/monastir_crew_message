@@ -371,6 +371,7 @@ app.post('/api/friends/requests/:id/reject', (req, res) => {
 app.get('/api/feed', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.json({ posts: listFeedPostsForViewer(userId) });
 });
 

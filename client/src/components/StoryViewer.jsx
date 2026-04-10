@@ -28,7 +28,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   const reactionToastTimerRef = useRef(null);
   const items = story?.items ?? [];
   const total = items.length;
-  const stagePtrStartX = useRef(null);
+  const stagePtrStart = useRef(null);
 
   const goNext = useCallback(() => {
     setSlide((s) => {
@@ -102,23 +102,37 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
     } catch {
       /* ignore */
     }
-    stagePtrStartX.current = e.clientX;
+    stagePtrStart.current = { x: e.clientX, y: e.clientY };
     setIsHolding(true);
   }
 
   function onStagePointerUp(e) {
-    const start = stagePtrStartX.current;
-    stagePtrStartX.current = null;
+    const start = stagePtrStart.current;
+    stagePtrStart.current = null;
     setIsHolding(false);
     if (start == null) return;
-    const dx = e.clientX - start;
-    const threshold = 48;
-    if (dx < -threshold) goNext();
-    else if (dx > threshold) goPrev();
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    const move = Math.hypot(dx, dy);
+    const swipeTh = 44;
+    const tapMax = 22;
+
+    if (Math.abs(dx) >= swipeTh && Math.abs(dx) >= Math.abs(dy) * 0.85) {
+      if (dx < 0) goNext();
+      else goPrev();
+      return;
+    }
+
+    if (move < tapMax && Math.abs(dy) < 28) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / Math.max(rect.width, 1);
+      if (relX < 0.28) goPrev();
+      else if (relX > 0.72) goNext();
+    }
   }
 
   function onStagePointerCancel() {
-    stagePtrStartX.current = null;
+    stagePtrStart.current = null;
     setIsHolding(false);
   }
 
@@ -233,7 +247,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           minHeight: 0,
           overflow: 'hidden',
           position: 'relative',
-          touchAction: 'pan-y',
+          touchAction: 'none',
         }}
         onPointerDown={onStagePointerDown}
         onPointerUp={onStagePointerUp}
@@ -263,6 +277,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
                 padding: 16,
                 textAlign: 'center',
                 overflow: 'auto',
+                touchAction: 'pan-y',
               }}
             >
               {it.mediaUrl ? (

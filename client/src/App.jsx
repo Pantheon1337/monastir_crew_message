@@ -125,6 +125,32 @@ export default function App() {
     if (s.ok) setStoryBuckets(s.data.buckets || []);
   }, [user?.id]);
 
+  /** После смены профиля (в т.ч. смайлика) подтягиваем ленту, сторис и чаты — везде одинаковый ник/эмодзи. */
+  const handleUserUpdated = useCallback(
+    (u) => {
+      setUser(u);
+      void Promise.all([refreshFeed(), refreshStories(), refreshSocial()]);
+    },
+    [refreshFeed, refreshStories, refreshSocial],
+  );
+
+  /** Открытый чат + актуальные peerNickname / peerAffiliationEmoji из списка `/api/chats` после refreshSocial. */
+  const openChatResolved = useMemo(() => {
+    if (!openChat) return null;
+    const c = chats.find((x) => String(x.id) === String(openChat.id));
+    if (!c) return openChat;
+    return {
+      ...openChat,
+      name: c.name ?? openChat.name,
+      peerNickname: c.peerNickname ?? openChat.peerNickname,
+      peerAffiliationEmoji: c.peerAffiliationEmoji ?? openChat.peerAffiliationEmoji,
+      peerAvatarUrl: c.peerAvatarUrl ?? openChat.peerAvatarUrl,
+      peerUserId: c.peerUserId ?? openChat.peerUserId,
+      friendsActive: c.friendsActive !== false,
+      canMessage: c.canMessage !== false,
+    };
+  }, [openChat, chats]);
+
   /** После принятия заявки обновляем и ленту/истории (новый друг видит ваши посты и наоборот). */
   const onFriendsChanged = useCallback(async () => {
     await refreshSocial();
@@ -371,6 +397,8 @@ export default function App() {
       name: chat.name,
       peerUserId: chat.peerUserId,
       peerAvatarUrl: chat.peerAvatarUrl ?? null,
+      peerNickname: chat.peerNickname ?? null,
+      peerAffiliationEmoji: chat.peerAffiliationEmoji ?? null,
       friendsActive: chat.friendsActive !== false,
       canMessage: chat.canMessage !== false,
     });
@@ -387,6 +415,10 @@ export default function App() {
       return {
         ...prev,
         name: c.name ?? prev.name,
+        peerNickname: c.peerNickname ?? prev.peerNickname,
+        peerAffiliationEmoji: c.peerAffiliationEmoji ?? prev.peerAffiliationEmoji,
+        peerAvatarUrl: c.peerAvatarUrl ?? prev.peerAvatarUrl,
+        peerUserId: c.peerUserId ?? prev.peerUserId,
         friendsActive: c.friendsActive !== false,
         canMessage: c.canMessage !== false,
       };
@@ -520,27 +552,31 @@ export default function App() {
           onLogout={onLogout}
           socialTick={socialTick}
           onFriendsChanged={onFriendsChanged}
-          onUserUpdated={(u) => setUser(u)}
+          onUserUpdated={handleUserUpdated}
           onOpenArchive={() => setArchiveOpen(true)}
         />
       )}
 
-      {openChat && (
+      {openChatResolved && (
         <DirectChatScreen
           userId={user.id}
-          chatId={openChat.id}
-          peerLabel={openChat.name}
-          peerNickname={openChat.peerNickname}
-          peerAffiliationEmoji={openChat.peerAffiliationEmoji}
-          peerUserId={openChat.peerUserId}
-          peerAvatarUrl={openChat.peerAvatarUrl}
-          peerOnline={openChat.peerUserId != null ? Boolean(presenceOnline[String(openChat.peerUserId)]) : undefined}
-          canMessage={openChat.canMessage !== false}
-          friendsActive={openChat.friendsActive !== false}
+          chatId={openChatResolved.id}
+          peerLabel={openChatResolved.name}
+          peerNickname={openChatResolved.peerNickname}
+          peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
+          peerUserId={openChatResolved.peerUserId}
+          peerAvatarUrl={openChatResolved.peerAvatarUrl}
+          peerOnline={
+            openChatResolved.peerUserId != null
+              ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
+              : undefined
+          }
+          canMessage={openChatResolved.canMessage !== false}
+          friendsActive={openChatResolved.friendsActive !== false}
           onClose={() => setOpenChat(null)}
           lastEvent={lastEvent}
           onAfterChange={refreshSocial}
-          onOpenPeerProfile={() => setPeerProfileUserId(openChat.peerUserId)}
+          onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
           onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
         />
       )}

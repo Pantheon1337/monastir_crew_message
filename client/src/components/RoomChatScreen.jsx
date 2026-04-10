@@ -4,6 +4,7 @@ import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
 import MentionText from './chat/MentionText.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
+import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
@@ -737,6 +738,36 @@ export default function RoomChatScreen({
     return clampMenuPosition(messageMenu.x, messageMenu.y, 232, 200);
   }, [messageMenu, vvRect]);
 
+  const [showScrollDownFab, setShowScrollDownFab] = useState(false);
+  const syncScrollDownFab = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || messages.length === 0) {
+      setShowScrollDownFab(false);
+      return;
+    }
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollDownFab(gap > 96);
+  }, [messages.length]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    syncScrollDownFab();
+    el.addEventListener('scroll', syncScrollDownFab, { passive: true });
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(syncScrollDownFab);
+    });
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', syncScrollDownFab);
+      ro.disconnect();
+    };
+  }, [syncScrollDownFab, messages.length]);
+
+  useLayoutEffect(() => {
+    syncScrollDownFab();
+  }, [messages, loading, syncScrollDownFab]);
+
   const appendMessage = useCallback((m) => {
     const row = normalizeChatMessage(m);
     setMessages((prev) => {
@@ -1391,6 +1422,8 @@ export default function RoomChatScreen({
           </div>
         }
       />
+
+      <ChatScrollDownFab visible={showScrollDownFab} scrollRef={scrollRef} bottomOffsetPx={92} />
 
       {voiceRecording && !videoModal ? (
         <div

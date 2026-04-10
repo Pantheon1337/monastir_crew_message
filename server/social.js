@@ -252,8 +252,7 @@ export function listDirectChatsForUser(userId) {
         COALESCE(dc.friends_active, 1) AS friendsActive,
         CASE WHEN dc.user_a = ? THEN dc.user_b ELSE dc.user_a END AS peerId
       FROM direct_chats dc
-      WHERE dc.user_a = ? OR dc.user_b = ?
-      ORDER BY dc.created_at DESC`
+      WHERE dc.user_a = ? OR dc.user_b = ?`
     )
     .all(userId, userId, userId);
 
@@ -267,6 +266,7 @@ export function listDirectChatsForUser(userId) {
       .get(row.peerId);
     if (!peer) continue;
     const last = getLastMessageForChat(row.chatId, userId);
+    const lastActivityAt = last?.createdAt != null ? last.createdAt : row.chatCreatedAt;
     const peerAvatarUrl = peer.avatarPath ? `/uploads/${peer.avatarPath}` : null;
     const lr = getDb()
       .prepare(`SELECT last_read_at AS lastReadAt FROM chat_last_read WHERE user_id = ? AND chat_id = ?`)
@@ -298,9 +298,11 @@ export function listDirectChatsForUser(userId) {
       unreadCount,
       friendsActive,
       canMessage,
+      _sortAt: lastActivityAt,
     });
   }
-  return out;
+  out.sort((a, b) => (b._sortAt ?? 0) - (a._sortAt ?? 0));
+  return out.map(({ _sortAt: _s, ...rest }) => rest);
 }
 
 export function acceptFriendRequest(requestId, actingUserId) {
@@ -1063,21 +1065,33 @@ export function listFeedPostsForViewer(viewerId) {
     .all(...ids);
   const postIds = rows.map((x) => x.id);
   const getPostReact = loadPostReactionSummaryForPosts(postIds, viewerId);
-  return rows.map((r) => ({
-    id: r.id,
-    authorId: r.authorId,
-    body: r.body,
-    createdAt: r.createdAt,
-    editedAt: r.editedAt ?? null,
-    mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
-    authorNickname: r.authorNickname,
-    authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
-    authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
-    authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
-    authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
-    commentCount: Number(r.commentCount) || 0,
-    reactions: getPostReact(r.id),
-  }));
+  return rows.map((r) => {
+    const react = getPostReact(r.id);
+    const cts = react?.counts ?? {};
+    return {
+      id: r.id,
+      authorId: r.authorId,
+      body: r.body,
+      createdAt: r.createdAt,
+      editedAt: r.editedAt ?? null,
+      mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
+      authorNickname: r.authorNickname,
+      authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
+      authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+      authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
+      authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+      commentCount: Number(r.commentCount) || 0,
+      reactions: {
+        counts: {
+          up: Number(cts.up) || 0,
+          down: Number(cts.down) || 0,
+          fire: Number(cts.fire) || 0,
+          poop: Number(cts.poop) || 0,
+        },
+        mine: react?.mine ?? null,
+      },
+    };
+  });
 }
 
 export function createPost(authorId, { body, mediaPath }) {
