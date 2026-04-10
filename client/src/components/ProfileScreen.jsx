@@ -15,7 +15,15 @@ function profileRoleCaption(displayRole) {
   return 'Пользователь';
 }
 
-export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriendsChanged, onUserUpdated, onOpenArchive }) {
+export default function ProfileScreen({
+  user,
+  onLogout,
+  socialTick = 0,
+  onFriendsChanged,
+  onUserUpdated,
+  onOpenArchive,
+  onViewAvatar,
+}) {
   const fileRef = useRef(null);
   const [incoming, setIncoming] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -134,7 +142,11 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
       <div className="block" style={{ padding: 14, marginBottom: 12 }}>
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={onPickAvatar} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
-          <UserAvatar src={user?.avatarUrl} size={72} />
+          <UserAvatar
+            src={user?.avatarUrl}
+            size={72}
+            onOpen={user?.avatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(user.avatarUrl) : undefined}
+          />
           <button type="button" className="btn-outline" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => fileRef.current?.click()}>
             Аватар
           </button>

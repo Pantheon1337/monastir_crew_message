@@ -434,6 +434,14 @@ video.chat-video-note {
   -webkit-touch-callout: none;
 }
 
+/* Потомки таймлайна: user-select не наследуется надёжно; явно отключаем (в т.ч. у @упоминаний раньше было text) */
+.chat-scaffold-timeline * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Сообщения в чате: без выделения всей страницы при удержании */
 .chat-message-bubble-shell {
   -webkit-user-select: none;
@@ -443,6 +451,19 @@ video.chat-video-note {
   min-width: 0;
   overflow-wrap: break-word;
   word-wrap: break-word;
+}
+
+.chat-message-bubble-shell * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chat-scaffold-timeline img,
+.chat-message-bubble-shell img {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .chat-mention {
@@ -459,8 +480,8 @@ video.chat-video-note {
   vertical-align: baseline;
   word-break: break-word;
   max-width: 100%;
-  -webkit-user-select: text;
-  user-select: text;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .chat-mention:hover {

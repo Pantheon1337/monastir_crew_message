@@ -16,7 +16,14 @@ function profileRoleCaption(displayRole) {
   return 'Пользователь';
 }
 
-export default function FriendProfileSheet({ targetUserId, viewerId, onClose, onFriendshipChanged }) {
+export default function FriendProfileSheet({
+  targetUserId,
+  viewerId,
+  onClose,
+  onFriendshipChanged,
+  onViewAvatar,
+  onViewFullProfile,
+}) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -143,6 +150,11 @@ export default function FriendProfileSheet({ targetUserId, viewerId, onClose, on
             ×
           </button>
         </div>
+        {!loading && !err && profile && !isSelf && typeof onViewFullProfile === 'function' ? (
+          <button type="button" className="btn-primary" style={{ width: '100%', marginBottom: 12 }} onClick={onViewFullProfile}>
+            Смотреть профиль
+          </button>
+        ) : null}
         {loading ? (
           <p className="muted" style={{ fontSize: 12 }}>
             Загрузка…
@@ -151,7 +163,13 @@ export default function FriendProfileSheet({ targetUserId, viewerId, onClose, on
           <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
         ) : profile ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
-            <UserAvatar src={profile.avatarUrl} size={88} />
+            <UserAvatar
+              src={profile.avatarUrl}
+              size={88}
+              onOpen={
+                profile.avatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(profile.avatarUrl) : undefined
+              }
+            />
             <div>
               <div style={{ fontSize: 16, fontWeight: 600 }}>
                 {profile.firstName} {profile.lastName}

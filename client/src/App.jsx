@@ -12,6 +12,8 @@ import StoryViewer from './components/StoryViewer.jsx';
 import StoryCreateModal from './components/StoryCreateModal.jsx';
 import StoriesArchiveModal from './components/StoriesArchiveModal.jsx';
 import FriendProfileSheet from './components/FriendProfileSheet.jsx';
+import PeerProfileFullScreen from './components/PeerProfileFullScreen.jsx';
+import AvatarLightbox from './components/AvatarLightbox.jsx';
 import AppStatusModal from './components/AppStatusModal.jsx';
 import StubMenuModal from './components/StubMenuModal.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
@@ -52,6 +54,8 @@ export default function App() {
   const [storyCreateOpen, setStoryCreateOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [peerProfileUserId, setPeerProfileUserId] = useState(null);
+  const [peerFullProfileUserId, setPeerFullProfileUserId] = useState(null);
+  const [avatarLightboxUrl, setAvatarLightboxUrl] = useState(null);
   const [appStatusOpen, setAppStatusOpen] = useState(false);
   const [menuStub, setMenuStub] = useState(null);
   const [possibleFriendsOpen, setPossibleFriendsOpen] = useState(false);
@@ -615,7 +619,13 @@ export default function App() {
             onCreateRoom={() => setCreateRoomOpen(true)}
             onOpenRoom={handleOpenRoom}
           />
-          <Feed posts={feed} userId={user.id} presenceOnline={presenceOnline} onPosted={refreshFeed} />
+          <Feed
+            posts={feed}
+            userId={user.id}
+            presenceOnline={presenceOnline}
+            onPosted={refreshFeed}
+            onViewAuthorAvatar={(url) => setAvatarLightboxUrl(url)}
+          />
         </>
       )}
 
@@ -651,6 +661,7 @@ export default function App() {
           onFriendsChanged={onFriendsChanged}
           onUserUpdated={handleUserUpdated}
           onOpenArchive={() => setArchiveOpen(true)}
+          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
         />
       )}
 
@@ -687,6 +698,7 @@ export default function App() {
           onAfterChange={refreshSocial}
           onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
           onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
         />
       )}
 
@@ -826,8 +838,35 @@ export default function App() {
             await onFriendsChanged();
             await syncOpenChatFromServer();
           }}
+          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+          onViewFullProfile={() => {
+            const id = peerProfileUserId;
+            setPeerProfileUserId(null);
+            if (id) setPeerFullProfileUserId(id);
+          }}
         />
       )}
+      {peerFullProfileUserId ? (
+        <PeerProfileFullScreen
+          targetUserId={peerFullProfileUserId}
+          viewerId={user.id}
+          onClose={() => setPeerFullProfileUserId(null)}
+          onFriendshipChanged={async () => {
+            await onFriendsChanged();
+            await syncOpenChatFromServer();
+          }}
+          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+          onOpenStory={(authorId) => {
+            setPeerFullProfileUserId(null);
+            void openStoryAuthor(authorId);
+          }}
+          storyBuckets={storyBuckets}
+          presenceOnline={presenceOnline}
+        />
+      ) : null}
+      {avatarLightboxUrl ? (
+        <AvatarLightbox url={avatarLightboxUrl} onClose={() => setAvatarLightboxUrl(null)} />
+      ) : null}
 
       {showMainChrome && (
         <BottomNav

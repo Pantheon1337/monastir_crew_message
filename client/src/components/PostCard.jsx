@@ -124,7 +124,7 @@ function useLongPress(onLongPress, { ms = 480, moveTol = 12 } = {}) {
   };
 }
 
-export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
+export default function PostCard({ post, viewerId, onChanged, authorOnline, onViewAuthorAvatar }) {
   const vvRect = useVisualViewportRect();
   const nick = post.authorNickname ? `@${post.authorNickname}` : post.authorName || '—';
   const affiliationEmoji = post.authorAffiliationEmoji || fallbackAffiliationFromBadge(post.authorBadge || 'user');
@@ -369,6 +369,11 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
             src={post.authorAvatarUrl}
             size={32}
             presenceOnline={typeof authorOnline === 'boolean' ? authorOnline : undefined}
+            onOpen={
+              post.authorAvatarUrl && typeof onViewAuthorAvatar === 'function'
+                ? () => onViewAuthorAvatar(post.authorAvatarUrl)
+                : undefined
+            }
           />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500 }}>{post.authorName || nick}</div>
@@ -452,6 +457,14 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                 </button>
                 {isMine ? (
                   <>
+                    <div
+                      role="separator"
+                      style={{
+                        height: 1,
+                        background: 'var(--border)',
+                        margin: '6px 10px',
+                      }}
+                    />
                     <button
                       type="button"
                       role="menuitem"

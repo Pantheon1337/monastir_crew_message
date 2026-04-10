@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import PostCard from './PostCard.jsx';
 import { api, apiUpload } from '../api.js';
 
-export default function Feed({ posts = [], userId, onPosted, presenceOnline = {} }) {
+export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}, onViewAuthorAvatar }) {
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState(null);
   const [sending, setSending] = useState(false);
@@ -129,6 +129,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
             viewerId={userId}
             onChanged={onPosted}
             authorOnline={p.authorId != null ? Boolean(presenceOnline[String(p.authorId)]) : undefined}
+            onViewAuthorAvatar={onViewAuthorAvatar}
           />
         ))
       )}

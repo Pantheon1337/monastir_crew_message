@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import UserAvatar from './UserAvatar.jsx';
 
 /** new | self — градиент; seen — серое кольцо «все просмотрено» */
-function AvatarRing({ children, variant = 'new' }) {
+export function AvatarRing({ children, variant = 'new' }) {
   const muted = variant === 'seen';
   return (
     <div style={{ position: 'relative', width: 56, flexShrink: 0 }}>
