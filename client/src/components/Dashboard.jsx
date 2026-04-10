@@ -194,19 +194,14 @@ function Panel({ title, children, headerAction }) {
 }
 
 export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpenChat, onCreateRoom, onOpenRoom, presenceOnline = {} }) {
-  /** На главной (две колонки) — не больше двух последних чатов/комнат; в разделах «Чаты»/«Комнаты» — полный список. */
-  const isHomeGrid = !singleColumn;
-  const chatsShown = isHomeGrid ? chats.slice(0, 2) : chats;
-  const roomsShown = isHomeGrid ? rooms.slice(0, 2) : rooms;
-
   const chatsBlock = (
     <Panel title="Чаты">
-      {chatsShown.length === 0 ? (
+      {chats.length === 0 ? (
         <p className="muted" style={{ fontSize: 12, margin: '0 12px 12px' }}>
           Нет диалогов
         </p>
       ) : (
-        chatsShown.map((c) => (
+        chats.map((c) => (
           <ChatRow
             key={c.id}
             chat={c}
@@ -225,28 +220,26 @@ export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpen
         onCreateRoom ? (
           <button
             type="button"
-            className="icon-btn"
+            className="btn-outline"
             aria-label="Создать комнату"
             title="Создать комнату"
             onClick={(e) => {
               e.stopPropagation();
               onCreateRoom();
             }}
-            style={{ width: 30, height: 30 }}
+            style={{ fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap', fontWeight: 600 }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
+            Создать комнату
           </button>
         ) : null
       }
     >
-      {roomsShown.length === 0 ? (
+      {rooms.length === 0 ? (
         <p className="muted" style={{ fontSize: 12, margin: '0 12px 12px' }}>
           Нет комнат
         </p>
       ) : (
-        roomsShown.map((r) => <RoomRow key={r.id} room={r} onOpen={onOpenRoom} />)
+        rooms.map((r) => <RoomRow key={r.id} room={r} onOpen={onOpenRoom} />)
       )}
     </Panel>
   );
@@ -258,10 +251,5 @@ export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpen
     return <section style={{ display: 'grid', gridTemplateColumns: '1fr' }}>{roomsBlock}</section>;
   }
 
-  return (
-    <section style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
-      <div style={{ borderBottom: '1px solid var(--border)' }}>{chatsBlock}</div>
-      {roomsBlock}
-    </section>
-  );
+  return null;
 }

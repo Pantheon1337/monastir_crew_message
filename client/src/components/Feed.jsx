@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import PostCard from './PostCard.jsx';
 import { api, apiUpload } from '../api.js';
+
+const FEED_NEW_TOAST_MS = 5200;
 
 export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}, onViewAuthorAvatar }) {
   const [draft, setDraft] = useState('');
@@ -10,7 +12,36 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
   const [pendingMediaPath, setPendingMediaPath] = useState(null);
   const [pendingName, setPendingName] = useState('');
   const [friendsOnlyPost, setFriendsOnlyPost] = useState(false);
+  const [newFeedToastOpen, setNewFeedToastOpen] = useState(false);
   const fileRef = useRef(null);
+  const feedSeenInitRef = useRef(false);
+  const feedLastTopIdRef = useRef(null);
+
+  /** Новая запись сверху ленты (не от вас) — короткое всплывающее уведомление */
+  useEffect(() => {
+    const top = posts[0];
+    const topId = top?.id ?? null;
+    if (topId == null) return;
+
+    if (!feedSeenInitRef.current) {
+      feedSeenInitRef.current = true;
+      feedLastTopIdRef.current = topId;
+      return;
+    }
+
+    if (feedLastTopIdRef.current === topId) return;
+
+    feedLastTopIdRef.current = topId;
+    if (userId != null && String(top.authorId) !== String(userId)) {
+      setNewFeedToastOpen(true);
+    }
+  }, [posts, userId]);
+
+  useEffect(() => {
+    if (!newFeedToastOpen) return undefined;
+    const t = window.setTimeout(() => setNewFeedToastOpen(false), FEED_NEW_TOAST_MS);
+    return () => window.clearTimeout(t);
+  }, [newFeedToastOpen]);
 
   const canSend = !!(draft.trim() || pendingMediaPath) && userId;
 
@@ -58,6 +89,20 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
 
   return (
     <section style={{ padding: '4px 12px 24px' }}>
+      {newFeedToastOpen ? (
+        <div className="feed-new-post-toast" role="status">
+          <span style={{ flex: 1, minWidth: 0 }}>В ленту добавили новую запись</span>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Закрыть"
+            onClick={() => setNewFeedToastOpen(false)}
+            style={{ width: 32, height: 32, flexShrink: 0, border: 'none' }}
+          >
+            ✕
+          </button>
+        </div>
+      ) : null}
       <form
         className="feed-composer-wrap"
         style={{ padding: '12px 0', marginBottom: 8, borderBottom: '1px solid var(--border)' }}

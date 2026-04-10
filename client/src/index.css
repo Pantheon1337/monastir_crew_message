@@ -184,6 +184,28 @@ a:hover {
   opacity: 0.72;
 }
 
+/* Всплывашка «новая запись в ленте» (над нижней навигацией) */
+.feed-new-post-toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  width: min(calc(100% - 24px), 432px);
+  z-index: 55;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.35;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Композер чата: плотнее к клавиатуре (visualViewport уже поднимает блок) */
 .chat-composer-bar .text-input {
   padding: 8px 10px;
