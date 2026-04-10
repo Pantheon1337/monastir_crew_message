@@ -533,11 +533,11 @@ function MessageBubble({
           style={{
             border: isMediaShell ? 'none' : 'none',
             borderRadius: isMediaShell ? 0 : bubbleRadius,
-            padding: isMediaShell ? 0 : '6px 10px 5px',
+            padding: isMediaShell ? 0 : '9px 11px 7px',
             background: isMediaShell ? 'transparent' : bubbleBg,
             boxShadow: isMediaShell ? 'none' : '0 1px 1px var(--chat-bubble-shadow)',
             overflow: isMediaShell ? 'visible' : 'hidden',
-            maxWidth: isMediaShell ? 'min(420px, 92%)' : undefined,
+            maxWidth: isMediaShell ? 'min(400px, 78%)' : undefined,
             userSelect: 'none',
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
@@ -565,7 +565,7 @@ function MessageBubble({
           </div>
         ) : null}
         {!mine && !isRevoked && roomId && isFirstInGroup ? (
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4, color: 'var(--chat-bubble-meta-name)' }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 5, color: 'var(--chat-bubble-meta-name)' }}>
             @{m.senderNickname || 'user'}
             {m.senderAffiliationEmoji ? <span aria-hidden> {m.senderAffiliationEmoji}</span> : null}
           </div>
@@ -582,26 +582,17 @@ function MessageBubble({
           onUpdate={(r) => onReactionsLocalUpdate?.(m.id, r)}
         />
         ) : null}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'flex-end',
-            flexWrap: 'wrap',
-            gap: 5,
-            marginTop: 3,
-          }}
-        >
+        <div className="chat-bubble-meta-row">
           {m.pinnedForMe ? (
             <span
               title={m.pinnedShared ? 'Закреплено для обоих' : 'Закреплено у вас'}
               aria-hidden
-              style={{ fontSize: 11, lineHeight: 1 }}
+              style={{ fontSize: 11, lineHeight: 1, marginRight: 'auto', opacity: 0.85 }}
             >
               📌
             </span>
           ) : null}
-          <span style={{ fontSize: 11, lineHeight: 1.2, color: 'var(--chat-bubble-time)', whiteSpace: 'nowrap' }}>
+          <span className="chat-bubble-time">
             {formatTime(m.createdAt)}
             {kind === 'text' && m.editedAt != null ? (
               <span title="Сообщение изменено" style={{ opacity: 0.9 }}>
