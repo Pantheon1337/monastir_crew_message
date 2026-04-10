@@ -1,9 +1,11 @@
+import { createPortal } from 'react-dom';
 import { REACTION_ICONS } from '../reactionConstants.js';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
 export default function ReactionUsersModal({ open, title = 'Реакции', users = [], onClose }) {
   if (!open) return null;
-  return (
+
+  const ui = (
     <>
       <div
         role="presentation"
@@ -34,6 +36,7 @@ export default function ReactionUsersModal({ open, title = 'Реакции', use
           padding: 12,
           boxShadow: '0 12px 48px rgba(0,0,0,0.45)',
         }}
+        onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{title}</div>
@@ -71,4 +74,7 @@ export default function ReactionUsersModal({ open, title = 'Реакции', use
       </div>
     </>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(ui, document.body);
 }

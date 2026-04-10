@@ -1,7 +1,7 @@
 /**
  * Плавающая стрелка «к последним сообщениям» при прокрутке вверх по ленте чата.
  */
-export default function ChatScrollDownFab({ visible, scrollRef, bottomOffsetPx = 92 }) {
+export default function ChatScrollDownFab({ visible, scrollRef, bottomOffsetPx = 92, onJumpToBottom }) {
   if (!visible) return null;
   return (
     <button
@@ -10,6 +10,7 @@ export default function ChatScrollDownFab({ visible, scrollRef, bottomOffsetPx =
       onClick={() => {
         const el = scrollRef?.current;
         if (!el) return;
+        onJumpToBottom?.();
         el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
       }}
       style={{

@@ -582,6 +582,8 @@ export default function RoomChatScreen({
   const chatFileInputRef = useRef(null);
   /** Не скроллить ленту сразу после отправки — иначе iOS снимает фокус с поля и закрывает клавиатуру. */
   const suppressChatScrollUntilRef = useRef(0);
+  /** Автоскролл при новых сообщениях / resize только если пользователь у нижней границы ленты. */
+  const stickToBottomRef = useRef(true);
 
   const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -663,6 +665,10 @@ export default function RoomChatScreen({
     load();
   }, [load]);
 
+  useLayoutEffect(() => {
+    stickToBottomRef.current = true;
+  }, [roomId]);
+
   useEffect(() => {
     if (!roomId || !userId) return undefined;
     let cancelled = false;
@@ -737,38 +743,38 @@ export default function RoomChatScreen({
     }
   }, []);
 
-  /** Для ResizeObserver / visualViewport: не дёргать во время подавления после отправки сообщения. */
+  /** Для ResizeObserver / visualViewport: только если «прилипли» к низу; не дёргать при чтении истории. */
   const scrollMessagesToBottom = useCallback(() => {
     if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) {
       return;
     }
+    if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
   }, [scrollMessagesToBottomImmediate]);
 
   useLayoutEffect(() => {
     if (loading) return;
+    if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
   }, [messages, loading, scrollMessagesToBottomImmediate]);
 
-  /** После смены высоты области (клавиатура, vv) лента должна оставаться у последнего сообщения. */
+  /** После смены высоты области (клавиатура, vv) — один кадр без каскада таймеров. */
   useEffect(() => {
     const root = scrollRef.current;
     if (!root) return undefined;
-    let t;
+    let raf = 0;
     const ro = new ResizeObserver(() => {
       if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) {
         return;
       }
-      clearTimeout(t);
-      t = window.setTimeout(() => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(scrollMessagesToBottom);
-        });
-      }, 10);
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        scrollMessagesToBottom();
+      });
     });
     ro.observe(root);
     return () => {
-      clearTimeout(t);
+      cancelAnimationFrame(raf);
       ro.disconnect();
     };
   }, [scrollMessagesToBottom]);
@@ -776,9 +782,7 @@ export default function RoomChatScreen({
   useEffect(() => {
     const onWinResize = () => {
       if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(scrollMessagesToBottom);
-      });
+      requestAnimationFrame(scrollMessagesToBottom);
     };
     window.addEventListener('resize', onWinResize);
     return () => window.removeEventListener('resize', onWinResize);
@@ -786,9 +790,7 @@ export default function RoomChatScreen({
 
   const onVisualViewportSync = useCallback(() => {
     if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(scrollMessagesToBottom);
-    });
+    requestAnimationFrame(scrollMessagesToBottom);
   }, [scrollMessagesToBottom]);
 
   const vvRect = useVisualViewportRect(onVisualViewportSync);
@@ -806,6 +808,7 @@ export default function RoomChatScreen({
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = gap <= 96;
     setShowScrollDownFab(gap > 96);
   }, [messages.length]);
 
@@ -1526,10 +1529,12 @@ export default function RoomChatScreen({
                   }
                 }}
                 onFocus={() => {
+                  stickToBottomRef.current = true;
                   const run = () => scrollMessagesToBottomImmediate();
                   run();
-                  requestAnimationFrame(() => requestAnimationFrame(run));
-                  [60, 180, 400, 700].forEach((ms) => window.setTimeout(run, ms));
+                  requestAnimationFrame(run);
+                  window.setTimeout(run, 160);
+                  window.setTimeout(run, 420);
                 }}
                 maxLength={4000}
               />
@@ -1604,7 +1609,14 @@ export default function RoomChatScreen({
         }
       />
 
-      <ChatScrollDownFab visible={showScrollDownFab} scrollRef={scrollRef} bottomOffsetPx={92} />
+      <ChatScrollDownFab
+        visible={showScrollDownFab}
+        scrollRef={scrollRef}
+        bottomOffsetPx={92}
+        onJumpToBottom={() => {
+          stickToBottomRef.current = true;
+        }}
+      />
 
       {voiceRecording && !videoModal ? (
         <div
