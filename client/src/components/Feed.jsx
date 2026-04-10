@@ -96,25 +96,41 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
             style={{ width: 22, height: 22, flexShrink: 0, marginTop: 2, accentColor: 'var(--accent)' }}
           />
         </label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <button type="button" className="btn-outline" style={{ width: 'auto', fontSize: 12 }} disabled={uploading || !userId} onClick={() => fileRef.current?.click()}>
-            {uploading ? 'Загрузка…' : 'Прикрепить файл'}
-          </button>
-          {pendingMediaPath ? (
-            <span className="muted" style={{ fontSize: 11 }}>
-              {pendingName}{' '}
-              <button type="button" className="icon-btn" style={{ width: 24, height: 24, verticalAlign: 'middle' }} onClick={clearMedia} aria-label="Убрать файл">
-                ✕
-              </button>
-            </span>
-          ) : null}
-        </div>
+        {pendingMediaPath ? (
+          <div className="muted" style={{ fontSize: 11, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{pendingName}</span>
+            <button type="button" className="icon-btn" style={{ width: 28, height: 28, flexShrink: 0 }} onClick={clearMedia} aria-label="Убрать файл">
+              ✕
+            </button>
+          </div>
+        ) : null}
         {err ? (
           <p style={{ fontSize: 11, color: '#c45c5c', margin: '0 0 8px' }}>{err}</p>
         ) : null}
-        <button type="submit" className="btn-primary" style={{ width: 'auto' }} disabled={sending || !canSend}>
-          {sending ? '…' : 'Опубликовать'}
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="icon-btn"
+            disabled={uploading || !userId}
+            onClick={() => fileRef.current?.click()}
+            aria-label={uploading ? 'Загрузка файла' : 'Прикрепить файл'}
+            title={uploading ? 'Загрузка…' : 'Прикрепить файл'}
+            style={{ width: 40, height: 40, opacity: uploading ? 0.65 : 1 }}
+          >
+            {uploading ? (
+              <span style={{ fontSize: 11 }} aria-hidden>
+                …
+              </span>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.2-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            )}
+          </button>
+          <button type="submit" className="btn-primary" style={{ width: 'auto', minWidth: 120 }} disabled={sending || !canSend}>
+            {sending ? '…' : 'Опубликовать'}
+          </button>
+        </div>
       </form>
 
       {posts.length === 0 ? (

@@ -259,8 +259,8 @@ export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpen
   }
 
   return (
-    <section style={{ padding: '0', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-      {chatsBlock}
+    <section style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <div style={{ borderBottom: '1px solid var(--border)' }}>{chatsBlock}</div>
       {roomsBlock}
     </section>
   );
