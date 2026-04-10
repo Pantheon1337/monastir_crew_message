@@ -611,11 +611,21 @@ video.chat-video-note {
   justify-content: flex-end;
 }
 
+/* Ряд на всю ширину + flex: иначе при длинном тексте обёртка тянется на 100%, а inline-block пузырь остаётся слева */
 .chat-swipe-reply-inner {
-  display: block;
-  width: max-content;
+  display: flex;
+  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  min-width: 0;
+}
+
+.chat-message-row--in .chat-swipe-reply-inner {
+  justify-content: flex-start;
+}
+
+.chat-message-row--out .chat-swipe-reply-inner {
+  justify-content: flex-end;
 }
 
 .chat-message-bubble-shell * {
