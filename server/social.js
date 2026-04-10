@@ -1515,6 +1515,50 @@ export function archiveStoryForFeed(storyId, userId) {
   return { ok: true };
 }
 
+/** Вернуть кадр из архива в ленту кружков (пока не истёк срок 24 ч). */
+export function unarchiveStoryForFeed(storyId, userId) {
+  const row = getDb()
+    .prepare(
+      `SELECT id, user_id AS userId, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden FROM stories WHERE id = ?`,
+    )
+    .get(storyId);
+  if (!row) return { error: 'История не найдена' };
+  if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
+  if (row.expiresAt <= Date.now()) return { error: 'Срок истории истёк' };
+  if (row.feedHidden !== 1) return { error: 'Уже в ленте' };
+  getDb().prepare(`UPDATE stories SET feed_hidden = 0, feed_hidden_at = NULL WHERE id = ?`).run(storyId);
+  return { ok: true };
+}
+
+/** Удалить историю навсегда (только автор). */
+export function deleteStoryByAuthor(storyId, userId) {
+  const row = getDb().prepare(`SELECT id, user_id AS userId FROM stories WHERE id = ?`).get(storyId);
+  if (!row) return { error: 'История не найдена' };
+  if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
+  getDb().prepare(`DELETE FROM story_views WHERE story_id = ?`).run(storyId);
+  getDb().prepare(`DELETE FROM stories WHERE id = ?`).run(storyId);
+  return { ok: true };
+}
+
+/** Все неистёкшие кадры автора (включая убранные в архив) — для управления в своём профиле. */
+export function listOwnStoriesForManagement(userId) {
+  const now = Date.now();
+  const rows = getDb()
+    .prepare(
+      `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden
+       FROM stories WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC`,
+    )
+    .all(userId, now);
+  return rows.map((s) => ({
+    id: s.id,
+    body: s.body || '',
+    mediaUrl: s.mediaPath ? `/uploads/${s.mediaPath}` : null,
+    createdAt: s.createdAt,
+    expiresAt: s.expiresAt,
+    feedHidden: Number(s.feedHidden) === 1,
+  }));
+}
+
 /**
  * Истории видны только себе и друзьям (активный личный чат с friends_active = 1).
  * Лента постов по-прежнему общая, если у поста не включено «только для друзей».

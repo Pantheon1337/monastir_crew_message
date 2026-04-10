@@ -636,7 +636,6 @@ export default function DirectChatScreen({
   onAfterChange,
   onOpenPeerProfile,
   onOpenProfileByUserId,
-  onViewAvatar,
   canMessage = true,
   friendsActive = true,
   isSavedMessages = false,
@@ -1503,7 +1502,10 @@ export default function DirectChatScreen({
           src={peerAvatarUrl}
           size={40}
           presenceOnline={typeof peerOnline === 'boolean' ? peerOnline : undefined}
-          onOpen={peerAvatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(peerAvatarUrl) : undefined}
+          onOpen={
+            !isSavedMessages && peerUserId && onOpenPeerProfile ? () => onOpenPeerProfile() : undefined
+          }
+          ariaLabel="Профиль собеседника"
         />
           </header>
         }

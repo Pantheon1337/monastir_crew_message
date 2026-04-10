@@ -1,29 +1,70 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api.js';
 
-export default function StoriesArchiveModal({ userId, onClose }) {
+export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { ok, data } = await api('/api/stories/archive', { userId });
+    if (!ok) {
+      setErr(data?.error || 'Ошибка');
+      setLoading(false);
+      return;
+    }
+    setItems(data.items || []);
+    setErr(null);
+    setLoading(false);
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      setLoading(true);
-      const { ok, data } = await api('/api/stories/archive', { userId });
+      await load();
       if (cancelled) return;
-      if (!ok) {
-        setErr(data?.error || 'Ошибка');
-        setLoading(false);
-        return;
-      }
-      setItems(data.items || []);
-      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [load]);
+
+  async function restoreToFeed(storyId) {
+    if (!userId) return;
+    setBusyId(storyId);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(storyId)}/unarchive`, {
+      method: 'POST',
+      userId,
+    });
+    setBusyId(null);
+    if (!ok) {
+      alert(data?.error || 'Не удалось');
+      return;
+    }
+    onChanged?.();
+    await load();
+  }
+
+  async function removeForever(storyId) {
+    if (!userId) return;
+    if (!window.confirm('Удалить эту историю безвозвратно?')) return;
+    setBusyId(storyId);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(storyId)}`, {
+      method: 'DELETE',
+      userId,
+    });
+    setBusyId(null);
+    if (!ok) {
+      alert(data?.error || 'Не удалось удалить');
+      return;
+    }
+    onChanged?.();
+    await load();
+  }
+
+  const now = Date.now();
 
   return (
     <div
@@ -62,7 +103,7 @@ export default function StoriesArchiveModal({ userId, onClose }) {
           </button>
         </div>
         <p className="muted" style={{ fontSize: 11, margin: '0 0 12px' }}>
-          Истёкшие по времени и кадры, убранные из ленты кнопкой «Архивировать» (до конца 24 ч).
+          Истёкшие по времени и кадры, убранные из ленты. Свои кадры можно вернуть в ленту (пока не истёк 24 ч) или удалить.
         </p>
         {loading ? (
           <p className="muted" style={{ fontSize: 12 }}>
@@ -76,44 +117,80 @@ export default function StoriesArchiveModal({ userId, onClose }) {
           </p>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {items.map((it) => (
-              <li
-                key={it.id}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: it.mediaUrl ? '56px 1fr' : '1fr',
-                  gap: 10,
-                  padding: '10px 0',
-                  borderBottom: '1px solid var(--border)',
-                  fontSize: 12,
-                }}
-              >
-                {it.mediaUrl ? (
-                  <img src={it.mediaUrl} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />
-                ) : null}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 500 }}>
-                    {it.authorLabel}
-                    {it.authorAffiliationEmoji ? ` ${it.authorAffiliationEmoji}` : ''}
-                  </div>
-                  {it.body ? (
-                    <div style={{ marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.45, wordBreak: 'break-word' }}>{it.body}</div>
+            {items.map((it) => {
+              const own = String(it.userId) === String(userId);
+              const notExpired = Number(it.expiresAt) > now;
+              const canRestore = own && it.archivedEarly && notExpired;
+              const canDelete = own;
+              return (
+                <li
+                  key={it.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: it.mediaUrl ? '56px 1fr' : '1fr',
+                    gap: 10,
+                    padding: '10px 0',
+                    borderBottom: '1px solid var(--border)',
+                    fontSize: 12,
+                  }}
+                >
+                  {it.mediaUrl ? (
+                    <img src={it.mediaUrl} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />
                   ) : null}
-                  <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
-                    {it.archivedEarly ? (
-                      <>
-                        снято с ленты{' '}
-                        {it.feedHiddenAt != null
-                          ? new Date(it.feedHiddenAt).toLocaleString('ru-RU')
-                          : ''}
-                        {' · '}
-                      </>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 500 }}>
+                      {it.authorLabel}
+                      {it.authorAffiliationEmoji ? ` ${it.authorAffiliationEmoji}` : ''}
+                    </div>
+                    {it.body ? (
+                      <div style={{ marginTop: 4, whiteSpace: 'pre-line', lineHeight: 1.45, wordBreak: 'break-word' }}>{it.body}</div>
                     ) : null}
-                    истекает / истекла {new Date(it.expiresAt).toLocaleString('ru-RU')}
+                    <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
+                      {it.archivedEarly ? (
+                        <>
+                          снято с ленты{' '}
+                          {it.feedHiddenAt != null ? new Date(it.feedHiddenAt).toLocaleString('ru-RU') : ''}
+                          {' · '}
+                        </>
+                      ) : null}
+                      истекает / истекла {new Date(it.expiresAt).toLocaleString('ru-RU')}
+                    </div>
+                    {own ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {canRestore ? (
+                          <button
+                            type="button"
+                            className="btn-outline"
+                            style={{ fontSize: 11, padding: '4px 10px', width: 'auto' }}
+                            disabled={busyId === it.id}
+                            onClick={() => void restoreToFeed(it.id)}
+                          >
+                            Вернуть в ленту
+                          </button>
+                        ) : null}
+                        {canDelete ? (
+                          <button
+                            type="button"
+                            className="btn-outline"
+                            style={{
+                              fontSize: 11,
+                              padding: '4px 10px',
+                              width: 'auto',
+                              color: '#c45c5c',
+                              borderColor: 'rgba(196,92,92,0.45)',
+                            }}
+                            disabled={busyId === it.id}
+                            onClick={() => void removeForever(it.id)}
+                          >
+                            Удалить
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

@@ -3,6 +3,12 @@ import NicknameWithBadge from './NicknameWithBadge.jsx';
 
 function ChatRow({ chat, onOpen, peerOnline }) {
   const unread = (chat.unreadCount ?? 0) > 0;
+  const saved = chat.isSavedMessages === true;
+  const rowBg = saved
+    ? 'rgba(140, 145, 155, 0.16)'
+    : unread
+      ? 'rgba(193, 123, 75, 0.06)'
+      : 'transparent';
   return (
     <button
       type="button"
@@ -15,7 +21,7 @@ function ChatRow({ chat, onOpen, peerOnline }) {
         padding: '10px 12px',
         width: '100%',
         textAlign: 'left',
-        background: unread ? 'rgba(193, 123, 75, 0.06)' : 'transparent',
+        background: rowBg,
         border: 'none',
         borderBottom: '1px solid var(--border)',
         color: 'inherit',

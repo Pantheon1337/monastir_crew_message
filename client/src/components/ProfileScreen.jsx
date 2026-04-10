@@ -23,6 +23,7 @@ export default function ProfileScreen({
   onUserUpdated,
   onOpenArchive,
   onViewAvatar,
+  onPreviewOwnProfile,
 }) {
   const fileRef = useRef(null);
   const [incoming, setIncoming] = useState([]);
@@ -138,6 +139,14 @@ export default function ProfileScreen({
   return (
     <section style={{ padding: 16 }}>
       <h2 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Профиль</h2>
+
+      {typeof onPreviewOwnProfile === 'function' ? (
+        <div style={{ marginBottom: 12 }}>
+          <button type="button" className="btn-outline" style={{ width: '100%' }} onClick={() => onPreviewOwnProfile()}>
+            Как выглядит мой профиль
+          </button>
+        </div>
+      ) : null}
 
       <div className="block" style={{ padding: 14, marginBottom: 12 }}>
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={onPickAvatar} />

@@ -55,6 +55,9 @@ import {
   listActiveStoryItems,
   listArchivedStoriesForViewer,
   archiveStoryForFeed,
+  unarchiveStoryForFeed,
+  deleteStoryByAuthor,
+  listOwnStoriesForManagement,
   createStory,
   areFriends,
   haveDirectChatLink,
@@ -1333,6 +1336,38 @@ app.get('/api/stories/archive', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   res.json({ items: listArchivedStoriesForViewer(userId) });
+});
+
+app.get('/api/stories/me/manage', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  res.json({ items: listOwnStoriesForManagement(userId) });
+});
+
+app.post('/api/stories/:storyId/unarchive', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = unarchiveStoryForFeed(req.params.storyId, userId);
+  if (out.error) {
+    const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
+  res.json({ ok: true });
+});
+
+app.delete('/api/stories/:storyId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = deleteStoryByAuthor(req.params.storyId, userId);
+  if (out.error) {
+    const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
+  res.json({ ok: true });
 });
 
 app.get('/api/stories/author/:authorId', (req, res) => {

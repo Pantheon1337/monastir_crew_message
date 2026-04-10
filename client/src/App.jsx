@@ -55,6 +55,8 @@ export default function App() {
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [peerProfileUserId, setPeerProfileUserId] = useState(null);
   const [peerFullProfileUserId, setPeerFullProfileUserId] = useState(null);
+  /** Полноэкранный просмотр своего профиля с подсказкой «как видят другие». */
+  const [peerFullProfileViewerPreview, setPeerFullProfileViewerPreview] = useState(false);
   const [avatarLightboxUrl, setAvatarLightboxUrl] = useState(null);
   const [appStatusOpen, setAppStatusOpen] = useState(false);
   const [menuStub, setMenuStub] = useState(null);
@@ -662,6 +664,12 @@ export default function App() {
           onUserUpdated={handleUserUpdated}
           onOpenArchive={() => setArchiveOpen(true)}
           onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+          onPreviewOwnProfile={() => {
+            if (user?.id) {
+              setPeerFullProfileViewerPreview(true);
+              setPeerFullProfileUserId(user.id);
+            }
+          }}
         />
       )}
 
@@ -698,7 +706,6 @@ export default function App() {
           onAfterChange={refreshSocial}
           onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
           onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
         />
       )}
 
@@ -735,7 +742,13 @@ export default function App() {
           onCreated={refreshStories}
         />
       )}
-      {archiveOpen && <StoriesArchiveModal userId={user.id} onClose={() => setArchiveOpen(false)} />}
+      {archiveOpen && (
+        <StoriesArchiveModal
+          userId={user.id}
+          onClose={() => setArchiveOpen(false)}
+          onChanged={() => void refreshStories()}
+        />
+      )}
       {appStatusOpen && (
         <AppStatusModal
           onClose={() => setAppStatusOpen(false)}
@@ -842,7 +855,10 @@ export default function App() {
           onViewFullProfile={() => {
             const id = peerProfileUserId;
             setPeerProfileUserId(null);
-            if (id) setPeerFullProfileUserId(id);
+            if (id) {
+              setPeerFullProfileViewerPreview(false);
+              setPeerFullProfileUserId(id);
+            }
           }}
         />
       )}
@@ -850,7 +866,10 @@ export default function App() {
         <PeerProfileFullScreen
           targetUserId={peerFullProfileUserId}
           viewerId={user.id}
-          onClose={() => setPeerFullProfileUserId(null)}
+          onClose={() => {
+            setPeerFullProfileUserId(null);
+            setPeerFullProfileViewerPreview(false);
+          }}
           onFriendshipChanged={async () => {
             await onFriendsChanged();
             await syncOpenChatFromServer();
@@ -858,10 +877,13 @@ export default function App() {
           onViewAvatar={(url) => setAvatarLightboxUrl(url)}
           onOpenStory={(authorId) => {
             setPeerFullProfileUserId(null);
+            setPeerFullProfileViewerPreview(false);
             void openStoryAuthor(authorId);
           }}
+          onStoriesUpdated={() => void refreshStories()}
           storyBuckets={storyBuckets}
           presenceOnline={presenceOnline}
+          viewerPreview={peerFullProfileViewerPreview}
         />
       ) : null}
       {avatarLightboxUrl ? (
