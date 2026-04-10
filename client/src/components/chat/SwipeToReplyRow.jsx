@@ -99,6 +99,9 @@ export default function SwipeToReplyRow({ children, disabled, onReply }) {
       style={{
         overflow: 'hidden',
         maxWidth: '100%',
+        /* Иначе во flex-ленте min-width→0 и пузырь сжимается — слова рвутся посередине */
+        flexShrink: 0,
+        minWidth: 'min-content',
         touchAction: 'pan-y',
       }}
       onPointerDownCapture={onPointerDownCapture}

@@ -23,13 +23,19 @@ function splitMentions(text) {
   return parts;
 }
 
+const textWrapStyle = {
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'break-word',
+  wordBreak: 'normal',
+};
+
 export default function MentionText({ text, onMentionClick }) {
   const parts = splitMentions(text);
   if (parts.length === 0) {
-    return <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{text}</span>;
+    return <span style={textWrapStyle}>{text}</span>;
   }
   return (
-    <span style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+    <span style={textWrapStyle}>
       {parts.map((p, i) => {
         if (p.type === 'text') {
           return <span key={i}>{p.value}</span>;
