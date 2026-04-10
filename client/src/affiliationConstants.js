@@ -35,6 +35,7 @@ export const AFFILIATION_EMOJI_CHOICES = [
   '💡',
   '🎬',
   '🌍',
+  '🇷🇺',
   '⚡',
   '🌊',
   '🍕',

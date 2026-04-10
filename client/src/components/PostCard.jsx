@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { api } from '../api.js';
 import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
+import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 
 function formatPostTime(ts) {
   if (ts == null) return '';
@@ -63,11 +64,23 @@ function PostMedia({ url }) {
   );
 }
 
+/** Учитывает VisualViewport (клавиатура), иначе меню уезжает за экран. */
 function clampMenuPosition(x, y, w, h) {
   if (typeof window === 'undefined') return { left: x - w / 2, top: y - h - 8 };
-  const left = Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8));
-  const top = Math.max(8, Math.min(y - h - 8, window.innerHeight - h - 8));
-  return { left, top };
+  const vv = window.visualViewport;
+  if (!vv) {
+    const left = Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8));
+    const top = Math.max(8, Math.min(y - h - 8, window.innerHeight - h - 8));
+    return { left, top };
+  }
+  const ox = vv.offsetLeft;
+  const oy = vv.offsetTop;
+  const vw = vv.width;
+  const vh = vv.height;
+  const left = Math.max(ox + 8, Math.min(x - w / 2, ox + vw - w - 8));
+  let top = y - h - 8;
+  if (top < oy + 8) top = y + 8;
+  return { left, top: Math.max(oy + 8, Math.min(top, oy + vh - h - 8)) };
 }
 
 function useLongPress(onLongPress, { ms = 480, moveTol = 12 } = {}) {
@@ -112,6 +125,7 @@ function useLongPress(onLongPress, { ms = 480, moveTol = 12 } = {}) {
 }
 
 export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
+  const vvRect = useVisualViewportRect();
   const nick = post.authorNickname ? `@${post.authorNickname}` : post.authorName || '—';
   const affiliationEmoji = post.authorAffiliationEmoji || fallbackAffiliationFromBadge(post.authorBadge || 'user');
   const isMine = viewerId && String(post.authorId) === String(viewerId);
@@ -136,6 +150,11 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
   const [editCommentText, setEditCommentText] = useState('');
 
   const [postMenu, setPostMenu] = useState(null);
+
+  const postMenuPosition = useMemo(() => {
+    if (!postMenu) return null;
+    return clampMenuPosition(postMenu.x, postMenu.y, 220, 200);
+  }, [postMenu, vvRect]);
 
   useEffect(() => {
     setReactions(post.reactions ?? { counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
@@ -300,10 +319,20 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
 
   return (
     <article
+      onSelectStartCapture={(e) => {
+        const el = e.target;
+        if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return;
+        if (typeof el.closest === 'function' && (el.closest('textarea') || el.closest('input'))) return;
+        e.preventDefault();
+      }}
       style={{
         padding: '12px 0',
         borderBottom: '1px solid var(--border)',
         marginBottom: 0,
+        WebkitUserSelect: 'none',
+        userSelect: 'none',
+        WebkitTouchCallout: 'none',
+        touchAction: 'manipulation',
       }}
     >
       <header
@@ -424,7 +453,13 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
               value={editText}
               onChange={(e) => setEditText(e.target.value.slice(0, 8000))}
               rows={5}
-              style={{ width: '100%', resize: 'vertical' }}
+              style={{
+                width: '100%',
+                resize: 'vertical',
+                fontSize: 16,
+                WebkitUserSelect: 'text',
+                userSelect: 'text',
+              }}
               maxLength={8000}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -602,7 +637,12 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                               value={editCommentText}
                               onChange={(e) => setEditCommentText(e.target.value.slice(0, 4000))}
                               rows={2}
-                              style={{ width: '100%', fontSize: 13 }}
+                              style={{
+                                width: '100%',
+                                fontSize: 16,
+                                WebkitUserSelect: 'text',
+                                userSelect: 'text',
+                              }}
                               maxLength={4000}
                             />
                             <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
@@ -645,7 +685,13 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
                   value={commentDraft}
                   onChange={(e) => setCommentDraft(e.target.value.slice(0, 4000))}
                   rows={2}
-                  style={{ flex: 1, fontSize: 13, resize: 'vertical' }}
+                  style={{
+                    flex: 1,
+                    fontSize: 16,
+                    resize: 'vertical',
+                    WebkitUserSelect: 'text',
+                    userSelect: 'text',
+                  }}
                   maxLength={4000}
                 />
                 <button
@@ -682,7 +728,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline }) {
               position: 'fixed',
               zIndex: 95,
               width: 220,
-              ...clampMenuPosition(postMenu.x, postMenu.y, 220, 200),
+              ...(postMenuPosition || { left: 8, top: 8 }),
               borderRadius: 'var(--radius)',
               border: '1px solid var(--border)',
               background: 'var(--bg)',

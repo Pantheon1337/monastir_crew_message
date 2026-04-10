@@ -24,6 +24,8 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   const [slide, setSlide] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
+  const [reactionToast, setReactionToast] = useState(null);
+  const reactionToastTimerRef = useRef(null);
   const items = story?.items ?? [];
   const total = items.length;
   const stagePtrStartX = useRef(null);
@@ -54,6 +56,14 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   useEffect(() => {
     setSlide(0);
   }, [story?.authorId, story?.items]);
+
+  useEffect(() => {
+    return () => {
+      if (reactionToastTimerRef.current != null) {
+        window.clearTimeout(reactionToastTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const cur = items[slide];
@@ -121,11 +131,19 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
 
   async function sendReact(k) {
     if (!userId || !cur?.id) return;
-    await api('/api/stories/react', {
+    const { ok } = await api('/api/stories/react', {
       method: 'POST',
       body: { storyId: cur.id, reaction: k },
       userId,
     });
+    if (ok) {
+      if (reactionToastTimerRef.current != null) window.clearTimeout(reactionToastTimerRef.current);
+      setReactionToast('Реакция отправлена');
+      reactionToastTimerRef.current = window.setTimeout(() => {
+        reactionToastTimerRef.current = null;
+        setReactionToast(null);
+      }, 1500);
+    }
   }
 
   return (
@@ -360,6 +378,32 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           Вперёд →
         </button>
       </div>
+
+      {reactionToast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 200,
+            padding: '10px 18px',
+            borderRadius: 10,
+            background: 'rgba(30, 32, 38, 0.92)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+            fontSize: 14,
+            fontWeight: 500,
+            pointerEvents: 'none',
+            maxWidth: 'min(320px, calc(100vw - 32px))',
+            textAlign: 'center',
+          }}
+        >
+          {reactionToast}
+        </div>
+      ) : null}
     </div>
   );
 }

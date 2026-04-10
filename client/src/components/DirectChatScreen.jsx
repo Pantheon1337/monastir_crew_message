@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api, apiUpload } from '../api.js';
 import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
@@ -181,9 +181,20 @@ function getCopyTextForMessage(m) {
 
 function clampMenuPosition(x, y, w, h) {
   if (typeof window === 'undefined') return { left: x - w / 2, top: y - h - 8 };
-  const left = Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8));
-  const top = Math.max(8, Math.min(y - h - 8, window.innerHeight - h - 8));
-  return { left, top };
+  const vv = window.visualViewport;
+  if (!vv) {
+    const left = Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8));
+    const top = Math.max(8, Math.min(y - h - 8, window.innerHeight - h - 8));
+    return { left, top };
+  }
+  const ox = vv.offsetLeft;
+  const oy = vv.offsetTop;
+  const vw = vv.width;
+  const vh = vv.height;
+  const left = Math.max(ox + 8, Math.min(x - w / 2, ox + vw - w - 8));
+  let top = y - h - 8;
+  if (top < oy + 8) top = y + 8;
+  return { left, top: Math.max(oy + 8, Math.min(top, oy + vh - h - 8)) };
 }
 
 function ChatMessageReactions({ chatId, roomId, messageId, userId, reactions, onUpdate, align = 'flex-start' }) {
@@ -747,6 +758,11 @@ export default function DirectChatScreen({
   }, [scrollMessagesToBottom]);
 
   const vvRect = useVisualViewportRect(onVisualViewportSync);
+
+  const messageMenuPosition = useMemo(() => {
+    if (!messageMenu) return null;
+    return clampMenuPosition(messageMenu.x, messageMenu.y, 232, 200);
+  }, [messageMenu, vvRect]);
 
   const appendMessage = useCallback((m) => {
     const row = normalizeChatMessage(m);
@@ -1618,7 +1634,7 @@ export default function DirectChatScreen({
               position: 'fixed',
               zIndex: 95,
               width: 232,
-              ...clampMenuPosition(messageMenu.x, messageMenu.y, 232, 200),
+              ...(messageMenuPosition || { left: 8, top: 8 }),
               borderRadius: 'var(--radius)',
               border: '1px solid var(--border)',
               background: 'var(--bg)',
