@@ -38,10 +38,21 @@ export default function ProfileScreen({
   const [emojiSaving, setEmojiSaving] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const emojiPickerRef = useRef(null);
+  const [firstNameDraft, setFirstNameDraft] = useState('');
+  const [lastNameDraft, setLastNameDraft] = useState('');
+  const [nicknameDraft, setNicknameDraft] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nicknameSaving, setNicknameSaving] = useState(false);
 
   useEffect(() => {
     setAboutDraft(user?.about != null ? String(user.about) : '');
   }, [user?.id, user?.about]);
+
+  useEffect(() => {
+    setFirstNameDraft(user?.firstName != null ? String(user.firstName) : '');
+    setLastNameDraft(user?.lastName != null ? String(user.lastName) : '');
+    setNicknameDraft(user?.nickname != null ? String(user.nickname) : '');
+  }, [user?.id, user?.firstName, user?.lastName, user?.nickname]);
 
   const loadIncoming = useCallback(async () => {
     if (!user?.id) return;
@@ -123,6 +134,63 @@ export default function ProfileScreen({
     }
   }
 
+  function nicknameChangeAllowed(u) {
+    if (!u) return false;
+    const rem = u.nicknameChangesRemaining ?? 0;
+    if (rem <= 0) return false;
+    const cnt = u.nicknameChangeCount ?? 0;
+    if (cnt === 0) return true;
+    const last = u.nicknameLastChangedAt;
+    if (last == null) return true;
+    return Date.now() - Number(last) >= 7 * 24 * 60 * 60 * 1000;
+  }
+
+  function nextNicknameChangeAfter(u) {
+    const last = u?.nicknameLastChangedAt;
+    if (last == null) return null;
+    return new Date(Number(last) + 7 * 24 * 60 * 60 * 1000);
+  }
+
+  async function saveRealNames() {
+    if (!user?.id) return;
+    setNameSaving(true);
+    const { ok, data } = await api('/api/users/me', {
+      method: 'PATCH',
+      body: { firstName: firstNameDraft.trim(), lastName: lastNameDraft.trim() },
+      userId: user.id,
+    });
+    setNameSaving(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось сохранить');
+      return;
+    }
+    if (data?.user) {
+      setStoredUser(data.user);
+      onUserUpdated?.(data.user);
+    }
+  }
+
+  async function saveNickname() {
+    if (!user?.id) return;
+    const raw = nicknameDraft.trim().replace(/^@/, '').toLowerCase();
+    if (raw === (user.nickname || '').toLowerCase()) return;
+    setNicknameSaving(true);
+    const { ok, data } = await api('/api/users/me', {
+      method: 'PATCH',
+      body: { nickname: raw },
+      userId: user.id,
+    });
+    setNicknameSaving(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось сменить username');
+      return;
+    }
+    if (data?.user) {
+      setStoredUser(data.user);
+      onUserUpdated?.(data.user);
+    }
+  }
+
   async function onPickAvatar(e) {
     const f = e.target.files?.[0];
     if (!f || !user?.id) return;
@@ -162,9 +230,87 @@ export default function ProfileScreen({
         </div>
 
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          Никнейм
+          Имя и фамилия
         </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+          <input
+            className="text-input"
+            style={{ width: '100%', fontSize: 14 }}
+            value={firstNameDraft}
+            onChange={(e) => setFirstNameDraft(e.target.value.slice(0, 60))}
+            placeholder="Имя"
+            autoComplete="given-name"
+          />
+          <input
+            className="text-input"
+            style={{ width: '100%', fontSize: 14 }}
+            value={lastNameDraft}
+            onChange={(e) => setLastNameDraft(e.target.value.slice(0, 60))}
+            placeholder="Фамилия"
+            autoComplete="family-name"
+          />
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ width: '100%', fontSize: 12 }}
+            disabled={
+              nameSaving ||
+              (firstNameDraft.trim() === (user?.firstName || '') && lastNameDraft.trim() === (user?.lastName || ''))
+            }
+            onClick={() => void saveRealNames()}
+          >
+            {nameSaving ? '…' : 'Сохранить имя'}
+          </button>
+        </div>
+
+        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
+          Username (@ник)
+        </p>
+        <div style={{ margin: '0 0 10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 14, color: 'var(--muted)', flexShrink: 0 }}>@</span>
+            <input
+              className="text-input"
+              style={{ flex: 1, minWidth: 0, fontSize: 14 }}
+              value={nicknameDraft}
+              onChange={(e) => setNicknameDraft(e.target.value.replace(/^@/, '').toLowerCase().slice(0, 30))}
+              placeholder="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+          </div>
+          <p className="muted" style={{ margin: '6px 0 0', fontSize: 10, lineHeight: 1.4 }}>
+            Латиница, цифры и _, 3–30 символов. Осталось смен username:{' '}
+            <strong style={{ color: 'var(--text)' }}>{user?.nicknameChangesRemaining ?? 0}</strong> из 2. Между сменами — не
+            чаще одного раза в 7 дней.
+            {user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0 && nextNicknameChangeAfter(user) ? (
+              <>
+                {' '}
+                Следующая смена: {nextNicknameChangeAfter(user).toLocaleString('ru-RU')}.
+              </>
+            ) : null}
+            {(user?.nicknameChangesRemaining ?? 0) <= 0 ? <> Лимит смен исчерпан.</> : null}
+          </p>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ width: '100%', fontSize: 12, marginTop: 8 }}
+            disabled={
+              nicknameSaving ||
+              !nicknameChangeAllowed(user) ||
+              nicknameDraft.trim().replace(/^@/, '').toLowerCase() === (user?.nickname || '').toLowerCase()
+            }
+            onClick={() => void saveNickname()}
+          >
+            {nicknameSaving ? '…' : 'Сохранить username'}
+          </button>
+        </div>
+
         <div style={{ margin: '0 0 12px' }}>
+          <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
+            Как в приложении
+          </p>
           <div style={{ fontSize: 14, color: 'var(--accent)' }}>
             {user?.nickname ? (
               <NicknameWithBadge nickname={user.nickname} affiliationEmoji={user?.affiliationEmoji} />

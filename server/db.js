@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 
 let db;
 
@@ -456,6 +456,18 @@ function migrate(database) {
     }
     setSchemaVersion(database, 22);
   }
+
+  if (ver < 23) {
+    const u23 = database.prepare('PRAGMA table_info(users)').all();
+    const u23N = new Set(u23.map((row) => row.name));
+    if (!u23N.has('nickname_change_count')) {
+      database.exec('ALTER TABLE users ADD COLUMN nickname_change_count INTEGER NOT NULL DEFAULT 0;');
+    }
+    if (!u23N.has('nickname_last_changed_at')) {
+      database.exec('ALTER TABLE users ADD COLUMN nickname_last_changed_at INTEGER;');
+    }
+    setSchemaVersion(database, 23);
+  }
 }
 
 export function getDb() {
@@ -577,6 +589,9 @@ export function mapPublicUser(row) {
   const storedEmoji = row.displayRoleEmoji ?? row.display_role_emoji;
   const affiliationEmoji = effectiveAffiliationEmoji(row.nickname, storedRole, storedEmoji);
   const customAffiliationEmoji = normalizeAffiliationEmoji(storedEmoji);
+  const ncc = Number(row.nicknameChangeCount ?? row.nickname_change_count ?? 0);
+  const nls = row.nicknameLastChangedAt ?? row.nickname_last_changed_at;
+  const nicknameLastChangedAt = nls != null && nls !== '' ? Number(nls) : null;
   return {
     id: row.id,
     phone: row.phone,
@@ -592,32 +607,32 @@ export function mapPublicUser(row) {
     customAffiliationEmoji,
     /** Не показывать точное время «был в сети» другим. */
     hideLastSeen: (row.hideLastSeen ?? row.hide_last_seen) === 1,
+    /** Смена @username: всего 2 раза, не чаще чем раз в 7 дней. */
+    nicknameChangeCount: Number.isFinite(ncc) ? ncc : 0,
+    nicknameLastChangedAt,
+    nicknameChangesRemaining: Math.max(0, 2 - (Number.isFinite(ncc) ? ncc : 0)),
   };
 }
 
+const USER_PUBLIC_SELECT = `id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen, nickname_change_count AS nicknameChangeCount, nickname_last_changed_at AS nicknameLastChangedAt`;
+
 export function findUserByPhone(phone) {
   const row = getDb()
-    .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen FROM users WHERE phone = ?`
-    )
+    .prepare(`SELECT ${USER_PUBLIC_SELECT} FROM users WHERE phone = ?`)
     .get(phone);
   return mapPublicUser(row);
 }
 
 export function findUserByNickname(nickname) {
   const row = getDb()
-    .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen FROM users WHERE nickname = ?`
-    )
+    .prepare(`SELECT ${USER_PUBLIC_SELECT} FROM users WHERE nickname = ?`)
     .get(nickname);
   return mapPublicUser(row);
 }
 
 export function findUserById(id) {
   const row = getDb()
-    .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen FROM users WHERE id = ?`
-    )
+    .prepare(`SELECT ${USER_PUBLIC_SELECT} FROM users WHERE id = ?`)
     .get(id);
   return mapPublicUser(row);
 }
@@ -658,6 +673,75 @@ export function setUserAvatarPath(userId, relativePath) {
 export function setUserAbout(userId, about) {
   const t = String(about ?? '').trim().slice(0, 100);
   getDb().prepare(`UPDATE users SET about = ? WHERE id = ?`).run(t, userId);
+}
+
+const MAX_NAME_LEN = 60;
+
+/** Имя и фамилия (произвольный разумный лимит). */
+export function setUserRealNames(userId, firstName, lastName) {
+  const f = String(firstName ?? '').trim().slice(0, MAX_NAME_LEN);
+  const l = String(lastName ?? '').trim().slice(0, MAX_NAME_LEN);
+  if (!f || !l) {
+    return { error: 'Имя и фамилия не могут быть пустыми' };
+  }
+  getDb().prepare(`UPDATE users SET first_name = ?, last_name = ? WHERE id = ?`).run(f, l, userId);
+  return { ok: true };
+}
+
+const NICK_CHANGE_MAX = 2;
+const NICK_CHANGE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Смена @username: не более 2 раз за всё время; между сменами не менее 7 дней.
+ */
+export function tryChangeUserNickname(userId, rawNickname) {
+  const nick = normalizeNickname(rawNickname);
+  if (!nick) {
+    return { error: 'Ник: 3–30 символов латиницы, цифр и _, без пробелов' };
+  }
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT id, nickname, nickname_change_count AS cnt, nickname_last_changed_at AS lastAt FROM users WHERE id = ?`,
+    )
+    .get(userId);
+  if (!row) return { error: 'Пользователь не найден' };
+  const current = String(row.nickname || '').toLowerCase();
+  if (current === nick) {
+    return { unchanged: true };
+  }
+  const taken = db.prepare(`SELECT id FROM users WHERE nickname = ? AND id != ?`).get(nick, userId);
+  if (taken) {
+    return { error: 'Этот ник уже занят' };
+  }
+  const cnt = Number(row.cnt) || 0;
+  if (cnt >= NICK_CHANGE_MAX) {
+    return { error: 'Смена username доступна только 2 раза за всё время использования аккаунта' };
+  }
+  const lastAt = row.lastAt != null ? Number(row.lastAt) : null;
+  if (cnt >= 1 && lastAt != null && Date.now() - lastAt < NICK_CHANGE_COOLDOWN_MS) {
+    const next = new Date(lastAt + NICK_CHANGE_COOLDOWN_MS);
+    return {
+      error: `Следующая смена ника возможна не раньше ${next.toLocaleString('ru-RU')} (не чаще одного раза в 7 дней)`,
+    };
+  }
+  const now = Date.now();
+  db.prepare(
+    `UPDATE users SET nickname = ?, nickname_change_count = ?, nickname_last_changed_at = ? WHERE id = ?`,
+  ).run(nick, cnt + 1, now, userId);
+  return { ok: true };
+}
+
+/** Убрать из объекта пользователя поля смены ника (для чужого профиля). */
+export function stripNicknameChangeMeta(user) {
+  if (!user || typeof user !== 'object') return user;
+  const {
+    nicknameChangeCount: _a,
+    nicknameLastChangedAt: _b,
+    nicknameChangesRemaining: _c,
+    ...rest
+  } = user;
+  return rest;
 }
 
 /** Только user или beta; «разработчик» задаётся только логикой ника. */

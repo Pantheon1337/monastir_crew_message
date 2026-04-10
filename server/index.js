@@ -20,6 +20,9 @@ import {
   mapPublicUser,
   setUserAvatarPath,
   setUserAbout,
+  setUserRealNames,
+  tryChangeUserNickname,
+  stripNicknameChangeMeta,
   setUserDisplayRole,
   setUserAffiliationEmoji,
   normalizeAffiliationEmoji,
@@ -581,7 +584,7 @@ app.get('/api/users/:targetId/profile', (req, res) => {
     res.status(403).json({ error: 'Профиль доступен только друзьям' });
     return;
   }
-  const { phone: _p, ...user } = target;
+  const { phone: _p, ...user } = stripNicknameChangeMeta(target);
   const friendship = getFriendshipMetaForProfile(viewerId, targetId);
   res.json({ user, isSelf: false, friendship });
 });
@@ -661,6 +664,39 @@ app.patch('/api/users/me', (req, res) => {
       setUserAffiliationEmoji(userId, n);
     }
   }
+
+  const body = req.body || {};
+  const hasFirst = Object.prototype.hasOwnProperty.call(body, 'firstName');
+  const hasLast = Object.prototype.hasOwnProperty.call(body, 'lastName');
+  if (hasFirst || hasLast) {
+    if (!hasFirst || !hasLast) {
+      res.status(400).json({ error: 'Укажите и имя, и фамилию' });
+      return;
+    }
+    if (typeof body.firstName !== 'string' || typeof body.lastName !== 'string') {
+      res.status(400).json({ error: 'Имя и фамилия должны быть строками' });
+      return;
+    }
+    const nameOut = setUserRealNames(userId, body.firstName, body.lastName);
+    if (nameOut.error) {
+      res.status(400).json({ error: nameOut.error });
+      return;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(body, 'nickname')) {
+    const rawNick = body.nickname;
+    if (rawNick !== null && typeof rawNick !== 'string') {
+      res.status(400).json({ error: 'Username должен быть строкой' });
+      return;
+    }
+    const nickOut = tryChangeUserNickname(userId, rawNick ?? '');
+    if (nickOut.error) {
+      res.status(400).json({ error: nickOut.error });
+      return;
+    }
+  }
+
   const user = findUserById(userId);
   res.json({ user });
 });
