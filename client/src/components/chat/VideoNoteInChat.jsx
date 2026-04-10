@@ -5,7 +5,7 @@ const RING_LEN = 2 * Math.PI * R;
 
 /**
  * Статичное превью (кадр без воспроизведения) → по тапу воспроизведение со звуком.
- * Без автолупа: после окончания снова статичный кадр (как в Telegram по UX).
+ * Без автолупа: после окончания снова статичный кадр.
  */
 export default function VideoNoteInChat({ src, durationMs }) {
   const ref = useRef(null);

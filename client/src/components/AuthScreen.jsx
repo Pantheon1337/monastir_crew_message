@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { apiPath } from '../api.js';
 import { setStoredUser } from '../authStorage.js';
 import { requestNotificationPermission } from '../browserNotification.js';
+import { formatPhoneRuTyping } from '../formatPhone.js';
 
 export default function AuthScreen({ onAuthSuccess }) {
   const [mode, setMode] = useState('login');
-  const [phone, setPhone] = useState('');
+  /** Только цифры, до 11 (7 + 10), для API и formatPhoneRuTyping */
+  const [phoneDigits, setPhoneDigits] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [nickInput, setNickInput] = useState('');
@@ -70,7 +72,7 @@ export default function AuthScreen({ onAuthSuccess }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone,
+          phone: phoneDigits,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
           nickname,
@@ -228,9 +230,19 @@ export default function AuthScreen({ onAuthSuccess }) {
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            placeholder="+216 XX XXX XXX"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+7 999 123 45 67"
+            value={formatPhoneRuTyping(phoneDigits)}
+            onChange={(e) => {
+              const d0 = e.target.value.replace(/\D/g, '');
+              if (d0.length === 0) {
+                setPhoneDigits('');
+                return;
+              }
+              let d = d0;
+              if (d[0] === '8') d = '7' + d.slice(1);
+              else if (d[0] !== '7') d = '7' + d;
+              setPhoneDigits(d.slice(0, 11));
+            }}
             style={{ width: '100%', marginBottom: 12 }}
             required
           />

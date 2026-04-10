@@ -189,7 +189,7 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
         )}
 
         <p style={{ margin: '0 0 6px', fontSize: 11 }} className="muted">
-          Смайлик у ника (как в Telegram; набор совместим с iOS)
+          Смайлик у ника (набор совместим с iOS)
         </p>
         <div ref={emojiPickerRef} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12, position: 'relative' }}>
           <button

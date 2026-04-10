@@ -3,8 +3,10 @@ import { api, apiUpload } from '../api.js';
 import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
 import MentionText from './chat/MentionText.jsx';
+import MentionAutocomplete from './chat/MentionAutocomplete.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
 import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
+import SwipeToReplyRow from './chat/SwipeToReplyRow.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
@@ -17,7 +19,7 @@ import {
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
-/** Видеокружок можно чуть короче голоса (как в Telegram). */
+/** Видеокружок можно чуть короче голоса. */
 const MIN_MS_VIDEO = 320;
 
 const CHAT_TIMELINE_STACK_STYLE = {
@@ -123,6 +125,7 @@ function normalizeChatMessage(m) {
     revokedForAll: m.revokedForAll === true,
     replyTo: m.replyTo ?? null,
     forwardFrom: m.forwardFrom ?? null,
+    editedAt: m.editedAt != null ? m.editedAt : null,
   };
 }
 
@@ -283,7 +286,17 @@ function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, 
   );
 }
 
-function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, onOpenActionMenu, onMentionProfile }) {
+function MessageBubble({
+  m,
+  userId,
+  roomId,
+  formatTime,
+  onReactionsLocalUpdate,
+  onOpenActionMenu,
+  onMentionProfile,
+  allowSwipeReply = true,
+  onSwipeReply,
+}) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
   const shellRef = useRef(null);
@@ -414,6 +427,8 @@ function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, 
     inner = <MentionText text={m.body} onMentionClick={onMentionProfile} />;
   }
 
+  const swipeReplyDisabled = isRevoked || allowSwipeReply === false;
+
   return (
     <div
       style={{
@@ -424,28 +439,42 @@ function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, 
         WebkitUserSelect: 'none',
       }}
     >
-      <div
-        ref={shellRef}
-        className="chat-message-bubble-shell"
-        {...lp}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          onOpenActionMenu?.(m, e.clientX, e.clientY);
-        }}
-        style={{
-          maxWidth: '92%',
-          border: isMediaShell ? 'none' : '1px solid var(--border)',
-          borderRadius: isMediaShell ? 0 : 'var(--radius)',
-          padding: isMediaShell ? 0 : '8px 10px',
-          fontSize: 13,
-          background: isMediaShell ? 'transparent' : mine ? 'rgba(193, 123, 75, 0.12)' : 'transparent',
-          boxShadow: 'none',
-          userSelect: 'none',
-          WebkitUserSelect: 'none',
-          WebkitTouchCallout: 'none',
-          touchAction: 'manipulation',
+      <SwipeToReplyRow
+        disabled={swipeReplyDisabled || !onSwipeReply}
+        onReply={() => {
+          const preview =
+            m.kind === 'text'
+              ? (m.body || '').trim().slice(0, 120)
+              : getCopyTextForMessage(m).slice(0, 120);
+          onSwipeReply?.({
+            id: m.id,
+            senderNickname: m.senderNickname || 'user',
+            preview: preview || '·',
+          });
         }}
       >
+        <div
+          ref={shellRef}
+          className="chat-message-bubble-shell"
+          {...lp}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onOpenActionMenu?.(m, e.clientX, e.clientY);
+          }}
+          style={{
+            maxWidth: '92%',
+            border: isMediaShell ? 'none' : '1px solid var(--border)',
+            borderRadius: isMediaShell ? 0 : 'var(--radius)',
+            padding: isMediaShell ? 0 : '8px 10px',
+            fontSize: 13,
+            background: isMediaShell ? 'transparent' : mine ? 'rgba(193, 123, 75, 0.12)' : 'transparent',
+            boxShadow: 'none',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none',
+            touchAction: 'manipulation',
+          }}
+        >
         {m.forwardFrom?.originalAuthorNickname ? (
           <div className="muted" style={{ fontSize: 10, marginBottom: 6, lineHeight: 1.3 }}>
             Переслано от @{m.forwardFrom.originalAuthorNickname}
@@ -494,6 +523,12 @@ function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, 
         >
           <span className="muted" style={{ fontSize: 9 }}>
             {formatTime(m.createdAt)}
+            {kind === 'text' && m.editedAt != null ? (
+              <span title="Сообщение изменено" style={{ opacity: 0.85 }}>
+                {' '}
+                · изменено
+              </span>
+            ) : null}
           </span>
           {mine && !roomId ? (
             <span
@@ -508,9 +543,10 @@ function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, 
             >
               ✓✓
             </span>
-          ) : null}
+            ) : null}
         </div>
-      </div>
+        </div>
+      </SwipeToReplyRow>
     </div>
   );
 }
@@ -532,12 +568,15 @@ export default function RoomChatScreen({
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [videoModal, setVideoModal] = useState(false);
   const [videoRecording, setVideoRecording] = useState(false);
-  /** Пустое поле: «кружок» (видео) ↔ микрофон (аудио), как в Telegram */
+  /** Пустое поле: «кружок» (видео) ↔ микрофон (аудио) */
   const [mediaMode, setMediaMode] = useState('video');
   const [messageMenu, setMessageMenu] = useState(null);
   const [forwardOpen, setForwardOpen] = useState(false);
   const [forwardMessageId, setForwardMessageId] = useState(null);
   const [replyDraft, setReplyDraft] = useState(null);
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [caretPos, setCaretPos] = useState(0);
+  const [roomMembers, setRoomMembers] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -623,6 +662,19 @@ export default function RoomChatScreen({
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!roomId || !userId) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}`, { userId });
+      if (cancelled || !ok || !data?.room?.members) return;
+      setRoomMembers(data.room.members);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId, userId]);
 
   useEffect(() => {
     if (!roomId || !userId) return undefined;
@@ -945,6 +997,40 @@ export default function RoomChatScreen({
   async function sendTextMessage() {
     const t = text.trim();
     if (!t) return;
+    if (editingMessageId) {
+      const { ok, data } = await api(
+        `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(editingMessageId)}`,
+        { method: 'PATCH', body: { body: t }, userId },
+      );
+      if (!ok) {
+        setErr(data?.error || 'Не удалось сохранить');
+        return;
+      }
+      if (data?.message) {
+        setMessages((prev) =>
+          prev.map((x) => (x.id === editingMessageId ? normalizeChatMessage(data.message) : x)),
+        );
+      }
+      suppressChatScrollUntilRef.current = Date.now() + 900;
+      setEditingMessageId(null);
+      setText('');
+      setErr(null);
+      queueMicrotask(() => {
+        scrollMessagesToBottomImmediate();
+        refocusComposer();
+      });
+      requestAnimationFrame(() => {
+        refocusComposer();
+        requestAnimationFrame(refocusComposer);
+      });
+      [40, 160, 320, 600, 1200].forEach((ms) => window.setTimeout(refocusComposer, ms));
+      window.setTimeout(() => {
+        void api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId }).then(() => {
+          onAfterChange?.();
+        });
+      }, 450);
+      return;
+    }
     const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, {
       method: 'POST',
       body: { body: t, replyToId: replyDraft?.id },
@@ -1192,6 +1278,36 @@ export default function RoomChatScreen({
 
   const hasTypedText = Boolean(text.trim());
 
+  const mentionCandidates = useMemo(() => {
+    return (roomMembers || [])
+      .filter((m) => m.nickname)
+      .map((m) => ({
+        nickname: m.nickname,
+        id: m.id,
+        label: [m.firstName, m.lastName].filter(Boolean).join(' ').trim() || m.nickname,
+      }));
+  }, [roomMembers]);
+
+  const handleMentionPick = useCallback(
+    (nickname, mentionState) => {
+      if (!mentionState) return;
+      const before = text.slice(0, mentionState.start);
+      const after = text.slice(mentionState.end);
+      const insert = `@${nickname} `;
+      const next = before + insert + after;
+      setText(next);
+      const pos = before.length + insert.length;
+      queueMicrotask(() => {
+        const el = composerInputRef.current;
+        if (el && typeof el.setSelectionRange === 'function') {
+          el.setSelectionRange(pos, pos);
+        }
+        setCaretPos(pos);
+      });
+    },
+    [text],
+  );
+
   useLayoutEffect(() => {
     const el = composerInputRef.current;
     if (!el || el.tagName !== 'TEXTAREA') return;
@@ -1254,6 +1370,11 @@ export default function RoomChatScreen({
                   userId={userId}
                   roomId={roomId}
                   formatTime={formatTime}
+                  allowSwipeReply
+                  onSwipeReply={(draft) => {
+                    setReplyDraft(draft);
+                    queueMicrotask(() => refocusComposer());
+                  }}
                   onReactionsLocalUpdate={(id, reactions) =>
                     setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
                   }
@@ -1281,7 +1402,39 @@ export default function RoomChatScreen({
             className="chat-composer-bar"
             style={{ flexDirection: 'column', alignItems: 'stretch' }}
           >
-            {replyDraft ? (
+            {editingMessageId ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '6px 0 8px',
+                  borderBottom: '1px solid var(--border)',
+                  marginBottom: 6,
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="muted" style={{ fontSize: 10 }}>
+                    Редактирование сообщения
+                  </div>
+                  <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85 }}>Под текстом будет пометка «изменено»</div>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Отменить редактирование"
+                  style={{ width: 32, height: 32, flexShrink: 0 }}
+                  onClick={() => {
+                    setEditingMessageId(null);
+                    setText('');
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+            {replyDraft && !editingMessageId ? (
               <div
                 style={{
                   display: 'flex',
@@ -1338,29 +1491,49 @@ export default function RoomChatScreen({
             >
               {mediaUploading ? '…' : '📎'}
             </button>
-            <textarea
-              ref={composerInputRef}
-              className="text-input chat-composer-textarea"
-              style={{ flex: 1, width: '100%' }}
-              rows={1}
-              placeholder="Сообщение…"
-              value={text}
-              enterKeyHint="send"
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  void sendTextMessage();
-                }
-              }}
-              onFocus={() => {
-                const run = () => scrollMessagesToBottomImmediate();
-                run();
-                requestAnimationFrame(() => requestAnimationFrame(run));
-                [60, 180, 400, 700].forEach((ms) => window.setTimeout(run, ms));
-              }}
-              maxLength={4000}
-            />
+            <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+              <MentionAutocomplete
+                candidates={mentionCandidates}
+                text={text}
+                caretPos={caretPos}
+                onPick={handleMentionPick}
+              />
+              <textarea
+                ref={composerInputRef}
+                className="text-input chat-composer-textarea"
+                style={{ width: '100%' }}
+                rows={1}
+                placeholder="Сообщение…"
+                value={text}
+                enterKeyHint="send"
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setCaretPos(e.target.selectionStart ?? 0);
+                }}
+                onSelect={(e) => setCaretPos(e.target.selectionStart ?? 0)}
+                onClick={(e) => setCaretPos(e.target.selectionStart ?? 0)}
+                onKeyUp={(e) => setCaretPos(e.target.selectionStart ?? 0)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape' && editingMessageId) {
+                    e.preventDefault();
+                    setEditingMessageId(null);
+                    setText('');
+                    return;
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    void sendTextMessage();
+                  }
+                }}
+                onFocus={() => {
+                  const run = () => scrollMessagesToBottomImmediate();
+                  run();
+                  requestAnimationFrame(() => requestAnimationFrame(run));
+                  [60, 180, 400, 700].forEach((ms) => window.setTimeout(run, ms));
+                }}
+                maxLength={4000}
+              />
+            </div>
         {hasTypedText ? (
           <button
             type="button"
@@ -1662,6 +1835,25 @@ export default function RoomChatScreen({
                 }}
               >
                 Ответить
+              </button>
+            ) : null}
+            {messageMenu.m.senderId === userId &&
+            messageMenu.m.kind === 'text' &&
+            !messageMenu.m.revokedForAll ? (
+              <button
+                type="button"
+                className="btn-outline"
+                style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
+                onClick={() => {
+                  const msg = messageMenu.m;
+                  setEditingMessageId(msg.id);
+                  setText(msg.body || '');
+                  setReplyDraft(null);
+                  setMessageMenu(null);
+                  queueMicrotask(() => refocusComposer());
+                }}
+              >
+                Изменить
               </button>
             ) : null}
             <button

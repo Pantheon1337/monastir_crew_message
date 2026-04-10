@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import { formatPhoneRuTyping } from '../formatPhone.js';
 
 export default function AddFriendModal({ userId, open, onClose, onSuccess }) {
   const [target, setTarget] = useState('');
@@ -77,9 +78,24 @@ export default function AddFriendModal({ userId, open, onClose, onSuccess }) {
             <input
               className="text-input"
               style={{ width: '100%', marginBottom: 10 }}
-              placeholder="@username или +216…"
+              placeholder="@username или +7 …"
               value={target}
-              onChange={(e) => setTarget(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (/[a-zA-Zа-яА-ЯёЁ@_]/.test(v)) {
+                  setTarget(v);
+                  return;
+                }
+                const d0 = v.replace(/\D/g, '');
+                if (d0.length === 0) {
+                  setTarget('');
+                  return;
+                }
+                let d = d0;
+                if (d[0] === '8') d = '7' + d.slice(1);
+                else if (d[0] !== '7') d = '7' + d;
+                setTarget(formatPhoneRuTyping(d.slice(0, 11)));
+              }}
               autoFocus
             />
             {error ? (

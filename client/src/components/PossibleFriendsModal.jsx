@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { formatPhoneRuTyping } from '../formatPhone.js';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
@@ -154,9 +155,24 @@ export default function PossibleFriendsModal({ open, userId, onClose, onFriendsC
         <input
           type="search"
           className="text-input"
-          placeholder="Поиск: @username или +216…"
+          placeholder="Поиск: @ник или +7 …"
           value={qInput}
-          onChange={(e) => setQInput(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (/[a-zA-Zа-яА-ЯёЁ@_]/.test(v)) {
+              setQInput(v);
+              return;
+            }
+            const d0 = v.replace(/\D/g, '');
+            if (d0.length === 0) {
+              setQInput('');
+              return;
+            }
+            let d = d0;
+            if (d[0] === '8') d = '7' + d.slice(1);
+            else if (d[0] !== '7') d = '7' + d;
+            setQInput(formatPhoneRuTyping(d.slice(0, 11)));
+          }}
           style={{ width: '100%', marginBottom: 10, flexShrink: 0 }}
           autoComplete="off"
         />

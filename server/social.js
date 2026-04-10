@@ -495,6 +495,7 @@ function mapMessageRow(r, getReactions) {
     mediaUrl: revoked ? null : r.mediaPath ? `/uploads/${r.mediaPath}` : null,
     durationMs: revoked ? null : r.durationMs != null ? r.durationMs : null,
     createdAt: r.createdAt,
+    editedAt: revoked || r.editedAt == null ? null : r.editedAt,
     senderNickname: r.senderNickname,
     senderAffiliationEmoji: aff,
     refStoryId: revoked ? null : (r.refStoryId ?? null),
@@ -510,7 +511,7 @@ function mapMessageRow(r, getReactions) {
 /** Одна строка для WS / API — тот же формат, что и в ленте (важно для kind + mediaUrl у собеседника). */
 export function getMessageByIdForChat(chatId, messageId, viewerId = null) {
   let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
         m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
         u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
@@ -558,7 +559,7 @@ export function listMessagesForChat(chatId, userId, limit = 200) {
   const rows = getDb()
     .prepare(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
         m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
         u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
@@ -917,6 +918,27 @@ export function revokeDirectMessageForEveryone(chatId, userId, messageId) {
     )
     .run(messageId);
   getDb().prepare(`DELETE FROM message_reactions WHERE message_id = ?`).run(messageId);
+  return { ok: true, peerId: getPeerIdInDirectChat(chatId, userId) };
+}
+
+export function updateDirectMessage(chatId, userId, messageId, body) {
+  const trimmed = String(body ?? '').trim();
+  if (!trimmed) return { error: 'Пустое сообщение' };
+  if (trimmed.length > 4000) return { error: 'Сообщение не длиннее 4000 символов' };
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const row = getDb()
+    .prepare(
+      `SELECT sender_id AS senderId, kind, revoked_for_all AS revoked FROM messages WHERE id = ? AND chat_id = ?`
+    )
+    .get(messageId, chatId);
+  if (!row) return { error: 'Сообщение не найдено' };
+  if (String(row.senderId) !== String(userId)) return { error: 'Можно изменить только свои сообщения' };
+  if (row.revoked === 1) return { error: 'Сообщение удалено' };
+  if ((row.kind || 'text') !== 'text') return { error: 'Можно изменить только текст' };
+  const editedAt = Date.now();
+  getDb()
+    .prepare(`UPDATE messages SET body = ?, edited_at = ? WHERE id = ? AND chat_id = ?`)
+    .run(trimmed, editedAt, messageId, chatId);
   return { ok: true, peerId: getPeerIdInDirectChat(chatId, userId) };
 }
 
@@ -1375,7 +1397,7 @@ export function listStoryBucketsForViewer(viewerId) {
       .get(r.userId);
     if (!u) continue;
     let allViewed = true;
-    if (String(r.userId) !== String(viewerId) && r.cnt > 0) {
+    if (r.cnt > 0) {
       const unseen = db
         .prepare(
           `SELECT COUNT(*) AS c FROM stories s
@@ -1543,7 +1565,7 @@ export function listUsersDirectoryForViewer(viewerId, query) {
   });
 }
 
-/** Друзья для выбора при создании комнаты (как в Telegram). */
+/** Друзья для выбора при создании комнаты. */
 export function listFriendPeersForUser(viewerId) {
   const peerIds = listPeerUserIds(viewerId);
   if (peerIds.length === 0) return [];
@@ -1756,7 +1778,7 @@ export function listRoomMessages(roomId, userId, limit = 200) {
   const rows = getDb()
     .prepare(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
         m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
         u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
@@ -1781,7 +1803,7 @@ export function listRoomMessages(roomId, userId, limit = 200) {
 
 export function getMessageByIdForRoom(roomId, messageId, viewerId = null) {
   let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
         m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
         u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
@@ -1843,6 +1865,27 @@ export function insertRoomMessage(roomId, userId, body, options = {}) {
     },
     memberIds: listRoomMemberUserIds(roomId),
   };
+}
+
+export function updateRoomMessage(roomId, userId, messageId, body) {
+  const trimmed = String(body ?? '').trim();
+  if (!trimmed) return { error: 'Пустое сообщение' };
+  if (trimmed.length > 4000) return { error: 'Сообщение не длиннее 4000 символов' };
+  if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
+  const row = getDb()
+    .prepare(
+      `SELECT sender_id AS senderId, kind, revoked_for_all AS revoked FROM room_messages WHERE id = ? AND room_id = ?`
+    )
+    .get(messageId, roomId);
+  if (!row) return { error: 'Сообщение не найдено' };
+  if (String(row.senderId) !== String(userId)) return { error: 'Можно изменить только свои сообщения' };
+  if (row.revoked === 1) return { error: 'Сообщение удалено' };
+  if ((row.kind || 'text') !== 'text') return { error: 'Можно изменить только текст' };
+  const editedAt = Date.now();
+  getDb()
+    .prepare(`UPDATE room_messages SET body = ?, edited_at = ? WHERE id = ? AND room_id = ?`)
+    .run(trimmed, editedAt, messageId, roomId);
+  return { ok: true, memberIds: listRoomMemberUserIds(roomId) };
 }
 
 export function insertRoomMediaMessage(roomId, userId, kind, mediaRelativePath, durationMs) {

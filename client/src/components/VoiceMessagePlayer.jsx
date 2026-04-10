@@ -8,7 +8,7 @@ function formatClock(sec) {
   return `${m}:${String(rs).padStart(2, '0')}`;
 }
 
-/** Голосовое без «квадратного» chrome: плашка как в Telegram (плей + прогресс). */
+/** Голосовое без «квадратного» chrome: плашка (плей + прогресс). */
 export default function VoiceMessagePlayer({ src, durationMs, mine }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);

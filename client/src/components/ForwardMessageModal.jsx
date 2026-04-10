@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
 /**
- * Пересылка сообщения в другой личный чат или комнату (как в Telegram).
+ * Пересылка сообщения в другой личный чат или комнату.
  * @param {{ type: 'chat', id: string } | { type: 'room', id: string }} source — текущий контекст (исключаем из списка).
  */
 export default function ForwardMessageModal({ open, onClose, userId, source, messageId, onAfterForward }) {

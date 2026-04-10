@@ -104,7 +104,7 @@ export default function StoriesBar({ user, buckets = [], presenceOnline = {}, on
         {buckets.map((b) => {
           const isSelf = Boolean(b.isSelf) || String(b.userId) === String(user?.id);
           const label = isSelf ? 'Вы' : b.label;
-          const ringVariant = isSelf ? 'self' : b.allViewed ? 'seen' : 'new';
+          const ringVariant = b.allViewed ? 'seen' : isSelf ? 'self' : 'new';
           const peerOn = !isSelf && b.userId != null ? Boolean(presenceOnline[String(b.userId)]) : null;
           return (
             <button

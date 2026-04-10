@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 let db;
 
@@ -382,6 +382,20 @@ function migrate(database) {
       database.exec('ALTER TABLE users ADD COLUMN last_seen_at INTEGER;');
     }
     setSchemaVersion(database, 17);
+  }
+
+  if (ver < 18) {
+    const msgE = database.prepare('PRAGMA table_info(messages)').all();
+    const msgEN = new Set(msgE.map((row) => row.name));
+    if (!msgEN.has('edited_at')) {
+      database.exec('ALTER TABLE messages ADD COLUMN edited_at INTEGER;');
+    }
+    const rmE = database.prepare('PRAGMA table_info(room_messages)').all();
+    const rmEN = new Set(rmE.map((row) => row.name));
+    if (!rmEN.has('edited_at')) {
+      database.exec('ALTER TABLE room_messages ADD COLUMN edited_at INTEGER;');
+    }
+    setSchemaVersion(database, 18);
   }
 }
 

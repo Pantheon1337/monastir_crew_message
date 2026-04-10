@@ -314,7 +314,7 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', minHeight: 88, padding: '0 8px' }}>
-              {/* Галерея — слева снизу, как в Telegram */}
+              {/* Галерея — слева снизу */}
               <button
                 type="button"
                 aria-label="Открыть галерею"

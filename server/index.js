@@ -38,6 +38,7 @@ import {
   listDirectChatsForUser,
   listMessagesForChat,
   insertDirectMessage,
+  updateDirectMessage,
   insertChatMediaMessage,
   getMessageByIdForChat,
   markChatRead,
@@ -76,6 +77,7 @@ import {
   addRoomMembers,
   listRoomMessages,
   insertRoomMessage,
+  updateRoomMessage,
   insertRoomMediaMessage,
   insertChatAttachmentMessage,
   insertRoomAttachmentMessage,
@@ -717,6 +719,33 @@ app.post('/api/chats/:chatId/messages', (req, res) => {
   res.status(201).json({ message: msgOut });
 });
 
+app.patch('/api/chats/:chatId/messages/:messageId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = updateDirectMessage(req.params.chatId, userId, req.params.messageId, req.body?.body);
+  if (out.error) {
+    const st = out.error.includes('не найден')
+      ? 404
+      : out.error.includes('Нет доступа') || out.error.includes('только')
+        ? 403
+        : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  const chatId = req.params.chatId;
+  const messageId = req.params.messageId;
+  const peerId = out.peerId;
+  const msgPeer = peerId ? getMessageByIdForChat(chatId, messageId, peerId) : null;
+  const msgSelf = getMessageByIdForChat(chatId, messageId, userId);
+  if (peerId && msgPeer) {
+    sendToUser(peerId, { type: 'chat:message:updated', payload: { chatId, message: msgPeer } });
+  }
+  if (msgSelf) {
+    sendToUser(userId, { type: 'chat:message:updated', payload: { chatId, message: msgSelf } });
+  }
+  res.json({ message: msgSelf || msgPeer });
+});
+
 app.post('/api/chats/:chatId/messages/voice', (req, res) => {
   chatVoiceUpload.single('file')(req, res, (err) => {
     if (err) {
@@ -1001,6 +1030,29 @@ app.post('/api/rooms/:roomId/messages', (req, res) => {
     payload: { roomId, message: msgOut },
   });
   res.status(201).json({ message: msgOut });
+});
+
+app.patch('/api/rooms/:roomId/messages/:messageId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const roomId = req.params.roomId;
+  const messageId = req.params.messageId;
+  const out = updateRoomMessage(roomId, userId, messageId, req.body?.body);
+  if (out.error) {
+    const st = out.error.includes('не найден')
+      ? 404
+      : out.error.includes('Нет доступа') || out.error.includes('только')
+        ? 403
+        : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  for (const uid of listRoomMemberUserIds(roomId)) {
+    const m = getMessageByIdForRoom(roomId, messageId, uid);
+    if (m) sendToUser(uid, { type: 'room:message:updated', payload: { roomId, message: m } });
+  }
+  const msgSelf = getMessageByIdForRoom(roomId, messageId, userId);
+  res.json({ message: msgSelf });
 });
 
 app.post('/api/rooms/:roomId/read', (req, res) => {

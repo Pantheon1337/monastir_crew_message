@@ -1,5 +1,5 @@
 /**
- * Никнейм с смайликом принадлежности (как в Telegram).
+ * Никнейм со смайликом принадлежности (роль/кастом).
  * affiliationEmoji — с сервера (effective), уже готовый символ.
  */
 export default function NicknameWithBadge({ nickname, affiliationEmoji, style, className }) {
