@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-const MAX_DRAG = 72;
-const COMMIT_PX = 46;
+/** Умеренный сдвиг, чтобы пузырь не уезжал за край скролла и не «пропадал» */
+const MAX_DRAG = 44;
+const COMMIT_PX = 32;
 const AXIS_LOCK_PX = 10;
 
 /**
@@ -96,11 +97,12 @@ export default function SwipeToReplyRow({ children, disabled, onReply }) {
 
   return (
     <div
+      className="chat-swipe-reply-row"
       style={{
         maxWidth: '100%',
         minWidth: 0,
         flexShrink: 0,
-        overflow: 'hidden',
+        overflow: 'visible',
         touchAction: 'pan-y',
       }}
       onPointerDownCapture={onPointerDownCapture}

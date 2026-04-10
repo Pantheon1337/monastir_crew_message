@@ -59,6 +59,9 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [cameraError, setCameraError] = useState(null);
   const [facing, setFacing] = useState('environment');
+  /** Показывать кадр в сетке профиля у гостей; иначе только в ленте кружков, затем в архив */
+  const [showInProfile, setShowInProfile] = useState(true);
+  const [confirmPublishOpen, setConfirmPublishOpen] = useState(false);
 
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -166,12 +169,17 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
     }
     setSaving(true);
     setErr(null);
-    const { ok, data } = await api('/api/stories', { method: 'POST', body: { body: t }, userId });
+    const { ok, data } = await api('/api/stories', {
+      method: 'POST',
+      body: { body: t, showInProfile },
+      userId,
+    });
     setSaving(false);
     if (!ok) {
       setErr(data?.error || 'Не сохранено');
       return;
     }
+    setConfirmPublishOpen(false);
     onCreated?.();
     onClose();
   }
@@ -189,18 +197,36 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
         file: pickedFile,
         userId,
         fieldName: 'media',
-        extraFields: { body: t },
+        extraFields: { body: t, showInProfile: showInProfile ? '1' : '0' },
       });
       setSaving(false);
       if (!ok) {
         setErr(data?.error || 'Не сохранено');
         return;
       }
+      setConfirmPublishOpen(false);
       onCreated?.();
       onClose();
       return;
     }
     await submitTextOnly();
+  }
+
+  function requestPublish() {
+    const t = text.trim();
+    if (mode === 'textOnly') {
+      if (!t) {
+        setErr('Введите текст');
+        return;
+      }
+    } else if (mode === 'preview') {
+      if (!pickedFile && !t) {
+        setErr('Добавьте фото или текст');
+        return;
+      }
+    }
+    setErr(null);
+    setConfirmPublishOpen(true);
   }
 
   const canUseCamera =
@@ -442,7 +468,7 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
           />
           {err ? <p style={{ fontSize: 11, color: '#c45c5c', margin: '0 0 8px' }}>{err}</p> : null}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn-primary" style={{ flex: 1 }} disabled={saving} onClick={() => void submitTextOnly()}>
+            <button type="button" className="btn-primary" style={{ flex: 1 }} disabled={saving} onClick={() => requestPublish()}>
               {saving ? '…' : 'Опубликовать'}
             </button>
             <button
@@ -504,7 +530,7 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
             style={{ margin: 12, padding: 12 }}
             onSubmit={(e) => {
               e.preventDefault();
-              void submitWithFile();
+              requestPublish();
             }}
           >
             <textarea
@@ -518,7 +544,7 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
             {err ? <p style={{ fontSize: 11, color: '#c45c5c', margin: '0 0 8px' }}>{err}</p> : null}
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="submit" className="btn-primary" style={{ flex: 1 }} disabled={saving}>
-                {saving ? '…' : 'Опубликовать'}
+                {saving ? '…' : 'Дальше'}
               </button>
               <button type="button" className="btn-outline" style={{ flex: 1 }} onClick={retake}>
                 Переснять
@@ -527,6 +553,84 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
           </form>
         </div>
       )}
+
+      {confirmPublishOpen ? (
+        <div
+          role="presentation"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 120,
+            background: 'rgba(0,0,0,0.72)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+          onClick={() => !saving && setConfirmPublishOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="story-confirm-title"
+            className="block"
+            style={{
+              width: '100%',
+              maxWidth: 360,
+              padding: 16,
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p id="story-confirm-title" style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 600 }}>
+              Выложить историю?
+            </p>
+            <p className="muted" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.45 }}>
+              Кадр появится у друзей в ленте кружков на сутки. Потом — в архиве, пока не истечёт срок.
+            </p>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                cursor: saving ? 'default' : 'pointer',
+                marginBottom: 16,
+                fontSize: 13,
+                lineHeight: 1.4,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={showInProfile}
+                disabled={saving}
+                onChange={(e) => setShowInProfile(e.target.checked)}
+                style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0, accentColor: 'var(--accent)' }}
+              />
+              <span>
+                Показывать в профиле
+                <span className="muted" style={{ display: 'block', fontSize: 11, marginTop: 4 }}>
+                  Если включено — кадр сразу виден в сетке на вашей странице. Если выключено — только в ленте историй, в профиле у гостей не отображается (после снятия с ленты попадёт в архив как обычно).
+                </span>
+              </span>
+            </label>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn-outline" disabled={saving} onClick={() => setConfirmPublishOpen(false)}>
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={saving}
+                onClick={() => void (mode === 'textOnly' ? submitTextOnly() : submitWithFile())}
+              >
+                {saving ? 'Публикация…' : 'Выложить'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

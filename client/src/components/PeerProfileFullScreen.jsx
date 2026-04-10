@@ -44,7 +44,7 @@ export default function PeerProfileFullScreen({
     setErr(null);
     const [profRes, storyRes] = await Promise.all([
       api(`/api/users/${encodeURIComponent(targetUserId)}/profile`, { userId: viewerId }),
-      api(`/api/stories/author/${encodeURIComponent(targetUserId)}`, { userId: viewerId }),
+      api(`/api/stories/author/${encodeURIComponent(targetUserId)}?profileGrid=1`, { userId: viewerId }),
     ]);
     if (!profRes.ok) {
       setErr(profRes.data?.error || 'Не удалось загрузить');

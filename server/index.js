@@ -1409,7 +1409,8 @@ app.delete('/api/stories/:storyId', (req, res) => {
 app.get('/api/stories/author/:authorId', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const items = listActiveStoryItems(userId, req.params.authorId);
+  const profileGrid = req.query.profileGrid === '1' || req.query.profileGrid === 'true';
+  const items = listActiveStoryItems(userId, req.params.authorId, { profileGridOnly: profileGrid });
   res.json({ items: items || [] });
 });
 
@@ -1429,7 +1430,7 @@ app.post('/api/stories/:storyId/archive', (req, res) => {
 app.post('/api/stories', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const out = createStory(userId, { body: req.body?.body, mediaPath: '' });
+  const out = createStory(userId, { body: req.body?.body, mediaPath: '', showInProfile: req.body?.showInProfile });
   if (out.error) {
     res.status(400).json({ error: out.error });
     return;
@@ -1452,7 +1453,9 @@ app.post('/api/stories/upload', (req, res) => {
     }
     const rel = storyMediaRelativePath(req.file.filename);
     const caption = typeof req.body?.body === 'string' ? req.body.body : '';
-    const out = createStory(userId, { body: caption, mediaPath: rel });
+    let sip = req.body?.showInProfile;
+    if (typeof sip === 'string') sip = sip === '1' || sip === 'true';
+    const out = createStory(userId, { body: caption, mediaPath: rel, showInProfile: sip });
     if (out.error) {
       res.status(400).json({ error: out.error });
       return;

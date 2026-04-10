@@ -23,8 +23,8 @@
   --chat-check-read: #5dcf8c;
   --chat-mention-bg: rgba(122, 184, 232, 0.2);
   --chat-mention-fg: #b8dafb;
-  --chat-font-size: 15px;
-  --chat-line-height: 1.42;
+  --chat-font-size: 14px;
+  --chat-line-height: 1.4;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.45;
@@ -489,6 +489,24 @@ video.chat-video-note {
   min-width: 0;
   overflow-wrap: break-word;
   word-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
+}
+
+/* Меньше «лесенки» от переносов по буквам в моноширинном шрифте */
+.chat-tg-bubble {
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.chat-swipe-reply-row {
+  /* запас по горизонтали, чтобы сдвиг transform не обрезался у края ленты */
+  margin-left: -4px;
+  margin-right: -4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  box-sizing: content-box;
+  max-width: calc(100% + 8px);
 }
 
 .chat-message-bubble-shell * {
@@ -530,6 +548,7 @@ video.chat-video-note {
 .chat-tg-bubble .chat-mention {
   background: var(--chat-mention-bg);
   color: var(--chat-mention-fg);
+  word-break: normal;
 }
 
 /* Просмотр историй: без выделения текста; пауза по удержанию на области контента */

@@ -1477,17 +1477,21 @@ export function deletePostComment(commentId, userId) {
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
 
-export function createStory(userId, { body, mediaPath }) {
+export function createStory(userId, { body, mediaPath, showInProfile = true }) {
   const b = body != null ? String(body).trim() : '';
   const media = mediaPath ? String(mediaPath).trim() : '';
   if (!b && !media) return { error: 'Добавьте текст или изображение' };
   if (b.length > 4000) return { error: 'Текст не длиннее 4000 символов' };
+  const sip =
+    showInProfile === false || showInProfile === 0 || showInProfile === '0' || showInProfile === 'false' ? 0 : 1;
   const id = randomUUID();
   const createdAt = Date.now();
   const expiresAt = createdAt + STORY_TTL_MS;
   getDb()
-    .prepare(`INSERT INTO stories (id, user_id, body, media_path, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(id, userId, b || null, media || null, createdAt, expiresAt);
+    .prepare(
+      `INSERT INTO stories (id, user_id, body, media_path, created_at, expires_at, show_in_profile) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, userId, b || null, media || null, createdAt, expiresAt, sip);
   return {
     ok: true,
     story: {
@@ -1497,6 +1501,7 @@ export function createStory(userId, { body, mediaPath }) {
       mediaUrl: media ? `/uploads/${media}` : null,
       createdAt,
       expiresAt,
+      showInProfile: sip === 1,
     },
   };
 }
@@ -1545,7 +1550,8 @@ export function listOwnStoriesForManagement(userId) {
   const now = Date.now();
   const rows = getDb()
     .prepare(
-      `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden
+      `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden,
+        COALESCE(show_in_profile, 1) AS showInProfile
        FROM stories WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC`,
     )
     .all(userId, now);
@@ -1556,6 +1562,7 @@ export function listOwnStoriesForManagement(userId) {
     createdAt: s.createdAt,
     expiresAt: s.expiresAt,
     feedHidden: Number(s.feedHidden) === 1,
+    showInProfile: Number(s.showInProfile) === 1,
   }));
 }
 
@@ -1630,15 +1637,17 @@ export function listStoryBucketsForViewer(viewerId) {
 }
 
 /** Просмотр историй пользователя (неистёкшие кадры), только если друг или это вы сами. */
-export function listActiveStoryItems(viewerId, authorId) {
+export function listActiveStoryItems(viewerId, authorId, options = {}) {
   if (!canViewerSeeUserStories(viewerId, authorId)) return [];
+  const profileGridOnly = options.profileGridOnly === true;
   const now = Date.now();
-  const rows = getDb()
-    .prepare(
-      `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
-       FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0 ORDER BY created_at ASC`
-    )
-    .all(authorId, now);
+  let sql = `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
+       FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0`;
+  if (profileGridOnly) {
+    sql += ` AND COALESCE(show_in_profile, 1) = 1`;
+  }
+  sql += ` ORDER BY created_at ASC`;
+  const rows = getDb().prepare(sql).all(authorId, now);
   return rows.map((s) => ({
     id: s.id,
     body: s.body || '',

@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 let db;
 
@@ -467,6 +467,17 @@ function migrate(database) {
       database.exec('ALTER TABLE users ADD COLUMN nickname_last_changed_at INTEGER;');
     }
     setSchemaVersion(database, 23);
+    ver = 23;
+  }
+
+  if (ver < 24) {
+    const st24 = database.prepare('PRAGMA table_info(stories)').all();
+    const n24 = new Set(st24.map((row) => row.name));
+    if (!n24.has('show_in_profile')) {
+      database.exec('ALTER TABLE stories ADD COLUMN show_in_profile INTEGER NOT NULL DEFAULT 1;');
+    }
+    setSchemaVersion(database, 24);
+    ver = 24;
   }
 }
 
