@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
-import { AvatarRing } from './StoriesBar.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
 
 function formatJoined(ts) {
@@ -28,8 +27,6 @@ export default function PeerProfileFullScreen({
   onViewAvatar,
   onOpenStory,
   onStoriesUpdated,
-  storyBuckets = [],
-  presenceOnline = {},
   viewerPreview = false,
 }) {
   const [loading, setLoading] = useState(true);
@@ -80,18 +77,13 @@ export default function PeerProfileFullScreen({
     };
   }, [load]);
 
-  const bucket = useMemo(
-    () => storyBuckets.find((b) => String(b.userId) === String(targetUserId)),
-    [storyBuckets, targetUserId],
-  );
+  /** В сетке: у себя (не предпросмотр) — все неистёкшие кадры включая скрытые с ленты; у других — только активные в ленте. */
+  const gridStories = useMemo(() => {
+    if (isSelf && !viewerPreview) return manageItems;
+    return storyItems;
+  }, [isSelf, viewerPreview, manageItems, storyItems]);
 
-  const hasStories = storyItems.length > 0;
-  const ringVariant = useMemo(() => {
-    if (!bucket) return hasStories ? 'new' : 'seen';
-    if (bucket.allViewed) return 'seen';
-    if (bucket.isSelf || String(targetUserId) === String(viewerId)) return 'self';
-    return 'new';
-  }, [bucket, hasStories, targetUserId, viewerId]);
+  const hasStoriesGrid = gridStories.length > 0;
 
   async function doRemoveFriend() {
     if (!viewerId || !targetUserId) return;
@@ -153,8 +145,6 @@ export default function PeerProfileFullScreen({
     await onFriendshipChanged?.();
     await load();
   }
-
-  const peerOn = profile && !isSelf ? Boolean(presenceOnline[String(targetUserId)]) : null;
 
   async function storyToArchive(storyId) {
     if (!viewerId) return;
@@ -291,128 +281,117 @@ export default function PeerProfileFullScreen({
               <p className="muted" style={{ fontSize: 10, margin: '0 0 10px', fontWeight: 600 }}>
                 Истории
               </p>
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 14,
-                  overflowX: 'auto',
-                  paddingBottom: 6,
-                  scrollbarWidth: 'thin',
-                  touchAction: 'pan-x',
-                }}
-              >
-                {hasStories ? (
-                  <button
-                    type="button"
-                    onClick={() => onOpenStory?.(targetUserId)}
-                    style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: 8,
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      cursor: 'pointer',
-                      color: 'var(--text)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div style={{ position: 'relative', width: 56, flexShrink: 0 }}>
-                      <AvatarRing variant={ringVariant}>
-                        <UserAvatar src={profile.avatarUrl} borderless style={{ width: '100%', height: '100%' }} />
-                      </AvatarRing>
-                      {peerOn != null ? (
-                        <span
-                          aria-hidden
-                          title={peerOn ? 'в сети' : 'не в сети'}
-                          style={{
-                            position: 'absolute',
-                            right: 2,
-                            bottom: 2,
-                            width: 12,
-                            height: 12,
-                            borderRadius: '50%',
-                            background: peerOn ? 'var(--online)' : 'rgba(160, 160, 170, 0.85)',
-                            border: '2px solid var(--bg)',
-                            boxSizing: 'border-box',
-                            pointerEvents: 'none',
-                          }}
-                        />
-                      ) : null}
-                    </div>
-                    <span className="muted" style={{ fontSize: 10, maxWidth: 88, textAlign: 'center' }}>
-                      {isSelf ? 'Вы' : profile.nickname ? `@${profile.nickname}` : 'История'}
-                    </span>
-                  </button>
-                ) : (
-                  <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
-                    Нет активных историй (последние 24 часа).
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {isSelf && manageItems.length > 0 && !viewerPreview ? (
-              <div style={{ marginTop: 20, width: '100%' }}>
-                <p className="muted" style={{ fontSize: 10, margin: '0 0 10px', fontWeight: 600 }}>
-                  Мои кадры (24 ч)
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {manageItems.map((s) => (
-                    <div
-                      key={s.id}
-                      style={{
-                        display: 'flex',
-                        gap: 10,
-                        alignItems: 'flex-start',
-                        padding: 10,
-                        borderRadius: 'var(--radius)',
-                        border: '1px solid var(--border)',
-                        background: 'var(--panel)',
-                      }}
-                    >
-                      {s.mediaUrl ? (
-                        <img
-                          src={s.mediaUrl}
-                          alt=""
-                          style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
-                        />
-                      ) : (
+              {hasStoriesGrid ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                    gap: 8,
+                    alignItems: 'stretch',
+                  }}
+                >
+                  {gridStories.map((s) => (
+                    <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenStory?.(targetUserId, s.id)}
+                        style={{
+                          border: '1px solid var(--border)',
+                          borderRadius: 10,
+                          overflow: 'hidden',
+                          padding: 0,
+                          margin: 0,
+                          background: 'var(--panel)',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          color: 'inherit',
+                          font: 'inherit',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          minHeight: 0,
+                        }}
+                      >
                         <div
                           style={{
-                            width: 48,
-                            height: 48,
-                            borderRadius: 8,
+                            width: '100%',
+                            aspectRatio: '3 / 4',
                             background: 'var(--border)',
+                            position: 'relative',
                             flexShrink: 0,
-                            fontSize: 20,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
                           }}
-                          aria-hidden
                         >
-                          ✎
-                        </div>
-                      )}
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ fontSize: 11, lineHeight: 1.35, wordBreak: 'break-word' }}>
-                          {s.body ? s.body.slice(0, 120) : ' '}
+                          {s.mediaUrl ? (
+                            <img
+                              src={s.mediaUrl}
+                              alt=""
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                padding: 8,
+                                fontSize: 10,
+                                lineHeight: 1.35,
+                                overflow: 'hidden',
+                                wordBreak: 'break-word',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 8,
+                                WebkitBoxOrient: 'vertical',
+                              }}
+                            >
+                              {s.body || ' '}
+                            </div>
+                          )}
                           {s.feedHidden ? (
-                            <span className="muted" style={{ display: 'block', marginTop: 4, fontSize: 10 }}>
-                              В архиве
+                            <span
+                              style={{
+                                position: 'absolute',
+                                top: 6,
+                                left: 6,
+                                fontSize: 9,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: 'rgba(0,0,0,0.55)',
+                                color: '#fff',
+                              }}
+                            >
+                              Архив
                             </span>
                           ) : null}
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        {s.mediaUrl && s.body ? (
+                          <div
+                            className="muted"
+                            style={{
+                              fontSize: 9,
+                              lineHeight: 1.3,
+                              padding: '6px 8px',
+                              maxHeight: 42,
+                              overflow: 'hidden',
+                              wordBreak: 'break-word',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 3,
+                              WebkitBoxOrient: 'vertical',
+                            }}
+                          >
+                            {s.body}
+                          </div>
+                        ) : null}
+                      </button>
+                      {isSelf && !viewerPreview ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                           {s.feedHidden ? (
                             <button
                               type="button"
                               className="btn-outline"
-                              style={{ fontSize: 10, padding: '4px 8px', width: 'auto' }}
+                              style={{ fontSize: 9, padding: '4px 6px', width: '100%' }}
                               disabled={storyBusyId === s.id}
-                              onClick={() => void storyFromArchive(s.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void storyFromArchive(s.id);
+                              }}
                             >
                               В ленту
                             </button>
@@ -420,9 +399,12 @@ export default function PeerProfileFullScreen({
                             <button
                               type="button"
                               className="btn-outline"
-                              style={{ fontSize: 10, padding: '4px 8px', width: 'auto' }}
+                              style={{ fontSize: 9, padding: '4px 6px', width: '100%' }}
                               disabled={storyBusyId === s.id}
-                              onClick={() => void storyToArchive(s.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void storyToArchive(s.id);
+                              }}
                             >
                               В архив
                             </button>
@@ -431,24 +413,31 @@ export default function PeerProfileFullScreen({
                             type="button"
                             className="btn-outline"
                             style={{
-                              fontSize: 10,
-                              padding: '4px 8px',
-                              width: 'auto',
+                              fontSize: 9,
+                              padding: '4px 6px',
+                              width: '100%',
                               color: '#c45c5c',
                               borderColor: 'rgba(196,92,92,0.45)',
                             }}
                             disabled={storyBusyId === s.id}
-                            onClick={() => void storyDeleteForever(s.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void storyDeleteForever(s.id);
+                            }}
                           >
                             Удалить
                           </button>
                         </div>
-                      </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
+              ) : (
+                <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
+                  Нет историй за последние 24 ч.
+                </p>
+              )}
+            </div>
 
             {profile.about ? (
               <div style={{ width: '100%', textAlign: 'left', marginTop: 18 }}>

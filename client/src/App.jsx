@@ -191,12 +191,17 @@ export default function App() {
   }, [refreshSocial, refreshFeed, refreshStories]);
 
   const openStoryAuthor = useCallback(
-    async (authorId) => {
+    async (authorId, startItemId) => {
       if (!user?.id) return;
       const r = await api(`/api/stories/author/${encodeURIComponent(authorId)}`, { userId: user.id });
       if (!r.ok) return;
       const items = r.data.items || [];
       if (items.length === 0) return;
+      let initialSlide = 0;
+      if (startItemId != null) {
+        const idx = items.findIndex((i) => String(i.id) === String(startItemId));
+        if (idx >= 0) initialSlide = idx;
+      }
       const b = storyBuckets.find((x) => String(x.userId) === String(authorId));
       const isSelf = String(authorId) === String(user.id);
       setStoryViewer({
@@ -205,6 +210,7 @@ export default function App() {
         label: isSelf ? 'Вы' : b?.label || 'История',
         avatarUrl: isSelf ? user.avatarUrl : b?.avatarUrl,
         items,
+        initialSlide,
       });
     },
     [user?.id, user?.avatarUrl, storyBuckets]
@@ -875,14 +881,12 @@ export default function App() {
             await syncOpenChatFromServer();
           }}
           onViewAvatar={(url) => setAvatarLightboxUrl(url)}
-          onOpenStory={(authorId) => {
+          onOpenStory={(authorId, startItemId) => {
             setPeerFullProfileUserId(null);
             setPeerFullProfileViewerPreview(false);
-            void openStoryAuthor(authorId);
+            void openStoryAuthor(authorId, startItemId);
           }}
           onStoriesUpdated={() => void refreshStories()}
-          storyBuckets={storyBuckets}
-          presenceOnline={presenceOnline}
           viewerPreview={peerFullProfileViewerPreview}
         />
       ) : null}

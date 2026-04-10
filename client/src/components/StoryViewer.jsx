@@ -55,8 +55,15 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   }, [slide, goNext, story, total, isHolding]);
 
   useEffect(() => {
-    setSlide(0);
-  }, [story?.authorId, story?.items]);
+    if (!story?.items?.length) {
+      setSlide(0);
+      return;
+    }
+    const n = story.items.length;
+    const raw = story.initialSlide;
+    const start = typeof raw === 'number' && raw >= 0 && raw < n ? raw : 0;
+    setSlide(start);
+  }, [story?.authorId, story?.items, story?.initialSlide]);
 
   useEffect(() => {
     return () => {
