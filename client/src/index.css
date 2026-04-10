@@ -23,13 +23,13 @@
   --chat-check-read: #5dcf8c;
   --chat-mention-bg: rgba(122, 184, 232, 0.2);
   --chat-mention-fg: #b8dafb;
-  /* Как в мобильном Telegram: ~15px, пузырь до ~78% ширины ленты */
+  /* ~15px; пузырь шире — меньше переносов; медиа тянется до того же лимита */
   --chat-font-size: 15px;
   --chat-line-height: 1.4;
   /* Текст сообщений — пропорциональный UI-шрифт (как TG/VK), не моноширинный корень приложения */
   --chat-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'Noto Sans', sans-serif;
-  --chat-bubble-max: min(400px, 78%);
+  --chat-bubble-max: min(560px, 94%);
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.45;

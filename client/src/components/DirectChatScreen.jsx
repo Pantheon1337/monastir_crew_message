@@ -408,15 +408,22 @@ function MessageBubble({
     );
   } else if (kind === 'image' && m.mediaUrl) {
     inner = (
-      <div style={{ maxWidth: 280 }}>
+      <div style={{ minWidth: 0, maxWidth: '100%' }}>
         <img
           className="chat-media-inline-img"
           src={m.mediaUrl}
           alt={m.body?.trim() ? m.body : ''}
           loading="lazy"
           decoding="async"
-          sizes="(max-width: 480px) 90vw, 280px"
-          style={{ maxWidth: '100%', borderRadius: 10, display: 'block', verticalAlign: 'top' }}
+          sizes="(max-width: 480px) 92vw, 560px"
+          style={{
+            maxWidth: '100%',
+            width: 'auto',
+            height: 'auto',
+            borderRadius: 10,
+            display: 'block',
+            verticalAlign: 'top',
+          }}
         />
         {m.body?.trim() ? (
           <div style={{ marginTop: 6 }}>
@@ -428,7 +435,7 @@ function MessageBubble({
   } else if (kind === 'file' && m.mediaUrl && looksLikeVideoFileName(m.body)) {
     const cap = m.body?.trim() || '';
     inner = (
-      <div style={{ maxWidth: 280 }} onPointerDown={(e) => e.stopPropagation()}>
+      <div style={{ minWidth: 0, maxWidth: 'var(--chat-bubble-max)' }} onPointerDown={(e) => e.stopPropagation()}>
         <video
           src={m.mediaUrl}
           controls
@@ -462,7 +469,7 @@ function MessageBubble({
           background: 'rgba(0, 0, 0, 0.03)',
           color: 'inherit',
           textDecoration: 'none',
-          maxWidth: 280,
+          maxWidth: '100%',
         }}
       >
         <span style={{ fontSize: 22 }} aria-hidden>
@@ -537,7 +544,7 @@ function MessageBubble({
             background: isMediaShell ? 'transparent' : bubbleBg,
             boxShadow: isMediaShell ? 'none' : '0 1px 1px var(--chat-bubble-shadow)',
             overflow: isMediaShell ? 'visible' : 'hidden',
-            maxWidth: isMediaShell ? 'min(400px, 78%)' : undefined,
+            maxWidth: isMediaShell ? 'var(--chat-bubble-max)' : undefined,
             userSelect: 'none',
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
