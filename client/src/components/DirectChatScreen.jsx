@@ -9,6 +9,7 @@ import NicknameWithBadge from './NicknameWithBadge.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
 import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
 import SwipeToReplyRow from './chat/SwipeToReplyRow.jsx';
+import ChatReadReceipt from './chat/ChatReadReceipt.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
@@ -158,6 +159,7 @@ function normalizeChatMessage(m) {
     storyReactionKey: m.storyReactionKey ?? null,
     reactions: m.reactions ?? null,
     readByPeer: m.readByPeer === true,
+    pending: m.pending === true,
     senderAffiliationEmoji: m.senderAffiliationEmoji ?? null,
     revokedForAll: m.revokedForAll === true,
     replyTo: m.replyTo ?? null,
@@ -609,17 +611,7 @@ function MessageBubble({
             ) : null}
           </span>
           {mine && !roomId && !savedChat ? (
-            <span
-              style={{
-                fontSize: 14,
-                lineHeight: 1,
-                color: m.readByPeer ? 'var(--chat-check-read)' : 'var(--chat-check-delivered)',
-              }}
-              title={m.readByPeer ? 'Прочитано' : 'Доставлено'}
-              aria-hidden
-            >
-              ✓✓
-            </span>
+            <ChatReadReceipt readByPeer={m.readByPeer} pending={m.pending} />
           ) : null}
         </div>
         </div>

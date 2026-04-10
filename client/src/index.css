@@ -19,8 +19,10 @@
   --chat-bubble-shadow: rgba(0, 0, 0, 0.45);
   --chat-bubble-revoked-in: rgba(42, 48, 56, 0.65);
   --chat-bubble-revoked-out: rgba(45, 74, 54, 0.65);
-  --chat-check-delivered: #8a939e;
-  --chat-check-read: #5dcf8c;
+  /* Галочки на исходящем пузыре: серый = доставлено, голубой = прочитано */
+  --chat-check-pending: #7d8b99;
+  --chat-check-delivered: #9aa7b4;
+  --chat-check-read: #5eb0e8;
   --chat-mention-bg: rgba(122, 184, 232, 0.2);
   --chat-mention-fg: #b8dafb;
   /* ~15px; пузырь шире — меньше переносов; медиа тянется до того же лимита */
@@ -56,8 +58,9 @@
   --chat-bubble-shadow: rgba(0, 0, 0, 0.13);
   --chat-bubble-revoked-in: rgba(255, 255, 255, 0.85);
   --chat-bubble-revoked-out: rgba(226, 247, 203, 0.55);
-  --chat-check-delivered: #a0aeb8;
-  --chat-check-read: #34b47c;
+  --chat-check-pending: #8b98a6;
+  --chat-check-delivered: #8696a0;
+  --chat-check-read: #2b8dd6;
   --chat-mention-bg: rgba(82, 148, 226, 0.2);
   --chat-mention-fg: #2a6ea8;
 }
@@ -543,6 +546,47 @@ video.chat-video-note {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   opacity: 0.92;
+}
+
+/* Галочки прочтения (как в мессенджерах: двойная с нахлёстом) */
+.chat-read-receipt {
+  display: inline-flex;
+  align-items: flex-end;
+  flex-shrink: 0;
+  margin-left: 3px;
+  line-height: 1;
+  vertical-align: bottom;
+}
+
+.chat-read-receipt__pair {
+  display: inline-flex;
+  align-items: flex-end;
+}
+
+.chat-read-receipt__tick {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+.chat-read-receipt__tick--overlap {
+  margin-left: -6px;
+}
+
+.chat-read-receipt__tick--solo {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--chat-check-pending);
+}
+
+.chat-read-receipt--delivered .chat-read-receipt__tick {
+  color: var(--chat-check-delivered);
+}
+
+.chat-read-receipt--read .chat-read-receipt__tick {
+  color: var(--chat-check-read);
 }
 
 /* Обёртка свайпа: без flex-shrink — иначе пузырь сжимается, текст ломается посередине слова */
