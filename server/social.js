@@ -1,6 +1,14 @@
 import { randomUUID } from 'crypto';
 import { getDb } from './db.js';
-import { normalizePhone, normalizeNickname, findUserByPhone, findUserByNickname } from './db.js';
+import {
+  normalizePhone,
+  normalizeNickname,
+  findUserByPhone,
+  findUserByNickname,
+  mapPublicUser,
+  computeEffectiveDisplayRole,
+  effectiveAffiliationEmoji,
+} from './db.js';
 
 export function sortUserPair(id1, id2) {
   return id1 < id2 ? [id1, id2] : [id2, id1];
@@ -24,12 +32,88 @@ export function resolveTargetUser(target) {
 function findDirectChatByPair(userA, userB) {
   const [a, b] = sortUserPair(userA, userB);
   return getDb()
-    .prepare(`SELECT id, user_a AS userA, user_b AS userB, created_at AS createdAt FROM direct_chats WHERE user_a = ? AND user_b = ?`)
+    .prepare(
+      `SELECT id, user_a AS userA, user_b AS userB, created_at AS createdAt,
+        COALESCE(friends_active, 1) AS friendsActive FROM direct_chats WHERE user_a = ? AND user_b = ?`
+    )
     .get(a, b);
 }
 
-export function areFriends(userId1, userId2) {
+/** Есть общий личный чат (в т.ч. после «удалить из друзья»). */
+export function haveDirectChatLink(userId1, userId2) {
   return Boolean(findDirectChatByPair(userId1, userId2));
+}
+
+export function areFriends(userId1, userId2) {
+  const row = findDirectChatByPair(userId1, userId2);
+  return Boolean(row && row.friendsActive === 1);
+}
+
+function isUserBlockedBy(blockerId, blockedId) {
+  return Boolean(
+    getDb()
+      .prepare(`SELECT 1 FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?`)
+      .get(blockerId, blockedId)
+  );
+}
+
+/** Отправитель не может писать, если peer заблокировал отправителя. */
+export function assertCanSendDirectMessage(chatId, senderId) {
+  const peerId = getPeerIdInDirectChat(chatId, senderId);
+  if (peerId == null) return { error: 'Нет доступа к чату' };
+  const row = getDb().prepare(`SELECT friends_active AS friendsActive FROM direct_chats WHERE id = ?`).get(chatId);
+  if (!row || row.friendsActive !== 1) {
+    return { error: 'Вы не в друзьях — отправка недоступна' };
+  }
+  if (isUserBlockedBy(peerId, senderId)) {
+    return { error: 'Пользователь ограничил вам сообщения' };
+  }
+  return { ok: true, peerId };
+}
+
+export function removeFriendship(viewerId, peerId) {
+  if (viewerId === peerId) return { error: 'Некорректно' };
+  const chat = findDirectChatByPair(viewerId, peerId);
+  if (!chat) return { error: 'Чат не найден' };
+  getDb().prepare(`UPDATE direct_chats SET friends_active = 0 WHERE id = ?`).run(chat.id);
+  return { ok: true };
+}
+
+export function blockUser(blockerId, blockedId) {
+  if (blockerId === blockedId) return { error: 'Некорректно' };
+  const now = Date.now();
+  getDb()
+    .prepare(`INSERT OR IGNORE INTO user_blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)`)
+    .run(blockerId, blockedId, now);
+  return { ok: true };
+}
+
+export function unblockUser(blockerId, blockedId) {
+  getDb().prepare(`DELETE FROM user_blocks WHERE blocker_id = ? AND blocked_id = ?`).run(blockerId, blockedId);
+  return { ok: true };
+}
+
+export function getFriendshipMetaForProfile(viewerId, targetId) {
+  const chat = findDirectChatByPair(viewerId, targetId);
+  if (!chat) {
+    return {
+      hasDirectChat: false,
+      friendsActive: false,
+      youBlockedThem: isUserBlockedBy(viewerId, targetId),
+      theyBlockedYou: isUserBlockedBy(targetId, viewerId),
+    };
+  }
+  const youBlockedThem = isUserBlockedBy(viewerId, targetId);
+  const theyBlockedYou = isUserBlockedBy(targetId, viewerId);
+  const friendsActive = chat.friendsActive === 1;
+  const canMessage = friendsActive && !theyBlockedYou;
+  return {
+    hasDirectChat: true,
+    friendsActive,
+    youBlockedThem,
+    theyBlockedYou,
+    canMessage,
+  };
 }
 
 export function getPendingRequestBetween(fromId, toId) {
@@ -64,7 +148,9 @@ export function createFriendRequest(fromUserId, toUserId) {
     .run(id, fromUserId, toUserId, createdAt);
 
   const fromUser = getDb()
-    .prepare(`SELECT id, nickname, first_name AS firstName, last_name AS lastName FROM users WHERE id = ?`)
+    .prepare(
+      `SELECT id, nickname, first_name AS firstName, last_name AS lastName, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE id = ?`
+    )
     .get(fromUserId);
 
   return {
@@ -74,13 +160,18 @@ export function createFriendRequest(fromUserId, toUserId) {
       toUserId,
       createdAt,
       fromUser: fromUser
-      ? {
-          id: fromUser.id,
-          nickname: fromUser.nickname,
-          firstName: fromUser.firstName,
-          lastName: fromUser.lastName,
-        }
-      : null,
+        ? {
+            id: fromUser.id,
+            nickname: fromUser.nickname,
+            firstName: fromUser.firstName,
+            lastName: fromUser.lastName,
+            affiliationEmoji: effectiveAffiliationEmoji(
+              fromUser.nickname,
+              fromUser.displayRole,
+              fromUser.displayRoleEmoji
+            ),
+          }
+        : null,
     },
   };
 }
@@ -89,7 +180,8 @@ export function listIncomingFriendRequests(userId) {
   const rows = getDb()
     .prepare(
       `SELECT fr.id, fr.from_user_id AS fromUserId, fr.created_at AS createdAt,
-        u.nickname AS fromNickname, u.first_name AS fromFirstName, u.last_name AS fromLastName
+        u.nickname AS fromNickname, u.first_name AS fromFirstName, u.last_name AS fromLastName,
+        u.display_role AS fromRole, u.display_role_emoji AS fromEmoji
       FROM friend_requests fr
       JOIN users u ON u.id = fr.from_user_id
       WHERE fr.to_user_id = ? AND fr.status = 'pending'
@@ -105,6 +197,7 @@ export function listIncomingFriendRequests(userId) {
       nickname: r.fromNickname,
       firstName: r.fromFirstName,
       lastName: r.fromLastName,
+      affiliationEmoji: effectiveAffiliationEmoji(r.fromNickname, r.fromRole, r.fromEmoji),
     },
   }));
 }
@@ -119,23 +212,28 @@ export function getFriendRequestById(requestId) {
   );
 }
 
-function getLastMessageForChat(chatId) {
+function getLastMessageForChat(chatId, viewerId) {
   return getDb()
     .prepare(
-      `SELECT body, created_at AS createdAt, kind, media_path AS mediaPath
-       FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT 1`
+      `SELECT m.body, m.created_at AS createdAt, m.kind, m.media_path AS mediaPath, m.revoked_for_all AS revokedForAll
+       FROM messages m
+       WHERE m.chat_id = ?
+       AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
+       ORDER BY m.created_at DESC LIMIT 1`
     )
-    .get(chatId);
+    .get(chatId, viewerId);
 }
 
 function formatLastMessagePreview(last) {
   if (!last) return 'Нет сообщений';
+  if (last.revokedForAll === 1) return 'Сообщение удалено';
   const k = last.kind || 'text';
   if (k === 'voice') return 'Голосовое сообщение';
   if (k === 'video_note') return 'Видеосообщение';
   if (k === 'image') return 'Фото';
   if (k === 'file') return 'Файл';
   if (k === 'story_reaction') return 'Реакция на историю';
+  if (k === 'revoked') return 'Сообщение удалено';
   return String(last.body ?? '').trim() || 'Сообщение';
 }
 
@@ -151,6 +249,7 @@ export function listDirectChatsForUser(userId) {
   const rows = getDb()
     .prepare(
       `SELECT dc.id AS chatId, dc.created_at AS chatCreatedAt,
+        COALESCE(dc.friends_active, 1) AS friendsActive,
         CASE WHEN dc.user_a = ? THEN dc.user_b ELSE dc.user_a END AS peerId
       FROM direct_chats dc
       WHERE dc.user_a = ? OR dc.user_b = ?
@@ -162,11 +261,12 @@ export function listDirectChatsForUser(userId) {
   for (const row of rows) {
     const peer = getDb()
       .prepare(
-        `SELECT id, nickname, first_name AS firstName, last_name AS lastName, avatar_path AS avatarPath FROM users WHERE id = ?`
+        `SELECT id, nickname, first_name AS firstName, last_name AS lastName, avatar_path AS avatarPath,
+          display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE id = ?`
       )
       .get(row.peerId);
     if (!peer) continue;
-    const last = getLastMessageForChat(row.chatId);
+    const last = getLastMessageForChat(row.chatId, userId);
     const peerAvatarUrl = peer.avatarPath ? `/uploads/${peer.avatarPath}` : null;
     const lr = getDb()
       .prepare(`SELECT last_read_at AS lastReadAt FROM chat_last_read WHERE user_id = ? AND chat_id = ?`)
@@ -174,20 +274,30 @@ export function listDirectChatsForUser(userId) {
     const since = lr?.lastReadAt ?? 0;
     const unreadRow = getDb()
       .prepare(
-        `SELECT COUNT(*) AS c FROM messages WHERE chat_id = ? AND sender_id != ? AND created_at > ?`
+        `SELECT COUNT(*) AS c FROM messages m
+         WHERE m.chat_id = ? AND m.sender_id != ? AND m.created_at > ?
+         AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`
       )
-      .get(row.chatId, userId, since);
+      .get(row.chatId, userId, since, userId);
     const unreadCount = unreadRow?.c ?? 0;
+    const friendsActive = row.friendsActive === 1;
+    const theyBlockedYou = isUserBlockedBy(row.peerId, userId);
+    const canMessage = friendsActive && !theyBlockedYou;
+    const peerAff = effectiveAffiliationEmoji(peer.nickname, peer.displayRole, peer.displayRoleEmoji);
     out.push({
       id: row.chatId,
       kind: 'direct',
+      peerNickname: peer.nickname || null,
       name: peer.nickname ? `@${peer.nickname}` : peer.firstName,
+      peerAffiliationEmoji: peerAff,
       lastMessage: formatLastMessagePreview(last),
       time: last ? formatChatTime(last.createdAt) : '',
       typing: false,
       peerUserId: peer.id,
       peerAvatarUrl,
       unreadCount,
+      friendsActive,
+      canMessage,
     });
   }
   return out;
@@ -206,9 +316,10 @@ export function acceptFriendRequest(requestId, actingUserId) {
     let chatId;
     if (chat) {
       chatId = chat.id;
+      db.prepare(`UPDATE direct_chats SET friends_active = 1 WHERE id = ?`).run(chatId);
     } else {
       chatId = randomUUID();
-      db.prepare(`INSERT INTO direct_chats (id, user_a, user_b, created_at) VALUES (?, ?, ?, ?)`).run(
+      db.prepare(`INSERT INTO direct_chats (id, user_a, user_b, created_at, friends_active) VALUES (?, ?, ?, ?, 1)`).run(
         chatId,
         a,
         b,
@@ -299,40 +410,88 @@ function loadReactionSummaryForMessages(messageIds, viewerId) {
   };
 }
 
+function previewLineForMessage(kind, body) {
+  const k = kind || 'text';
+  if (k === 'revoked') return 'Сообщение удалено';
+  if (k === 'text') return String(body ?? '').trim().slice(0, 120) || '·';
+  if (k === 'voice') return '🎤 Голосовое';
+  if (k === 'video_note') return '🎬 Видеокружок';
+  if (k === 'image') return body?.trim() ? `🖼 ${String(body).slice(0, 60)}` : '🖼 Фото';
+  if (k === 'file') return body?.trim() ? `📎 ${String(body).slice(0, 60)}` : '📎 Файл';
+  if (k === 'story_reaction') return 'Реакция на историю';
+  return 'Сообщение';
+}
+
+function attachReplyForward(out, r, revoked) {
+  let forwardFrom = null;
+  if (!revoked && r.forwardJson) {
+    try {
+      forwardFrom = JSON.parse(r.forwardJson);
+    } catch {
+      /* */
+    }
+  }
+  out.forwardFrom = forwardFrom;
+  let replyTo = null;
+  if (!revoked && r.replyToIdRaw && r.replyRefId) {
+    const gone = r.replyParentRevoked === 1;
+    replyTo = {
+      id: r.replyRefId,
+      senderNickname: r.replyToSenderNick || 'user',
+      kind: gone ? 'revoked' : r.replyToKindRaw || 'text',
+      preview: gone ? 'Сообщение удалено' : previewLineForMessage(r.replyToKindRaw, r.replyToBodyRaw),
+    };
+  }
+  out.replyTo = replyTo;
+}
+
 function mapMessageRow(r, getReactions) {
   if (!r) return null;
   const refPath = r.refStoryMediaPath;
+  const revoked = r.revokedForAll === 1;
+  const aff = effectiveAffiliationEmoji(r.senderNickname, r.senderStoredRole, r.senderEmoji);
   const out = {
     id: r.id,
     senderId: r.senderId,
-    body: r.body ?? '',
-    kind: r.kind || 'text',
-    mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
-    durationMs: r.durationMs != null ? r.durationMs : null,
+    body: revoked ? 'Сообщение удалено' : (r.body ?? ''),
+    kind: revoked ? 'revoked' : r.kind || 'text',
+    mediaUrl: revoked ? null : r.mediaPath ? `/uploads/${r.mediaPath}` : null,
+    durationMs: revoked ? null : r.durationMs != null ? r.durationMs : null,
     createdAt: r.createdAt,
     senderNickname: r.senderNickname,
-    refStoryId: r.refStoryId ?? null,
-    storyReactionKey: r.storyReactionKey ?? null,
-    refStoryPreviewUrl: refPath ? `/uploads/${refPath}` : null,
+    senderAffiliationEmoji: aff,
+    refStoryId: revoked ? null : (r.refStoryId ?? null),
+    storyReactionKey: revoked ? null : (r.storyReactionKey ?? null),
+    refStoryPreviewUrl: revoked ? null : refPath ? `/uploads/${refPath}` : null,
+    revokedForAll: revoked,
   };
   if (getReactions) out.reactions = getReactions(r.id);
+  attachReplyForward(out, r, revoked);
   return out;
 }
 
 /** Одна строка для WS / API — тот же формат, что и в ленте (важно для kind + mediaUrl у собеседника). */
 export function getMessageByIdForChat(chatId, messageId, viewerId = null) {
-  const row = getDb()
-    .prepare(
-      `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, u.nickname AS senderNickname,
+  let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
+        u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
-        rs.media_path AS refStoryMediaPath
+        rs.media_path AS refStoryMediaPath,
+        rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
+        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw
       FROM messages m
       JOIN users u ON u.id = m.sender_id
       LEFT JOIN stories rs ON rs.id = m.ref_story_id
-      WHERE m.chat_id = ? AND m.id = ?`
-    )
-    .get(chatId, messageId);
+      LEFT JOIN messages rp ON rp.id = m.reply_to_id AND rp.chat_id = m.chat_id
+      LEFT JOIN users ru ON ru.id = rp.sender_id
+      WHERE m.chat_id = ? AND m.id = ?`;
+  const params = [chatId, messageId];
+  if (viewerId != null) {
+    sql += ` AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`;
+    params.push(viewerId);
+  }
+  const row = getDb().prepare(sql).get(...params);
   if (!row) return null;
   const getReact = viewerId != null ? loadReactionSummaryForMessages([row.id], viewerId) : null;
   const out = mapMessageRow(row, getReact);
@@ -362,17 +521,24 @@ export function listMessagesForChat(chatId, userId, limit = 200) {
   const rows = getDb()
     .prepare(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, u.nickname AS senderNickname,
+        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
+        u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
-        rs.media_path AS refStoryMediaPath
+        rs.media_path AS refStoryMediaPath,
+        rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
+        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw
       FROM messages m
       JOIN users u ON u.id = m.sender_id
       LEFT JOIN stories rs ON rs.id = m.ref_story_id
+      LEFT JOIN messages rp ON rp.id = m.reply_to_id AND rp.chat_id = m.chat_id
+      LEFT JOIN users ru ON ru.id = rp.sender_id
       WHERE m.chat_id = ?
+      AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
       ORDER BY m.created_at ASC
       LIMIT ?`
     )
-    .all(chatId, limit);
+    .all(chatId, userId, limit);
   const ids = rows.map((r) => r.id);
   const getReact = loadReactionSummaryForMessages(ids, userId);
   return rows.map((r) => {
@@ -406,9 +572,11 @@ export function countTotalUnreadMessages(userId) {
     const since = lr?.last_read_at ?? 0;
     const r = db
       .prepare(
-        `SELECT COUNT(*) AS c FROM messages WHERE chat_id = ? AND sender_id != ? AND created_at > ?`
+        `SELECT COUNT(*) AS c FROM messages m
+         WHERE m.chat_id = ? AND m.sender_id != ? AND m.created_at > ?
+         AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`
       )
-      .get(chatId, userId, since);
+      .get(chatId, userId, since, userId);
     total += r?.c ?? 0;
   }
   const roomRows = db.prepare(`SELECT room_id AS roomId FROM room_members WHERE user_id = ?`).all(userId);
@@ -418,26 +586,40 @@ export function countTotalUnreadMessages(userId) {
     const since = lr?.t ?? 0;
     const r = db
       .prepare(
-        `SELECT COUNT(*) AS c FROM room_messages WHERE room_id = ? AND sender_id != ? AND created_at > ?`
+        `SELECT COUNT(*) AS c FROM room_messages m
+         WHERE m.room_id = ? AND m.sender_id != ? AND m.created_at > ?
+         AND NOT EXISTS (SELECT 1 FROM room_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`
       )
-      .get(rid, userId, since);
+      .get(rid, userId, since, userId);
     total += r?.c ?? 0;
   }
   return total;
 }
 
-export function insertDirectMessage(chatId, userId, body) {
+export function insertDirectMessage(chatId, userId, body, options = {}) {
   const trimmed = String(body ?? '').trim();
   if (!trimmed) return { error: 'Пустое сообщение' };
   if (trimmed.length > 4000) return { error: 'Сообщение не длиннее 4000 символов' };
-  const peerId = getPeerIdInDirectChat(chatId, userId);
-  if (peerId == null) return { error: 'Нет доступа к чату' };
+  const gate = assertCanSendDirectMessage(chatId, userId);
+  if (gate.error) return gate;
+  const peerId = gate.peerId;
+
+  let replyToId = null;
+  if (options.replyToId != null && String(options.replyToId).trim()) {
+    replyToId = String(options.replyToId).trim();
+    const rp = getDb()
+      .prepare(`SELECT id FROM messages WHERE id = ? AND chat_id = ? AND COALESCE(revoked_for_all,0) = 0`)
+      .get(replyToId, chatId);
+    if (!rp) return { error: 'Ответ: исходное сообщение не найдено' };
+  }
 
   const id = randomUUID();
   const createdAt = Date.now();
   getDb()
-    .prepare(`INSERT INTO messages (id, chat_id, sender_id, body, created_at) VALUES (?, ?, ?, ?, ?)`)
-    .run(id, chatId, userId, trimmed, createdAt);
+    .prepare(
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, reply_to_id) VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(id, chatId, userId, trimmed, createdAt, replyToId);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
 
@@ -464,8 +646,9 @@ export function insertChatMediaMessage(chatId, userId, kind, mediaRelativePath, 
   if (kind !== 'voice' && kind !== 'video_note') {
     return { error: 'Некорректный тип вложения' };
   }
-  const peerId = getPeerIdInDirectChat(chatId, userId);
-  if (peerId == null) return { error: 'Нет доступа к чату' };
+  const gate = assertCanSendDirectMessage(chatId, userId);
+  if (gate.error) return gate;
+  const peerId = gate.peerId;
 
   const d = Math.round(Number(durationMs));
   if (!Number.isFinite(d) || d < MIN_MEDIA_MS || d > MAX_MEDIA_MS) {
@@ -508,8 +691,9 @@ export function insertChatAttachmentMessage(chatId, userId, kind, mediaRelativeP
   if (kind !== 'image' && kind !== 'file') {
     return { error: 'Некорректный тип вложения' };
   }
-  const peerId = getPeerIdInDirectChat(chatId, userId);
-  if (peerId == null) return { error: 'Нет доступа к чату' };
+  const gate = assertCanSendDirectMessage(chatId, userId);
+  if (gate.error) return gate;
+  const peerId = gate.peerId;
 
   const media = String(mediaRelativePath ?? '').trim();
   if (!media) return { error: 'Нет файла' };
@@ -586,11 +770,12 @@ export function insertStoryReactionMessage(viewerId, storyId, reactionKey) {
   if (String(authorId) === String(viewerId)) {
     return { error: 'Нельзя реагировать на свою историю' };
   }
-  if (!areFriends(viewerId, authorId)) {
+  const chat = findDirectChatByPair(viewerId, authorId);
+  if (!chat || chat.friendsActive !== 1) {
     return { error: 'Только для друзей' };
   }
-  const chat = findDirectChatByPair(viewerId, authorId);
-  if (!chat) return { error: 'Чат не найден' };
+  const gateStory = assertCanSendDirectMessage(chat.id, viewerId);
+  if (gateStory.error) return { error: gateStory.error };
 
   const id = randomUUID();
   const createdAt = Date.now();
@@ -631,10 +816,13 @@ export function toggleMessageReaction(chatId, userId, messageId, reactionKey) {
     return { error: 'Неизвестная реакция' };
   }
   if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const gateReact = assertCanSendDirectMessage(chatId, userId);
+  if (gateReact.error) return { error: gateReact.error };
   const msg = getDb()
-    .prepare(`SELECT id FROM messages WHERE id = ? AND chat_id = ?`)
+    .prepare(`SELECT id, revoked_for_all AS r FROM messages WHERE id = ? AND chat_id = ?`)
     .get(messageId, chatId);
   if (!msg) return { error: 'Сообщение не найдено' };
+  if (msg.r === 1) return { error: 'Сообщение удалено' };
 
   const db = getDb();
   const existing = db
@@ -670,12 +858,150 @@ export function toggleMessageReaction(chatId, userId, messageId, reactionKey) {
   };
 }
 
+export function hideDirectMessageForViewer(chatId, viewerId, messageId) {
+  if (!userInDirectChat(chatId, viewerId)) return { error: 'Нет доступа к чату' };
+  const row = getDb().prepare(`SELECT id FROM messages WHERE id = ? AND chat_id = ?`).get(messageId, chatId);
+  if (!row) return { error: 'Сообщение не найдено' };
+  getDb().prepare(`INSERT OR IGNORE INTO direct_message_hide (message_id, user_id) VALUES (?, ?)`).run(messageId, viewerId);
+  return { ok: true, peerId: getPeerIdInDirectChat(chatId, viewerId) };
+}
+
+export function revokeDirectMessageForEveryone(chatId, userId, messageId) {
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const row = getDb()
+    .prepare(`SELECT sender_id AS senderId, revoked_for_all AS r FROM messages WHERE id = ? AND chat_id = ?`)
+    .get(messageId, chatId);
+  if (!row) return { error: 'Сообщение не найдено' };
+  if (row.r === 1) return { error: 'Уже удалено' };
+  if (String(row.senderId) !== String(userId)) return { error: 'Можно удалить только свои сообщения' };
+  getDb()
+    .prepare(
+      `UPDATE messages SET revoked_for_all = 1, body = '', media_path = NULL, ref_story_id = NULL, story_reaction_key = NULL WHERE id = ?`
+    )
+    .run(messageId);
+  getDb().prepare(`DELETE FROM message_reactions WHERE message_id = ?`).run(messageId);
+  return { ok: true, peerId: getPeerIdInDirectChat(chatId, userId) };
+}
+
+function getForwardableDirectMessage(chatId, messageId) {
+  return getDb()
+    .prepare(
+      `SELECT m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+        m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
+        u.nickname AS senderNickname
+       FROM messages m JOIN users u ON u.id = m.sender_id
+       WHERE m.chat_id = ? AND m.id = ? AND COALESCE(m.revoked_for_all,0) = 0`
+    )
+    .get(chatId, messageId);
+}
+
+function getForwardableRoomMessage(roomId, messageId) {
+  return getDb()
+    .prepare(
+      `SELECT m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+        m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
+        u.nickname AS senderNickname
+       FROM room_messages m JOIN users u ON u.id = m.sender_id
+       WHERE m.room_id = ? AND m.id = ? AND COALESCE(m.revoked_for_all,0) = 0`
+    )
+    .get(roomId, messageId);
+}
+
+function buildForwardJson(row) {
+  return JSON.stringify({
+    originalAuthorId: row.senderId,
+    originalAuthorNickname: row.senderNickname,
+    originalKind: row.kind || 'text',
+    preview: previewLineForMessage(row.kind, row.body),
+  });
+}
+
+export function forwardMessageToDirectChat(targetChatId, userId, fromChatId, fromRoomId, messageId) {
+  if (!messageId) return { error: 'Нет сообщения' };
+  const fc = fromChatId ? String(fromChatId).trim() : '';
+  const fr = fromRoomId ? String(fromRoomId).trim() : '';
+  if (!!fc === !!fr) return { error: 'Укажите источник: чат или комната' };
+  let src;
+  if (fc) {
+    if (!userInDirectChat(fc, userId)) return { error: 'Нет доступа к исходному чату' };
+    src = getForwardableDirectMessage(fc, messageId);
+  } else {
+    if (!userInRoom(fr, userId)) return { error: 'Нет доступа к исходной комнате' };
+    src = getForwardableRoomMessage(fr, messageId);
+  }
+  if (!src) return { error: 'Сообщение не найдено' };
+  const gate = assertCanSendDirectMessage(targetChatId, userId);
+  if (gate.error) return gate;
+  const peerId = gate.peerId;
+  const id = randomUUID();
+  const createdAt = Date.now();
+  const fwd = buildForwardJson(src);
+  getDb()
+    .prepare(
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, media_path, duration_ms, ref_story_id, story_reaction_key, forward_json, reply_to_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+    )
+    .run(
+      id,
+      targetChatId,
+      userId,
+      src.body || '',
+      createdAt,
+      src.kind || 'text',
+      src.mediaPath || null,
+      src.durationMs ?? null,
+      src.refStoryId || null,
+      src.storyReactionKey || null,
+      fwd
+    );
+  return { ok: true, peerId, messageId: id };
+}
+
+export function forwardMessageToRoom(targetRoomId, userId, fromChatId, fromRoomId, messageId) {
+  if (!messageId) return { error: 'Нет сообщения' };
+  const fc = fromChatId ? String(fromChatId).trim() : '';
+  const fr = fromRoomId ? String(fromRoomId).trim() : '';
+  if (!!fc === !!fr) return { error: 'Укажите источник: чат или комната' };
+  let src;
+  if (fc) {
+    if (!userInDirectChat(fc, userId)) return { error: 'Нет доступа к исходному чату' };
+    src = getForwardableDirectMessage(fc, messageId);
+  } else {
+    if (!userInRoom(fr, userId)) return { error: 'Нет доступа к исходной комнате' };
+    src = getForwardableRoomMessage(fr, messageId);
+  }
+  if (!src) return { error: 'Сообщение не найдено' };
+  if (!userInRoom(targetRoomId, userId)) return { error: 'Нет доступа к комнате' };
+  const id = randomUUID();
+  const createdAt = Date.now();
+  const fwd = buildForwardJson(src);
+  getDb()
+    .prepare(
+      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, media_path, duration_ms, ref_story_id, story_reaction_key, forward_json, reply_to_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+    )
+    .run(
+      id,
+      targetRoomId,
+      userId,
+      src.body || '',
+      createdAt,
+      src.kind || 'text',
+      src.mediaPath || null,
+      src.durationMs ?? null,
+      src.refStoryId || null,
+      src.storyReactionKey || null,
+      fwd
+    );
+  return { ok: true, memberIds: listRoomMemberUserIds(targetRoomId), messageId: id };
+}
+
 /** Собеседники из direct_chats (принятые друзья). */
 export function listPeerUserIds(userId) {
   const rows = getDb()
     .prepare(
       `SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS peerId
-       FROM direct_chats WHERE user_a = ? OR user_b = ?`
+       FROM direct_chats WHERE (user_a = ? OR user_b = ?) AND COALESCE(friends_active, 1) = 1`
     )
     .all(userId, userId, userId);
   return rows.map((r) => r.peerId);
@@ -689,8 +1015,9 @@ export function listFeedPostsForViewer(viewerId) {
   const ph = ids.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
-      `SELECT p.id, p.author_id AS authorId, p.body, p.created_at AS createdAt,
-        u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath
+      `SELECT p.id, p.author_id AS authorId, p.body, p.created_at AS createdAt, p.media_path AS mediaPath, p.edited_at AS editedAt,
+        u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
+        u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
       FROM posts p
       JOIN users u ON u.id = p.author_id
       WHERE p.author_id IN (${ph})
@@ -703,22 +1030,62 @@ export function listFeedPostsForViewer(viewerId) {
     authorId: r.authorId,
     body: r.body,
     createdAt: r.createdAt,
+    editedAt: r.editedAt ?? null,
+    mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
     authorNickname: r.authorNickname,
     authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
     authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+    authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
+    authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
   }));
 }
 
-export function createPost(authorId, body) {
+export function createPost(authorId, { body, mediaPath }) {
   const t = String(body ?? '').trim();
-  if (!t) return { error: 'Пустой пост' };
+  const media = mediaPath ? String(mediaPath).trim() : '';
+  if (!t && !media) return { error: 'Добавьте текст или файл' };
   if (t.length > 8000) return { error: 'Пост не длиннее 8000 символов' };
   const id = randomUUID();
   const createdAt = Date.now();
   getDb()
-    .prepare(`INSERT INTO posts (id, author_id, body, created_at) VALUES (?, ?, ?, ?)`)
-    .run(id, authorId, t, createdAt);
-  return { ok: true, post: { id, authorId, body: t, createdAt } };
+    .prepare(`INSERT INTO posts (id, author_id, body, created_at, media_path) VALUES (?, ?, ?, ?, ?)`)
+    .run(id, authorId, t || '', createdAt, media || null);
+  return {
+    ok: true,
+    post: {
+      id,
+      authorId,
+      body: t || '',
+      createdAt,
+      mediaUrl: media ? `/uploads/${media}` : null,
+      editedAt: null,
+    },
+  };
+}
+
+export function updateFeedPost(postId, authorId, body) {
+  const row = getDb()
+    .prepare(`SELECT author_id AS authorId, media_path AS mediaPath FROM posts WHERE id = ?`)
+    .get(postId);
+  if (!row) return { error: 'Пост не найден' };
+  if (String(row.authorId) !== String(authorId)) return { error: 'Нет доступа' };
+  const t = String(body ?? '').trim();
+  const hasMedia = !!(row.mediaPath && String(row.mediaPath).trim());
+  if (!t && !hasMedia) return { error: 'Пустой пост' };
+  if (t.length > 8000) return { error: 'Пост не длиннее 8000 символов' };
+  const editedAt = Date.now();
+  getDb().prepare(`UPDATE posts SET body = ?, edited_at = ? WHERE id = ?`).run(t, editedAt, postId);
+  return { ok: true, editedAt };
+}
+
+export function deleteFeedPost(postId, authorId) {
+  const row = getDb()
+    .prepare(`SELECT author_id AS authorId, media_path AS mediaPath FROM posts WHERE id = ?`)
+    .get(postId);
+  if (!row) return { error: 'Пост не найден' };
+  if (String(row.authorId) !== String(authorId)) return { error: 'Нет доступа' };
+  getDb().prepare(`DELETE FROM posts WHERE id = ?`).run(postId);
+  return { ok: true, mediaPath: row.mediaPath || null };
 }
 
 const STORY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -771,7 +1138,10 @@ export function listStoryBucketsForViewer(viewerId) {
   const out = [];
   for (const r of rows) {
     const u = db
-      .prepare(`SELECT id, nickname, first_name AS firstName, last_name AS lastName, avatar_path AS avatarPath FROM users WHERE id = ?`)
+      .prepare(
+        `SELECT id, nickname, first_name AS firstName, last_name AS lastName, avatar_path AS avatarPath,
+          display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE id = ?`
+      )
       .get(r.userId);
     if (!u) continue;
     let allViewed = true;
@@ -788,6 +1158,7 @@ export function listStoryBucketsForViewer(viewerId) {
     out.push({
       userId: r.userId,
       label: u.nickname ? `@${u.nickname}` : u.firstName || '—',
+      affiliationEmoji: effectiveAffiliationEmoji(u.nickname, u.displayRole, u.displayRoleEmoji),
       avatarUrl: u.avatarPath ? `/uploads/${u.avatarPath}` : null,
       itemCount: r.cnt,
       lastAt: r.lastAt,
@@ -831,7 +1202,8 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const rows = getDb()
     .prepare(
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
-        u.nickname AS nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath
+        u.nickname AS nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
+        u.display_role AS authorRole, u.display_role_emoji AS authorEmoji
       FROM stories s
       JOIN users u ON u.id = s.user_id
       WHERE s.expires_at <= ? AND s.user_id IN (${ph})
@@ -847,6 +1219,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     authorLabel: r.nickname ? `@${r.nickname}` : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+    authorAffiliationEmoji: effectiveAffiliationEmoji(r.nickname, r.authorRole, r.authorEmoji),
     authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
   }));
 }
@@ -869,6 +1242,77 @@ function formatRoomActivity(ts) {
   }
 }
 
+/**
+ * Каталог пользователей («Возможно друзья»): все, кроме просматривающего.
+ * Поиск по подстроке ника, имени, фамилии или цифрам телефона. Телефон в ответе не отдаём.
+ */
+export function listUsersDirectoryForViewer(viewerId, query) {
+  const db = getDb();
+  const q = String(query ?? '').trim();
+  const params = [viewerId];
+  let sql = `
+    SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath,
+      about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji
+    FROM users
+    WHERE id != ?
+  `;
+  if (q) {
+    const qNick = q.replace(/^@/, '').trim();
+    const digits = q.replace(/\D/g, '');
+    if (digits.length >= 3) {
+      sql += ` AND (
+        LOWER(nickname) LIKE LOWER(?) OR
+        phone LIKE ? OR
+        first_name LIKE ? OR
+        last_name LIKE ?
+      )`;
+      const patNick = `%${qNick}%`;
+      const patDig = `%${digits}%`;
+      params.push(patNick, patDig, `%${q}%`, `%${q}%`);
+    } else {
+      sql += ` AND (
+        LOWER(nickname) LIKE LOWER(?) OR
+        first_name LIKE ? OR
+        last_name LIKE ?
+      )`;
+      const pat = `%${qNick}%`;
+      params.push(pat, `%${q}%`, `%${q}%`);
+    }
+  }
+  sql += ` ORDER BY LOWER(nickname) ASC LIMIT 400`;
+  const rows = db.prepare(sql).all(...params);
+  return rows.map((row) => {
+    const u = mapPublicUser(row);
+    let relationship = 'none';
+    let incomingRequestId = null;
+    if (areFriends(viewerId, row.id)) {
+      relationship = 'friend';
+    } else {
+      const out = getPendingRequestBetween(viewerId, row.id);
+      if (out) {
+        relationship = 'pending_out';
+      } else {
+        const inc = getPendingRequestBetween(row.id, viewerId);
+        if (inc) {
+          relationship = 'pending_in';
+          incomingRequestId = inc.id;
+        }
+      }
+    }
+    return {
+      id: u.id,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      nickname: u.nickname,
+      createdAt: u.createdAt,
+      avatarUrl: u.avatarUrl,
+      affiliationEmoji: u.affiliationEmoji,
+      relationship,
+      incomingRequestId,
+    };
+  });
+}
+
 /** Друзья для выбора при создании комнаты (как в Telegram). */
 export function listFriendPeersForUser(viewerId) {
   const peerIds = listPeerUserIds(viewerId);
@@ -876,7 +1320,8 @@ export function listFriendPeersForUser(viewerId) {
   const ph = peerIds.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
-      `SELECT id, nickname, first_name AS firstName, last_name AS lastName, avatar_path AS avatarPath
+      `SELECT id, nickname, first_name AS firstName, last_name AS lastName, avatar_path AS avatarPath,
+        display_role AS displayRole, display_role_emoji AS displayRoleEmoji
        FROM users WHERE id IN (${ph}) ORDER BY nickname`
     )
     .all(...peerIds);
@@ -886,6 +1331,7 @@ export function listFriendPeersForUser(viewerId) {
     firstName: r.firstName,
     lastName: r.lastName,
     avatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+    affiliationEmoji: effectiveAffiliationEmoji(r.nickname, r.displayRole, r.displayRoleEmoji),
   }));
 }
 
@@ -947,7 +1393,8 @@ export function getRoomByIdForUser(roomId, userId) {
   if (!room) return null;
   const members = getDb()
     .prepare(
-      `SELECT u.id, u.nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath, rm.role
+      `SELECT u.id, u.nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
+        u.display_role AS displayRole, u.display_role_emoji AS displayRoleEmoji, rm.role
        FROM room_members rm JOIN users u ON u.id = rm.user_id WHERE rm.room_id = ? ORDER BY rm.role DESC, rm.joined_at`
     )
     .all(roomId);
@@ -964,6 +1411,7 @@ export function getRoomByIdForUser(roomId, userId) {
       lastName: m.lastName,
       avatarUrl: m.avatarPath ? `/uploads/${m.avatarPath}` : null,
       role: m.role,
+      affiliationEmoji: effectiveAffiliationEmoji(m.nickname, m.displayRole, m.displayRoleEmoji),
     })),
   };
 }
@@ -1078,53 +1526,77 @@ export function listRoomMessages(roomId, userId, limit = 200) {
   const rows = getDb()
     .prepare(
       `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, u.nickname AS senderNickname,
+        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
+        u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
-        rs.media_path AS refStoryMediaPath
+        rs.media_path AS refStoryMediaPath,
+        rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
+        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw
        FROM room_messages m
        JOIN users u ON u.id = m.sender_id
        LEFT JOIN stories rs ON rs.id = m.ref_story_id
+       LEFT JOIN room_messages rp ON rp.id = m.reply_to_id AND rp.room_id = m.room_id
+       LEFT JOIN users ru ON ru.id = rp.sender_id
        WHERE m.room_id = ?
+       AND NOT EXISTS (SELECT 1 FROM room_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
        ORDER BY m.created_at ASC
        LIMIT ?`
     )
-    .all(roomId, limit);
+    .all(roomId, userId, limit);
   const ids = rows.map((r) => r.id);
   const getReact = loadReactionSummaryForMessages(ids, userId);
   return rows.map((r) => mapMessageRow(r, getReact));
 }
 
 export function getMessageByIdForRoom(roomId, messageId, viewerId = null) {
-  const row = getDb()
-    .prepare(
-      `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
-        m.created_at AS createdAt, u.nickname AS senderNickname,
+  let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+        m.created_at AS createdAt, m.revoked_for_all AS revokedForAll,
+        m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
+        u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
-        rs.media_path AS refStoryMediaPath
+        rs.media_path AS refStoryMediaPath,
+        rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
+        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw
        FROM room_messages m
        JOIN users u ON u.id = m.sender_id
        LEFT JOIN stories rs ON rs.id = m.ref_story_id
-       WHERE m.room_id = ? AND m.id = ?`
-    )
-    .get(roomId, messageId);
+       LEFT JOIN room_messages rp ON rp.id = m.reply_to_id AND rp.room_id = m.room_id
+       LEFT JOIN users ru ON ru.id = rp.sender_id
+       WHERE m.room_id = ? AND m.id = ?`;
+  const params = [roomId, messageId];
+  if (viewerId != null) {
+    sql += ` AND NOT EXISTS (SELECT 1 FROM room_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`;
+    params.push(viewerId);
+  }
+  const row = getDb().prepare(sql).get(...params);
   if (!row) return null;
   const getReact = viewerId != null ? loadReactionSummaryForMessages([row.id], viewerId) : null;
   return mapMessageRow(row, getReact);
 }
 
-export function insertRoomMessage(roomId, userId, body) {
+export function insertRoomMessage(roomId, userId, body, options = {}) {
   const trimmed = String(body ?? '').trim();
   if (!trimmed) return { error: 'Пустое сообщение' };
   if (trimmed.length > 4000) return { error: 'Сообщение не длиннее 4000 символов' };
   if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
 
+  let replyToId = null;
+  if (options.replyToId != null && String(options.replyToId).trim()) {
+    replyToId = String(options.replyToId).trim();
+    const rp = getDb()
+      .prepare(`SELECT id FROM room_messages WHERE id = ? AND room_id = ? AND COALESCE(revoked_for_all,0) = 0`)
+      .get(replyToId, roomId);
+    if (!rp) return { error: 'Ответ: исходное сообщение не найдено' };
+  }
+
   const id = randomUUID();
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind) VALUES (?, ?, ?, ?, ?, 'text')`
+      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, reply_to_id) VALUES (?, ?, ?, ?, ?, 'text', ?)`
     )
-    .run(id, roomId, userId, trimmed, createdAt);
+    .run(id, roomId, userId, trimmed, createdAt, replyToId);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
   return {
@@ -1241,15 +1713,41 @@ export function markRoomRead(userId, roomId) {
   return { ok: true, readAt: now };
 }
 
+export function hideRoomMessageForViewer(roomId, viewerId, messageId) {
+  if (!userInRoom(roomId, viewerId)) return { error: 'Нет доступа к комнате' };
+  const row = getDb().prepare(`SELECT id FROM room_messages WHERE id = ? AND room_id = ?`).get(messageId, roomId);
+  if (!row) return { error: 'Сообщение не найдено' };
+  getDb().prepare(`INSERT OR IGNORE INTO room_message_hide (message_id, user_id) VALUES (?, ?)`).run(messageId, viewerId);
+  return { ok: true, memberIds: listRoomMemberUserIds(roomId) };
+}
+
+export function revokeRoomMessageForEveryone(roomId, userId, messageId) {
+  if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
+  const row = getDb()
+    .prepare(`SELECT sender_id AS senderId, revoked_for_all AS r FROM room_messages WHERE id = ? AND room_id = ?`)
+    .get(messageId, roomId);
+  if (!row) return { error: 'Сообщение не найдено' };
+  if (row.r === 1) return { error: 'Уже удалено' };
+  if (String(row.senderId) !== String(userId)) return { error: 'Можно удалить только свои сообщения' };
+  getDb()
+    .prepare(
+      `UPDATE room_messages SET revoked_for_all = 1, body = '', media_path = NULL, ref_story_id = NULL, story_reaction_key = NULL WHERE id = ?`
+    )
+    .run(messageId);
+  getDb().prepare(`DELETE FROM message_reactions WHERE message_id = ?`).run(messageId);
+  return { ok: true, memberIds: listRoomMemberUserIds(roomId) };
+}
+
 export function toggleRoomMessageReaction(roomId, userId, messageId, reactionKey) {
   if (!MESSAGE_REACTION_KEYS.includes(reactionKey)) {
     return { error: 'Неизвестная реакция' };
   }
   if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
   const msg = getDb()
-    .prepare(`SELECT id FROM room_messages WHERE id = ? AND room_id = ?`)
+    .prepare(`SELECT id, revoked_for_all AS r FROM room_messages WHERE id = ? AND room_id = ?`)
     .get(messageId, roomId);
   if (!msg) return { error: 'Сообщение не найдено' };
+  if (msg.r === 1) return { error: 'Сообщение удалено' };
 
   const db = getDb();
   const existing = db

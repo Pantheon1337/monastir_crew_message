@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
+import UserAvatar from './UserAvatar.jsx';
 
 const SLIDE_MS = 4800;
 
 const REACTION_ICONS = { up: '👍', down: '👎', fire: '🔥', poop: '💩' };
 const REACTION_KEYS = ['up', 'down', 'fire', 'poop'];
 
-/** До архива: при остатке ≥ 1 ч — в часах, иначе в минутах. */
 function formatStoryArchiveEta(expiresAt) {
   if (expiresAt == null) return null;
   const msLeft = expiresAt - Date.now();
@@ -24,11 +24,12 @@ function formatStoryArchiveEta(expiresAt) {
 
 export default function StoryViewer({ story, userId, onClose, onProgress, onAfterLastItem }) {
   const [slide, setSlide] = useState(0);
+  const [isHolding, setIsHolding] = useState(false);
   const items = story?.items ?? [];
   const total = items.length;
+  const stagePtrStartX = useRef(null);
 
-  /** Следующий кадр или переход к следующему автору (не закрывать просмотр сразу). */
-  const advance = useCallback(() => {
+  const goNext = useCallback(() => {
     setSlide((s) => {
       if (total === 0) return 0;
       if (s < total - 1) return s + 1;
@@ -40,11 +41,16 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
     });
   }, [onAfterLastItem, onClose, total]);
 
+  const goPrev = useCallback(() => {
+    setSlide((s) => Math.max(0, s - 1));
+  }, []);
+
   useEffect(() => {
     if (!story || total === 0) return undefined;
-    const t = window.setTimeout(advance, SLIDE_MS);
+    if (isHolding) return undefined;
+    const t = window.setTimeout(goNext, SLIDE_MS);
     return () => window.clearTimeout(t);
-  }, [slide, advance, story, total]);
+  }, [slide, goNext, story, total, isHolding]);
 
   useEffect(() => {
     setSlide(0);
@@ -62,19 +68,57 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
 
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrev();
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goNext();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, goPrev, goNext]);
+
+  function onStagePointerDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    stagePtrStartX.current = e.clientX;
+    setIsHolding(true);
+  }
+
+  function onStagePointerUp(e) {
+    const start = stagePtrStartX.current;
+    stagePtrStartX.current = null;
+    setIsHolding(false);
+    if (start == null) return;
+    const dx = e.clientX - start;
+    const threshold = 48;
+    if (dx < -threshold) goNext();
+    else if (dx > threshold) goPrev();
+  }
+
+  function onStagePointerCancel() {
+    stagePtrStartX.current = null;
+    setIsHolding(false);
+  }
 
   if (!story || total === 0) return null;
 
   const cur = items[slide];
-
   const archiveEta = cur?.expiresAt != null ? formatStoryArchiveEta(cur.expiresAt) : null;
-
   const canReact = Boolean(userId) && !story.isSelf;
+  const pct = total > 0 ? (slide / total) * 100 : 0;
 
   async function sendReact(k) {
     if (!userId || !cur?.id) return;
@@ -89,16 +133,17 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
     <div
       role="dialog"
       aria-modal="true"
+      className="story-viewer-root"
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 100,
-        background: '#0c0d10',
+        background: 'var(--bg)',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      <div style={{ padding: '10px 12px', display: 'flex', gap: 4 }}>
+      <div className="story-viewer-chrome" style={{ padding: '10px 12px', display: 'flex', gap: 4 }}>
         {items.map((it, i) => (
           <div
             key={`${it.id}-${i}`}
@@ -118,6 +163,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
                 transformOrigin: 'left',
                 transform: i === slide ? 'scaleX(0)' : i < slide ? 'scaleX(1)' : 'scaleX(0)',
                 animation: i === slide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
+                animationPlayState: i === slide && isHolding ? 'paused' : 'running',
               }}
             />
           </div>
@@ -131,6 +177,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
       `}</style>
 
       <div
+        className="story-viewer-chrome"
         style={{
           padding: '6px 12px',
           display: 'flex',
@@ -139,19 +186,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           borderBottom: '1px solid rgba(255,255,255,0.08)',
         }}
       >
-        {story.avatarUrl ? (
-          <img src={story.avatarUrl} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-        ) : (
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: '50%',
-              background: '#252830',
-              border: '1px solid var(--border)',
-            }}
-          />
-        )}
+        <UserAvatar src={story.avatarUrl} size={36} borderless />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{story.label}</div>
           {archiveEta ? (
@@ -175,33 +210,74 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
       </div>
 
       <div
+        className="story-viewer-stage"
         style={{
           flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 16,
-          textAlign: 'center',
-          overflow: 'auto',
+          minHeight: 0,
+          overflow: 'hidden',
+          position: 'relative',
+          touchAction: 'pan-y',
         }}
+        onPointerDown={onStagePointerDown}
+        onPointerUp={onStagePointerUp}
+        onPointerCancel={onStagePointerCancel}
       >
-        {cur.mediaUrl ? (
-          <img
-            src={cur.mediaUrl}
-            alt=""
-            style={{ maxWidth: '100%', maxHeight: '62dvh', objectFit: 'contain', borderRadius: 8 }}
-          />
-        ) : null}
-        {cur.body ? (
-          <p style={{ margin: cur.mediaUrl ? '14px 0 0' : 0, maxWidth: 420, fontSize: 15, whiteSpace: 'pre-wrap', lineHeight: 1.45 }}>
-            {cur.body}
-          </p>
-        ) : null}
+        <div
+          className="story-viewer-strip"
+          style={{
+            display: 'flex',
+            height: '100%',
+            width: `${total * 100}%`,
+            transform: `translateX(-${pct}%)`,
+            transition: 'transform 0.38s cubic-bezier(0.25, 0.82, 0.2, 1)',
+            willChange: 'transform',
+          }}
+        >
+          {items.map((it) => (
+            <div
+              key={it.id}
+              style={{
+                flex: `0 0 ${100 / total}%`,
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 16,
+                textAlign: 'center',
+                overflow: 'auto',
+              }}
+            >
+              {it.mediaUrl ? (
+                <img
+                  src={it.mediaUrl}
+                  alt=""
+                  loading="eager"
+                  decoding="async"
+                  style={{ maxWidth: '100%', maxHeight: '58dvh', objectFit: 'contain', borderRadius: 8 }}
+                />
+              ) : null}
+              {it.body ? (
+                <p
+                  style={{
+                    margin: it.mediaUrl ? '14px 0 0' : 0,
+                    maxWidth: 420,
+                    fontSize: 15,
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.45,
+                  }}
+                >
+                  {it.body}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
       </div>
 
       {canReact ? (
         <div
+          className="story-viewer-chrome"
           style={{
             display: 'flex',
             justifyContent: 'center',
@@ -237,16 +313,27 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      <div className="story-viewer-chrome" style={{ display: 'flex', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <button
           type="button"
-          style={{ flex: 1, padding: 14, borderRight: '1px solid rgba(255,255,255,0.08)', fontSize: 12, background: 'transparent', color: 'inherit' }}
-          onClick={() => setSlide((s) => Math.max(0, s - 1))}
+          style={{
+            flex: 1,
+            padding: 14,
+            borderRight: '1px solid rgba(255,255,255,0.08)',
+            fontSize: 12,
+            background: 'transparent',
+            color: 'inherit',
+          }}
+          onClick={goPrev}
         >
-          Назад
+          ← Назад
         </button>
-        <button type="button" style={{ flex: 1, padding: 14, fontSize: 12, background: 'transparent', color: 'inherit' }} onClick={advance}>
-          Далее
+        <button
+          type="button"
+          style={{ flex: 1, padding: 14, fontSize: 12, background: 'transparent', color: 'inherit' }}
+          onClick={goNext}
+        >
+          Вперёд →
         </button>
       </div>
     </div>

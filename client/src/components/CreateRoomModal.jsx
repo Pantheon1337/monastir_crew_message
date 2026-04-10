@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import UserAvatar from './UserAvatar.jsx';
+import NicknameWithBadge from './NicknameWithBadge.jsx';
 
 export default function CreateRoomModal({ userId, open, onClose, onCreated }) {
   const [title, setTitle] = useState('');
@@ -215,13 +217,11 @@ export default function CreateRoomModal({ userId, open, onClose, onCreated }) {
                       onChange={() => togglePeer(p.id)}
                       style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
                     />
-                    {p.avatarUrl ? (
-                      <img src={p.avatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#252830', border: '1px solid var(--border)' }} />
-                    )}
+                    <UserAvatar src={p.avatarUrl} size={32} />
                     <span style={{ minWidth: 0 }}>
-                      <span style={{ color: 'var(--accent)' }}>@{p.nickname}</span>
+                      <span style={{ color: 'var(--accent)' }}>
+                        <NicknameWithBadge nickname={p.nickname} affiliationEmoji={p.affiliationEmoji} />
+                      </span>
                       <span className="muted" style={{ display: 'block', fontSize: 10 }}>
                         {p.firstName} {p.lastName}
                       </span>

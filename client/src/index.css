@@ -5,12 +5,23 @@
   --accent: #c17b4b;
   --border: #2e3238;
   --online: #3ddc84;
+  --panel: #22252b;
   --radius: 6px;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.45;
   color: var(--text);
   background: var(--bg);
+}
+
+[data-theme='light'] {
+  --bg: #eceef1;
+  --text: #1a1b1f;
+  --muted: #5c6068;
+  --accent: #9d5a28;
+  --border: #cfd2d8;
+  --online: #0d8f52;
+  --panel: #ffffff;
 }
 
 *,
@@ -121,11 +132,36 @@ a:hover {
   padding: 8px 10px;
 }
 
-/* Каркас как Element X: лёгкое отделение композера от ленты */
+/* Каркас: safe-area у «полки» только без клавиатуры; с IME — без лишнего зазора над клавиатурой */
 .chat-scaffold-composer-host {
   flex-shrink: 0;
   background: var(--bg);
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.chat-scaffold-composer-host--ime {
+  padding-bottom: 0;
+}
+
+/* Открыта клавиатура — композер вплотную к нижнему краю видимой области */
+.chat-scaffold-composer-host--ime .chat-composer-bar {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.chat-composer-bar {
+  border-top: 1px solid var(--border);
+  padding: 6px 12px;
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+
+/* Картинки в ленте: отрисовка вне экрана дешевле, без лишних декодов при скролле */
+.chat-media-inline-img {
+  content-visibility: auto;
 }
 
 /* Многострочный композер (аналог TextComposer): min/max; точная высота — из JS */
@@ -183,12 +219,27 @@ textarea.chat-composer-textarea {
   background: rgba(255, 255, 255, 0.06);
 }
 
+[data-theme='light'] .header-menu-item:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 /* Модалка «Новая комната»: без лишнего zoom на iOS (font-size ≥16px в компоненте) и без масштабирования текста */
 .create-room-modal-overlay,
-.create-room-modal-panel {
+.create-room-modal-panel,
+.settings-modal-panel,
+.possible-friends-modal-panel {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   touch-action: manipulation;
+}
+
+/* Профиль «О себе»: без zoom iOS при фокусе (класс .text-input даёт font-size ≥16px) */
+.profile-about-textarea.text-input {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.35;
+  background: var(--panel);
 }
 
 /* Кнопка записи голоса/кружка: без выделения текста/эмодзи при удержании */
@@ -204,29 +255,72 @@ textarea.chat-composer-textarea {
   pointer-events: none;
 }
 
-/* Видеокружок в чате: квадрат + круг; кольцо прогресса как в Telegram */
+/* Контейнер: не даём кружку вылезти за экран при «увеличении» */
+.chat-video-note-outer {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 2px 0 6px;
+  box-sizing: border-box;
+}
+
+/* Видеокружок: кольцо SVG поверх видео (z-index), прогресс от 12 часов — rotate + origin */
 .chat-video-note-wrap {
   position: relative;
-  width: min(200px, 70vw);
-  height: min(200px, 70vw);
-  max-width: min(200px, 70vw);
-  max-height: min(200px, 70vw);
+  width: min(200px, calc(100vw - 40px));
+  height: min(200px, calc(100vw - 40px));
+  max-width: min(200px, calc(100vw - 40px));
+  max-height: min(200px, calc(100vw - 40px));
+  aspect-ratio: 1;
   box-sizing: border-box;
   margin-left: auto;
   margin-right: auto;
-  transition: transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
   cursor: pointer;
   overflow: visible;
+  transition:
+    width 0.26s cubic-bezier(0.34, 1.15, 0.64, 1),
+    height 0.26s cubic-bezier(0.34, 1.15, 0.64, 1),
+    max-width 0.26s cubic-bezier(0.34, 1.15, 0.64, 1),
+    max-height 0.26s cubic-bezier(0.34, 1.15, 0.64, 1);
 }
 
 .chat-video-note-inner {
   position: absolute;
-  inset: 4px;
+  inset: 0;
+  z-index: 1;
   border-radius: 50%;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
   background: #000;
+}
+
+.chat-video-note-play-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.chat-video-note-play-hint-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  padding-left: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .chat-video-note-ring-svg {
@@ -235,20 +329,23 @@ textarea.chat-composer-textarea {
   top: 0;
   width: 100%;
   height: 100%;
+  z-index: 3;
   pointer-events: none;
   transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  overflow: visible;
 }
 
 .chat-video-note-ring-track {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.18);
-  stroke-width: 2.8;
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 3.5;
 }
 
 .chat-video-note-ring-progress {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 2.8;
+  stroke-width: 3.5;
   stroke-linecap: round;
 }
 
@@ -260,14 +357,19 @@ video.chat-video-note {
   background: #000;
 }
 
+/* Увеличение без scale — укладываемся в ширину/высоту экрана */
 .chat-video-note-wrap--boosted {
-  transform: scale(1.22);
+  width: min(248px, calc(100vw - 20px), 58vmin);
+  height: min(248px, calc(100vw - 20px), 58vmin);
+  max-width: min(248px, calc(100vw - 20px), 58vmin);
+  max-height: min(248px, calc(100vw - 20px), 58vmin);
   z-index: 1;
 }
 
 .chat-video-note-pause-overlay {
   position: absolute;
   inset: 0;
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -308,10 +410,58 @@ video.chat-video-note {
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
 }
 
+/* Лента чата: без выделения текста страницы при долгом нажатии (iOS / Android) */
+.chat-scaffold-timeline {
+  -webkit-user-select: none;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 /* Сообщения в чате: без выделения всей страницы при удержании */
 .chat-message-bubble-shell {
   -webkit-user-select: none;
   user-select: none;
   -moz-user-select: none;
   -webkit-touch-callout: none;
+}
+
+.chat-mention {
+  display: inline;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: rgba(193, 123, 75, 0.2);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.chat-mention:hover {
+  text-decoration: underline;
+}
+
+/* Просмотр историй: без выделения текста; пауза по удержанию на области контента */
+.story-viewer-root {
+  -webkit-user-select: none;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.story-viewer-chrome button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.story-viewer-stage {
+  touch-action: pan-y;
+  cursor: grab;
+}
+
+.story-viewer-stage:active {
+  cursor: grabbing;
 }

@@ -8,6 +8,7 @@ export default function Header({
   onOpenSettings,
   onOpenPrivacy,
   onOpenSecurity,
+  onOpenPossibleFriends,
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -102,6 +103,17 @@ export default function Header({
                   }}
                 >
                   Статус приложения
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="header-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenPossibleFriends?.();
+                  }}
+                >
+                  Возможно друзья
                 </button>
                 <button
                   type="button"

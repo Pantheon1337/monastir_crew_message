@@ -1,5 +1,15 @@
 /** Обёртка над Notification API (новые сообщения, заявки в друзья). */
 
+let appNotificationsEnabled = true;
+
+export function setAppNotificationsEnabled(enabled) {
+  appNotificationsEnabled = Boolean(enabled);
+}
+
+export function getAppNotificationsEnabled() {
+  return appNotificationsEnabled;
+}
+
 export function isNotificationApiAvailable() {
   return typeof Notification !== 'undefined';
 }
@@ -15,6 +25,7 @@ export async function requestNotificationPermission() {
 }
 
 export function showBrowserNotification(title, body, { tag } = {}) {
+  if (!appNotificationsEnabled) return;
   if (!isNotificationApiAvailable() || Notification.permission !== 'granted') return;
   try {
     new Notification(title, {

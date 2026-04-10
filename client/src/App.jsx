@@ -14,6 +14,8 @@ import StoriesArchiveModal from './components/StoriesArchiveModal.jsx';
 import FriendProfileSheet from './components/FriendProfileSheet.jsx';
 import AppStatusModal from './components/AppStatusModal.jsx';
 import StubMenuModal from './components/StubMenuModal.jsx';
+import SettingsModal from './components/SettingsModal.jsx';
+import PossibleFriendsModal from './components/PossibleFriendsModal.jsx';
 import CreateRoomModal from './components/CreateRoomModal.jsx';
 import RoomDetailModal from './components/RoomDetailModal.jsx';
 import { useWebSocket } from './hooks/useWebSocket.js';
@@ -22,7 +24,15 @@ import { api, apiPath } from './api.js';
 import {
   previewTextForChatMessage,
   showBrowserNotification,
+  setAppNotificationsEnabled,
 } from './browserNotification.js';
+import {
+  applyThemeToDocument,
+  getNotificationsEnabled,
+  getTheme,
+  setNotificationsEnabled as saveNotificationsEnabled,
+  setTheme as saveTheme,
+} from './appPreferences.js';
 
 export default function App() {
   const [session, setSession] = useState('checking');
@@ -44,6 +54,9 @@ export default function App() {
   const [peerProfileUserId, setPeerProfileUserId] = useState(null);
   const [appStatusOpen, setAppStatusOpen] = useState(false);
   const [menuStub, setMenuStub] = useState(null);
+  const [possibleFriendsOpen, setPossibleFriendsOpen] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(getNotificationsEnabled);
+  const [appTheme, setAppTheme] = useState(getTheme);
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const [roomDetailId, setRoomDetailId] = useState(null);
   const [networkOnline, setNetworkOnline] = useState(
@@ -214,8 +227,9 @@ export default function App() {
     if (lastEvent.type === 'friendRequest:new') {
       const p = lastEvent.payload;
       const fu = p?.fromUser;
+      const em = fu?.affiliationEmoji ? ` ${fu.affiliationEmoji}` : '';
       const label = fu?.nickname
-        ? `@${fu.nickname}`
+        ? `@${fu.nickname}${em}`
         : [fu?.firstName, fu?.lastName].filter(Boolean).join(' ').trim() || 'Кто-то';
       showBrowserNotification('Заявка в друзья', `${label} хочет добавить вас в друзья`, {
         tag: `friend-${p?.requestId || 'req'}`,
@@ -232,7 +246,8 @@ export default function App() {
         String(openChatRef.current.id) === String(chatId) &&
         document.visibilityState === 'visible';
       if (viewing) return;
-      const title = msg.senderNickname ? `@${msg.senderNickname}` : 'Новое сообщение';
+      const em = msg.senderAffiliationEmoji ? ` ${msg.senderAffiliationEmoji}` : '';
+      const title = msg.senderNickname ? `@${msg.senderNickname}${em}` : 'Новое сообщение';
       const body = previewTextForChatMessage(msg);
       showBrowserNotification(title, body, { tag: `chat-${chatId}-${msg.id}` });
     }
@@ -248,7 +263,8 @@ export default function App() {
       if (viewing) return;
       const roomName = rooms.find((r) => String(r.id) === String(roomId))?.name;
       const title = roomName ? `# ${roomName}` : 'Комната';
-      const who = msg.senderNickname ? `@${msg.senderNickname}` : 'Кто-то';
+      const emR = msg.senderAffiliationEmoji ? ` ${msg.senderAffiliationEmoji}` : '';
+      const who = msg.senderNickname ? `@${msg.senderNickname}${emR}` : 'Кто-то';
       const body = `${who}: ${previewTextForChatMessage(msg)}`;
       showBrowserNotification(title, body, { tag: `room-${roomId}-${msg.id}` });
     }
@@ -260,8 +276,10 @@ export default function App() {
       lastEvent.type === 'friendRequest:new' ||
       lastEvent.type === 'friendRequest:accepted' ||
       lastEvent.type === 'chat:message:new' ||
+      lastEvent.type === 'chat:message:updated' ||
       lastEvent.type === 'chat:message:reaction' ||
       lastEvent.type === 'room:message:new' ||
+      lastEvent.type === 'room:message:updated' ||
       lastEvent.type === 'room:message:reaction'
     ) {
       refreshSocial();
@@ -270,7 +288,7 @@ export default function App() {
       refreshFeed();
       refreshStories();
     }
-    if (lastEvent.type === 'feed:new') refreshFeed();
+    if (lastEvent.type === 'feed:new' || lastEvent.type === 'feed:changed') refreshFeed();
     if (lastEvent.type === 'stories:new') refreshStories();
   }, [lastEvent, refreshSocial, refreshFeed, refreshStories]);
 
@@ -323,8 +341,27 @@ export default function App() {
       name: chat.name,
       peerUserId: chat.peerUserId,
       peerAvatarUrl: chat.peerAvatarUrl ?? null,
+      friendsActive: chat.friendsActive !== false,
+      canMessage: chat.canMessage !== false,
     });
   }, []);
+
+  const syncOpenChatFromServer = useCallback(async () => {
+    if (!user?.id) return;
+    const r = await api('/api/chats', { userId: user.id });
+    if (!r.ok) return;
+    setOpenChat((prev) => {
+      if (!prev) return prev;
+      const c = (r.data.chats || []).find((x) => String(x.id) === String(prev.id));
+      if (!c) return prev;
+      return {
+        ...prev,
+        name: c.name ?? prev.name,
+        friendsActive: c.friendsActive !== false,
+        canMessage: c.canMessage !== false,
+      };
+    });
+  }, [user?.id]);
 
   const handleOpenRoom = useCallback((room) => {
     setOpenChat(null);
@@ -387,6 +424,7 @@ export default function App() {
           userId={user.id}
           onSocialChanged={refreshSocial}
           onOpenAppStatus={() => setAppStatusOpen(true)}
+          onOpenPossibleFriends={() => setPossibleFriendsOpen(true)}
           onOpenSettings={() => setMenuStub('settings')}
           onOpenPrivacy={() => setMenuStub('privacy')}
           onOpenSecurity={() => setMenuStub('security')}
@@ -454,12 +492,17 @@ export default function App() {
           userId={user.id}
           chatId={openChat.id}
           peerLabel={openChat.name}
+          peerNickname={openChat.peerNickname}
+          peerAffiliationEmoji={openChat.peerAffiliationEmoji}
           peerUserId={openChat.peerUserId}
           peerAvatarUrl={openChat.peerAvatarUrl}
+          canMessage={openChat.canMessage !== false}
+          friendsActive={openChat.friendsActive !== false}
           onClose={() => setOpenChat(null)}
           lastEvent={lastEvent}
           onAfterChange={refreshSocial}
           onOpenPeerProfile={() => setPeerProfileUserId(openChat.peerUserId)}
+          onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
         />
       )}
 
@@ -472,6 +515,7 @@ export default function App() {
           lastEvent={lastEvent}
           onAfterChange={refreshSocial}
           onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
+          onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
         />
       )}
 
@@ -503,24 +547,41 @@ export default function App() {
           loadError={loadError}
         />
       )}
-      {menuStub ? (
+      {menuStub === 'settings' ? (
+        <SettingsModal
+          open
+          onClose={() => setMenuStub(null)}
+          notificationsEnabled={notificationsEnabled}
+          onNotificationsEnabledChange={(v) => {
+            setNotificationsEnabled(v);
+            saveNotificationsEnabled(v);
+            setAppNotificationsEnabled(v);
+          }}
+          theme={appTheme}
+          onThemeChange={(t) => {
+            setAppTheme(t);
+            saveTheme(t);
+            applyThemeToDocument(t);
+          }}
+        />
+      ) : menuStub ? (
         <StubMenuModal
           open
           onClose={() => setMenuStub(null)}
-          title={
-            menuStub === 'settings'
-              ? 'Настройки'
-              : menuStub === 'privacy'
-                ? 'Конфиденциальность'
-                : 'Безопасность'
-          }
+          title={menuStub === 'privacy' ? 'Конфиденциальность' : 'Безопасность'}
         >
-          {menuStub === 'settings'
-            ? 'Здесь будут настройки приложения: уведомления, внешний вид и другое.'
-            : menuStub === 'privacy'
-              ? 'Здесь будут параметры конфиденциальности: кто видит профиль, истории и статус.'
-              : 'Здесь будут параметры безопасности: сессии, пароль и двухфакторная аутентификация.'}
+          {menuStub === 'privacy'
+            ? 'Здесь будут параметры конфиденциальности: кто видит профиль, истории и статус.'
+            : 'Здесь будут параметры безопасности: сессии, пароль и двухфакторная аутентификация.'}
         </StubMenuModal>
+      ) : null}
+      {possibleFriendsOpen && user?.id ? (
+        <PossibleFriendsModal
+          open
+          userId={user.id}
+          onClose={() => setPossibleFriendsOpen(false)}
+          onFriendsChanged={onFriendsChanged}
+        />
       ) : null}
       {createRoomOpen ? (
         <CreateRoomModal
@@ -550,6 +611,10 @@ export default function App() {
           targetUserId={peerProfileUserId}
           viewerId={user.id}
           onClose={() => setPeerProfileUserId(null)}
+          onFriendshipChanged={async () => {
+            await onFriendsChanged();
+            await syncOpenChatFromServer();
+          }}
         />
       )}
 

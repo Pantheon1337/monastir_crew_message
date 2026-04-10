@@ -2,8 +2,17 @@ import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react
 import { api, apiUpload } from '../api.js';
 import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
+import MentionText from './chat/MentionText.jsx';
+import UserAvatar from './UserAvatar.jsx';
+import NicknameWithBadge from './NicknameWithBadge.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
+import ForwardMessageModal from './ForwardMessageModal.jsx';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
+import {
+  getOrCreateCameraStream,
+  scheduleReleaseCameraStream,
+  releaseCameraStreamNow,
+} from '../cameraSession.js';
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
@@ -101,7 +110,16 @@ function normalizeChatMessage(m) {
     storyReactionKey: m.storyReactionKey ?? null,
     reactions: m.reactions ?? null,
     readByPeer: m.readByPeer === true,
+    senderAffiliationEmoji: m.senderAffiliationEmoji ?? null,
+    revokedForAll: m.revokedForAll === true,
+    replyTo: m.replyTo ?? null,
+    forwardFrom: m.forwardFrom ?? null,
   };
+}
+
+function looksLikeVideoFileName(name) {
+  if (!name || typeof name !== 'string') return false;
+  return /\.(mp4|webm|mov|m4v|mkv|ogv)$/i.test(name.trim());
 }
 
 const REACTION_KEYS = ['up', 'down', 'fire', 'poop'];
@@ -152,6 +170,7 @@ function useLongPress(onLongPress, { ms = 450, moveTol = 14 } = {}) {
 
 function getCopyTextForMessage(m) {
   const k = m.kind || 'text';
+  if (k === 'revoked') return 'Сообщение удалено';
   if (k === 'text') return m.body || '';
   if (k === 'voice') return 'Голосовое сообщение';
   if (k === 'video_note') return 'Видеосообщение';
@@ -225,29 +244,7 @@ function ChatMessageReactions({ chatId, roomId, messageId, userId, reactions, on
   );
 }
 
-function AvatarPlaceholder({ label }) {
-  const ch = (label || '?').replace('@', '').slice(0, 1).toUpperCase();
-  return (
-    <div
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: '50%',
-        border: '1px solid var(--border)',
-        background: '#252830',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 14,
-        color: 'var(--muted)',
-      }}
-    >
-      {ch}
-    </div>
-  );
-}
-
-function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocalUpdate, onOpenActionMenu }) {
+function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocalUpdate, onOpenActionMenu, onMentionProfile }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
   const shellRef = useRef(null);
@@ -274,9 +271,14 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
   );
 
   const isMediaShell = kind === 'voice' || kind === 'video_note';
+  const isRevoked = kind === 'revoked' || m.revokedForAll;
 
   let inner = null;
-  if (kind === 'voice' && m.mediaUrl) {
+  if (isRevoked) {
+    inner = (
+      <p style={{ margin: 0, fontSize: 12, fontStyle: 'italic', opacity: 0.8 }}>Сообщение удалено</p>
+    );
+  } else if (kind === 'voice' && m.mediaUrl) {
     inner = <VoiceMessagePlayer src={m.mediaUrl} durationMs={m.durationMs} mine={mine} />;
   } else if (kind === 'video_note' && m.mediaUrl) {
     inner = (
@@ -288,14 +290,36 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
     inner = (
       <div style={{ maxWidth: 280 }}>
         <img
+          className="chat-media-inline-img"
           src={m.mediaUrl}
           alt={m.body?.trim() ? m.body : ''}
           loading="lazy"
           decoding="async"
+          sizes="(max-width: 480px) 90vw, 280px"
           style={{ maxWidth: '100%', borderRadius: 12, display: 'block', verticalAlign: 'top' }}
         />
         {m.body?.trim() ? (
-          <div style={{ marginTop: 8, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>
+          <div style={{ marginTop: 8 }}>
+            <MentionText text={m.body} onMentionClick={onMentionProfile} />
+          </div>
+        ) : null}
+      </div>
+    );
+  } else if (kind === 'file' && m.mediaUrl && looksLikeVideoFileName(m.body)) {
+    const cap = m.body?.trim() || '';
+    inner = (
+      <div style={{ maxWidth: 280 }} onPointerDown={(e) => e.stopPropagation()}>
+        <video
+          src={m.mediaUrl}
+          controls
+          playsInline
+          preload="metadata"
+          style={{ width: '100%', maxHeight: 360, borderRadius: 12, display: 'block', background: '#000' }}
+        />
+        {cap ? (
+          <div style={{ marginTop: 8 }}>
+            <MentionText text={cap} onMentionClick={onMentionProfile} />
+          </div>
         ) : null}
       </div>
     );
@@ -348,7 +372,7 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
       </div>
     );
   } else {
-    inner = <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.body}</div>;
+    inner = <MentionText text={m.body} onMentionClick={onMentionProfile} />;
   }
 
   return (
@@ -381,12 +405,34 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
           touchAction: 'manipulation',
         }}
       >
-        {!mine && (
+        {m.forwardFrom?.originalAuthorNickname ? (
+          <div className="muted" style={{ fontSize: 10, marginBottom: 6, lineHeight: 1.3 }}>
+            Переслано от @{m.forwardFrom.originalAuthorNickname}
+          </div>
+        ) : null}
+        {m.replyTo ? (
+          <div
+            style={{
+              borderLeft: '3px solid var(--accent)',
+              paddingLeft: 8,
+              marginBottom: 8,
+              opacity: 0.92,
+            }}
+          >
+            <div className="muted" style={{ fontSize: 10 }}>
+              @{m.replyTo.senderNickname || 'user'}
+            </div>
+            <div style={{ fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>{m.replyTo.preview}</div>
+          </div>
+        ) : null}
+        {!mine && !isRevoked ? (
           <div className="muted" style={{ fontSize: 10, marginBottom: 4 }}>
             @{m.senderNickname || 'user'}
+            {m.senderAffiliationEmoji ? <span aria-hidden> {m.senderAffiliationEmoji}</span> : null}
           </div>
-        )}
+        ) : null}
         {inner}
+        {!isRevoked ? (
         <ChatMessageReactions
           chatId={chatId}
           roomId={roomId}
@@ -396,6 +442,7 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
           align={mine ? 'flex-end' : 'flex-start'}
           onUpdate={(r) => onReactionsLocalUpdate?.(m.id, r)}
         />
+        ) : null}
         <div
           style={{
             display: 'flex',
@@ -432,12 +479,17 @@ export default function DirectChatScreen({
   userId,
   chatId,
   peerLabel,
+  peerNickname,
+  peerAffiliationEmoji,
   peerUserId,
   peerAvatarUrl,
   onClose,
   lastEvent,
   onAfterChange,
   onOpenPeerProfile,
+  onOpenProfileByUserId,
+  canMessage = true,
+  friendsActive = true,
 }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -449,6 +501,9 @@ export default function DirectChatScreen({
   /** Пустое поле: «кружок» (видео) ↔ микрофон (аудио), как в Telegram */
   const [mediaMode, setMediaMode] = useState('video');
   const [messageMenu, setMessageMenu] = useState(null);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardMessageId, setForwardMessageId] = useState(null);
+  const [replyDraft, setReplyDraft] = useState(null);
   const [mediaUploading, setMediaUploading] = useState(false);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -505,6 +560,18 @@ export default function DirectChatScreen({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [videoModal, videoRecording]);
+
+  const onMentionProfile = useCallback(
+    async (nick) => {
+      const { ok, data } = await api(`/api/users/lookup/${encodeURIComponent(nick)}`, { userId });
+      if (!ok) {
+        alert(data?.error || 'Не удалось открыть профиль');
+        return;
+      }
+      onOpenProfileByUserId?.(data.user.id);
+    },
+    [userId, onOpenProfileByUserId],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -571,6 +638,15 @@ export default function DirectChatScreen({
   }, [lastEvent, chatId]);
 
   useEffect(() => {
+    if (lastEvent?.type !== 'chat:message:updated') return;
+    if (lastEvent.payload?.chatId !== chatId) return;
+    const m = normalizeChatMessage(lastEvent.payload?.message);
+    if (!m?.id) return;
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
+    onAfterChange?.();
+  }, [lastEvent, chatId, onAfterChange]);
+
+  useEffect(() => {
     if (!messageMenu) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') setMessageMenu(null);
@@ -595,9 +671,9 @@ export default function DirectChatScreen({
     scrollMessagesToBottomImmediate();
   }, [scrollMessagesToBottomImmediate]);
 
+  /** Новые сообщения — всегда вниз (suppress не применяем: иначе лента не едет за отправленным). */
   useLayoutEffect(() => {
     if (loading) return;
-    if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
     scrollMessagesToBottomImmediate();
   }, [messages, loading, scrollMessagesToBottomImmediate]);
 
@@ -655,6 +731,7 @@ export default function DirectChatScreen({
   const sendChatAttachment = useCallback(
     async (file) => {
       if (!file) return;
+      if (canMessage === false) return;
       setMediaUploading(true);
       setErr(null);
       try {
@@ -679,7 +756,7 @@ export default function DirectChatScreen({
         setMediaUploading(false);
       }
     },
-    [chatId, userId, text, appendMessage, onAfterChange],
+    [chatId, userId, text, appendMessage, onAfterChange, canMessage],
   );
 
   const stopVoiceGlobal = useRef(null);
@@ -690,6 +767,7 @@ export default function DirectChatScreen({
   }, []);
 
   const startVoice = useCallback(async () => {
+    if (canMessage === false) return;
     if (voiceBusyRef.current) return;
     setErr(null);
     try {
@@ -784,12 +862,13 @@ export default function DirectChatScreen({
     } catch (e) {
       setErr(e?.message || 'Нет доступа к микрофону');
     }
-  }, [chatId, userId, appendMessage, onAfterChange, stopVoiceAndSend]);
+  }, [chatId, userId, appendMessage, onAfterChange, stopVoiceAndSend, canMessage]);
 
   useEffect(() => {
     return () => {
       void stopVoiceAndSend();
       voiceStreamRef.current?.getTracks().forEach((t) => t.stop());
+      releaseCameraStreamNow();
     };
   }, [stopVoiceAndSend]);
 
@@ -810,22 +889,27 @@ export default function DirectChatScreen({
 
   /** Без <form>: на iOS submit формы часто закрывает клавиатуру. */
   async function sendTextMessage() {
+    if (canMessage === false) return;
     const t = text.trim();
     if (!t) return;
     const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
       method: 'POST',
-      body: { body: t },
+      body: { body: t, replyToId: replyDraft?.id },
       userId,
     });
     if (!ok) {
       setErr(data?.error || 'Не отправлено');
       return;
     }
-    suppressChatScrollUntilRef.current = Date.now() + 3200;
+    suppressChatScrollUntilRef.current = Date.now() + 900;
     setText('');
+    setReplyDraft(null);
     setErr(null);
     appendMessage(data.message);
-    queueMicrotask(refocusComposer);
+    queueMicrotask(() => {
+      scrollMessagesToBottomImmediate();
+      refocusComposer();
+    });
     requestAnimationFrame(() => {
       refocusComposer();
       requestAnimationFrame(refocusComposer);
@@ -846,24 +930,13 @@ export default function DirectChatScreen({
 
   /** Удержание в режиме «кружок»: открыть камеру и сразу писать кружок */
   async function startVideoHoldFromComposer() {
+    if (canMessage === false) return;
     setErr(null);
     setVideoModal(true);
     await new Promise((r) => setTimeout(r, 40));
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'user',
-          width: { ideal: 720, max: 1280 },
-          height: { ideal: 1280, max: 1920 },
-          frameRate: { ideal: 30, max: 30 },
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-        },
-      });
+      stream = await getOrCreateCameraStream();
     } catch (e) {
       setErr(e?.message || 'Нет доступа к камере');
       setVideoModal(false);
@@ -884,7 +957,7 @@ export default function DirectChatScreen({
     }
     if (!videoElRef.current) {
       setErr('Камера не готова');
-      stream.getTracks().forEach((t) => t.stop());
+      releaseCameraStreamNow();
       videoStreamRef.current = null;
       setVideoModal(false);
       longPressArmedRef.current = false;
@@ -909,9 +982,9 @@ export default function DirectChatScreen({
       }
     }
     videoRecRef.current = null;
-    videoStreamRef.current?.getTracks().forEach((t) => t.stop());
     videoStreamRef.current = null;
     if (videoElRef.current) videoElRef.current.srcObject = null;
+    scheduleReleaseCameraStream();
     setVideoRecording(false);
     setVideoModal(false);
   }
@@ -987,6 +1060,10 @@ export default function DirectChatScreen({
       return;
     }
     const file = buildVideoNoteFile(blob, mr);
+    if (canMessage === false) {
+      closeVideoModal();
+      return;
+    }
     const { ok, data } = await apiUpload(`/api/chats/${encodeURIComponent(chatId)}/messages/video-note`, {
       file,
       userId,
@@ -1025,6 +1102,7 @@ export default function DirectChatScreen({
   }
 
   function onMediaButtonPointerDown(e) {
+    if (canMessage === false) return;
     e.preventDefault();
     longPressArmedRef.current = false;
     clearHoldTimer();
@@ -1109,7 +1187,11 @@ export default function DirectChatScreen({
           disabled={!peerUserId || !onOpenPeerProfile}
         >
           <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {peerLabel || 'Чат'}
+            {peerNickname ? (
+              <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
+            ) : (
+              peerLabel || 'Чат'
+            )}
           </div>
           {peerUserId && onOpenPeerProfile ? (
             <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
@@ -1131,15 +1213,7 @@ export default function DirectChatScreen({
           }}
           disabled={!peerUserId || !onOpenPeerProfile}
         >
-          {peerAvatarUrl ? (
-            <img
-              src={peerAvatarUrl}
-              alt=""
-              style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border)' }}
-            />
-          ) : (
-            <AvatarPlaceholder label={peerLabel} />
-          )}
+          <UserAvatar src={peerAvatarUrl} size={40} />
         </button>
           </header>
         }
@@ -1168,6 +1242,7 @@ export default function DirectChatScreen({
                 setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
               }
               onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y })}
+              onMentionProfile={onMentionProfile}
             />
           ))
         )}
@@ -1179,25 +1254,64 @@ export default function DirectChatScreen({
           </>
         }
         errorBanner={
-          err && messages.length > 0 ? (
-            <div style={{ padding: '0 12px', fontSize: 11, color: '#c45c5c' }}>{err}</div>
-          ) : null
+          <>
+            {canMessage === false ? (
+              <div
+                style={{
+                  padding: '8px 12px',
+                  fontSize: 11,
+                  lineHeight: 1.35,
+                  background: 'rgba(196, 92, 92, 0.1)',
+                  borderTop: '1px solid var(--border)',
+                }}
+              >
+                {friendsActive === false
+                  ? 'Вы не в друзьях. История сохранена; писать снова можно после повторного добавления в друзья.'
+                  : 'Собеседник ограничил вам сообщения (или включена блокировка).'}
+              </div>
+            ) : null}
+            {err && messages.length > 0 ? (
+              <div style={{ padding: '0 12px', fontSize: 11, color: '#c45c5c' }}>{err}</div>
+            ) : null}
+          </>
         }
         footer={
           <div
             role="group"
             aria-label="Поле сообщения"
             className="chat-composer-bar"
-            style={{
-              borderTop: '1px solid var(--border)',
-              padding: '6px 12px',
-              paddingBottom: 'max(4px, env(safe-area-inset-bottom))',
-              display: 'flex',
-              gap: 8,
-              flexShrink: 0,
-              alignItems: 'flex-end',
-            }}
+            style={{ flexDirection: 'column', alignItems: 'stretch' }}
           >
+            {replyDraft ? (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '6px 0 8px',
+                  borderBottom: '1px solid var(--border)',
+                  marginBottom: 6,
+                }}
+              >
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div className="muted" style={{ fontSize: 10 }}>
+                    Ответ @{replyDraft.senderNickname || 'user'}
+                  </div>
+                  <div style={{ fontSize: 11, marginTop: 2, opacity: 0.9 }}>{replyDraft.preview}</div>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label="Отменить ответ"
+                  style={{ width: 32, height: 32, flexShrink: 0 }}
+                  onClick={() => setReplyDraft(null)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, width: '100%' }}>
             <input
               ref={chatFileInputRef}
               type="file"
@@ -1206,13 +1320,13 @@ export default function DirectChatScreen({
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = '';
-                if (f) void sendChatAttachment(f);
+                if (f && canMessage !== false) void sendChatAttachment(f);
               }}
             />
             <button
               type="button"
               className="icon-btn"
-              disabled={mediaUploading || voiceRecording || videoRecording || videoModal}
+              disabled={canMessage === false || mediaUploading || voiceRecording || videoRecording || videoModal}
               aria-label="Прикрепить фото или файл"
               onClick={() => chatFileInputRef.current?.click()}
               style={{
@@ -1230,8 +1344,9 @@ export default function DirectChatScreen({
               className="text-input chat-composer-textarea"
               style={{ flex: 1, width: '100%' }}
               rows={1}
-              placeholder="Сообщение…"
+              placeholder={canMessage === false ? 'Отправка недоступна' : 'Сообщение…'}
               value={text}
+              readOnly={canMessage === false}
               enterKeyHint="send"
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
@@ -1252,6 +1367,7 @@ export default function DirectChatScreen({
           <button
             type="button"
             aria-label="Отправить"
+            disabled={canMessage === false}
             onMouseDown={(e) => e.preventDefault()}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => void sendTextMessage()}
@@ -1279,6 +1395,7 @@ export default function DirectChatScreen({
           <button
             type="button"
             className="chat-media-record-btn"
+            disabled={canMessage === false}
             aria-label={mediaMode === 'video' ? 'Видеокружок. Тап — переключить на аудио. Удержать — записать.' : 'Голос. Тап — переключить на кружок. Удержать — записать.'}
             onPointerDown={onMediaButtonPointerDown}
             onPointerUp={onMediaButtonPointerUp}
@@ -1313,6 +1430,7 @@ export default function DirectChatScreen({
             <span style={{ lineHeight: 1 }}>{mediaMode === 'video' ? '◉' : '🎤'}</span>
           </button>
         )}
+            </div>
           </div>
         }
       />
@@ -1511,6 +1629,28 @@ export default function DirectChatScreen({
                 </button>
               ))}
             </div>
+            {messageMenu.m.kind !== 'revoked' && !messageMenu.m.revokedForAll ? (
+              <button
+                type="button"
+                className="btn-outline"
+                style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
+                onClick={() => {
+                  const msg = messageMenu.m;
+                  const preview =
+                    msg.kind === 'text'
+                      ? (msg.body || '').trim().slice(0, 120)
+                      : getCopyTextForMessage(msg).slice(0, 120);
+                  setReplyDraft({
+                    id: msg.id,
+                    senderNickname: msg.senderNickname || 'user',
+                    preview: preview || '·',
+                  });
+                  setMessageMenu(null);
+                }}
+              >
+                Ответить
+              </button>
+            ) : null}
             <button
               type="button"
               className="btn-outline"
@@ -1530,31 +1670,82 @@ export default function DirectChatScreen({
             <button
               type="button"
               className="btn-outline"
-              style={{ width: '100%', fontSize: 12 }}
+              style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
               onClick={async () => {
-                const t = getCopyTextForMessage(messageMenu.m);
+                const msg = messageMenu.m;
                 setMessageMenu(null);
-                if (typeof navigator !== 'undefined' && navigator.share) {
-                  try {
-                    await navigator.share({ text: t, title: 'Сообщение' });
-                  } catch {
-                    /* отмена */
-                  }
-                } else {
-                  try {
-                    await navigator.clipboard.writeText(t);
-                    setErr('Текст скопирован — вставьте в нужный чат');
-                    window.setTimeout(() => setErr(null), 2800);
-                  } catch {
-                    setErr('Не удалось переслать');
-                  }
+                const { ok, data } = await api(
+                  `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(msg.id)}/delete-for-me`,
+                  { method: 'POST', userId },
+                );
+                if (!ok) {
+                  setErr(data?.error || 'Не удалось удалить');
+                  return;
                 }
+                setMessages((prev) => prev.filter((x) => x.id !== msg.id));
+                onAfterChange?.();
               }}
             >
-              Переслать…
+              Удалить у себя
             </button>
+            {messageMenu.m.senderId === userId &&
+            messageMenu.m.kind !== 'revoked' &&
+            !messageMenu.m.revokedForAll ? (
+              <button
+                type="button"
+                className="btn-outline"
+                style={{ width: '100%', marginBottom: 8, fontSize: 12, color: '#c45c5c', borderColor: 'rgba(196,92,92,0.45)' }}
+                onClick={async () => {
+                  const msg = messageMenu.m;
+                  setMessageMenu(null);
+                  const { ok, data } = await api(
+                    `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(msg.id)}/delete-for-everyone`,
+                    { method: 'POST', userId },
+                  );
+                  if (!ok) {
+                    setErr(data?.error || 'Не удалось удалить');
+                    return;
+                  }
+                  if (data?.message) {
+                    setMessages((prev) => prev.map((x) => (x.id === msg.id ? normalizeChatMessage(data.message) : x)));
+                  }
+                  onAfterChange?.();
+                }}
+              >
+                Удалить у всех
+              </button>
+            ) : null}
+            {messageMenu.m.kind !== 'revoked' && !messageMenu.m.revokedForAll ? (
+              <button
+                type="button"
+                className="btn-outline"
+                style={{ width: '100%', fontSize: 12 }}
+                onClick={() => {
+                  const id = messageMenu.m.id;
+                  setMessageMenu(null);
+                  setForwardMessageId(id);
+                  setForwardOpen(true);
+                }}
+              >
+                Переслать…
+              </button>
+            ) : null}
           </div>
         </>
+      ) : null}
+
+      {forwardOpen && forwardMessageId ? (
+        <ForwardMessageModal
+          open
+          onClose={() => {
+            setForwardOpen(false);
+            setForwardMessageId(null);
+          }}
+          userId={userId}
+          source={{ type: 'chat', id: chatId }}
+          messageId={forwardMessageId}
+          onAfterForward={() => onAfterChange?.()}
+        />
       ) : null}
     </>
   );

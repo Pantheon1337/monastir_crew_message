@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import UserAvatar from './UserAvatar.jsx';
 
 /** new | self — градиент; seen — серое кольцо «все просмотрено» */
 function AvatarRing({ children, variant = 'new' }) {
@@ -123,14 +124,15 @@ export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAutho
               }}
             >
               <AvatarRing variant={ringVariant}>
-                {b.avatarUrl ? (
-                  <img src={b.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{label?.slice(0, 2) || '?'}</span>
-                )}
+                <UserAvatar
+                  src={b.avatarUrl}
+                  borderless
+                  style={{ width: '100%', height: '100%' }}
+                />
               </AvatarRing>
               <span className="muted" style={{ fontSize: 10, maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {label}
+                {b.affiliationEmoji ? ` ${b.affiliationEmoji}` : ''}
               </span>
             </button>
           );

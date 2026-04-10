@@ -92,7 +92,10 @@ export default function StoriesArchiveModal({ userId, onClose }) {
                   <img src={it.mediaUrl} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />
                 ) : null}
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 500 }}>{it.authorLabel}</div>
+                  <div style={{ fontWeight: 500 }}>
+                    {it.authorLabel}
+                    {it.authorAffiliationEmoji ? ` ${it.authorAffiliationEmoji}` : ''}
+                  </div>
                   {it.body ? <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{it.body}</div> : null}
                   <div className="muted" style={{ fontSize: 10, marginTop: 4 }}>
                     истекла {new Date(it.expiresAt).toLocaleString('ru-RU')}

@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 15;
 
 let db;
 
@@ -245,6 +245,110 @@ function migrate(database) {
       );
     `);
     setSchemaVersion(database, 10);
+    ver = 10;
+  }
+
+  if (ver < 11) {
+    const uInfo = database.prepare('PRAGMA table_info(users)').all();
+    const uNames = new Set(uInfo.map((row) => row.name));
+    if (!uNames.has('about')) {
+      database.exec(`ALTER TABLE users ADD COLUMN about TEXT;`);
+    }
+    setSchemaVersion(database, 11);
+    ver = 11;
+  }
+
+  if (ver < 12) {
+    const dcInfo = database.prepare('PRAGMA table_info(direct_chats)').all();
+    const dcNames = new Set(dcInfo.map((row) => row.name));
+    if (!dcNames.has('friends_active')) {
+      database.exec(`ALTER TABLE direct_chats ADD COLUMN friends_active INTEGER NOT NULL DEFAULT 1;`);
+    }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS user_blocks (
+        blocker_id TEXT NOT NULL,
+        blocked_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (blocker_id, blocked_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked ON user_blocks(blocked_id);
+    `);
+    setSchemaVersion(database, 12);
+    ver = 12;
+  }
+
+  if (ver < 13) {
+    const pInfo = database.prepare('PRAGMA table_info(posts)').all();
+    const pNames = new Set(pInfo.map((row) => row.name));
+    if (!pNames.has('media_path')) {
+      database.exec(`ALTER TABLE posts ADD COLUMN media_path TEXT;`);
+    }
+    if (!pNames.has('edited_at')) {
+      database.exec(`ALTER TABLE posts ADD COLUMN edited_at INTEGER;`);
+    }
+    const uInfo13 = database.prepare('PRAGMA table_info(users)').all();
+    const uNames13 = new Set(uInfo13.map((row) => row.name));
+    if (!uNames13.has('display_role')) {
+      database.exec(`ALTER TABLE users ADD COLUMN display_role TEXT NOT NULL DEFAULT 'user';`);
+    }
+    setSchemaVersion(database, 13);
+    ver = 13;
+  }
+
+  if (ver < 14) {
+    const u14 = database.prepare('PRAGMA table_info(users)').all();
+    const u14n = new Set(u14.map((row) => row.name));
+    if (!u14n.has('display_role_emoji')) {
+      database.exec(`ALTER TABLE users ADD COLUMN display_role_emoji TEXT;`);
+    }
+    const msg14 = database.prepare('PRAGMA table_info(messages)').all();
+    const msg14n = new Set(msg14.map((row) => row.name));
+    if (!msg14n.has('revoked_for_all')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN revoked_for_all INTEGER NOT NULL DEFAULT 0;`);
+    }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS direct_message_hide (
+        message_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        PRIMARY KEY (message_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dm_hide_user ON direct_message_hide(user_id);
+    `);
+    const rm14 = database.prepare('PRAGMA table_info(room_messages)').all();
+    const rm14n = new Set(rm14.map((row) => row.name));
+    if (!rm14n.has('revoked_for_all')) {
+      database.exec(`ALTER TABLE room_messages ADD COLUMN revoked_for_all INTEGER NOT NULL DEFAULT 0;`);
+    }
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS room_message_hide (
+        message_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        PRIMARY KEY (message_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_room_msg_hide_user ON room_message_hide(user_id);
+    `);
+    setSchemaVersion(database, 14);
+    ver = 14;
+  }
+
+  if (ver < 15) {
+    const msg15 = database.prepare('PRAGMA table_info(messages)').all();
+    const m15n = new Set(msg15.map((row) => row.name));
+    if (!m15n.has('reply_to_id')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN reply_to_id TEXT;`);
+    }
+    if (!m15n.has('forward_json')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN forward_json TEXT;`);
+    }
+    const rm15 = database.prepare('PRAGMA table_info(room_messages)').all();
+    const rm15n = new Set(rm15.map((row) => row.name));
+    if (!rm15n.has('reply_to_id')) {
+      database.exec(`ALTER TABLE room_messages ADD COLUMN reply_to_id TEXT;`);
+    }
+    if (!rm15n.has('forward_json')) {
+      database.exec(`ALTER TABLE room_messages ADD COLUMN forward_json TEXT;`);
+    }
+    setSchemaVersion(database, 15);
   }
 }
 
@@ -275,9 +379,97 @@ export function normalizeNickname(input) {
   return s;
 }
 
+/** Ник разработчика — роль «разработчик» выставляется только ему. */
+const DEVELOPER_NICK = 'ilyshapretty';
+
+export function computeEffectiveDisplayRole(nickname, storedRole) {
+  const nick = String(nickname || '').toLowerCase();
+  if (nick === DEVELOPER_NICK) return 'developer';
+  const s = String(storedRole || 'user').toLowerCase();
+  if (s === 'beta') return 'beta';
+  return 'user';
+}
+
+/** Смайлики, совместимые с iOS (один символ или известные последовательности). Выбор в профиле — только из этого списка. */
+export const AFFILIATION_EMOJI_CHOICES = [
+  '👤',
+  '🧑',
+  '🧪',
+  '🛠️',
+  '⭐',
+  '🎯',
+  '💎',
+  '🔥',
+  '❤️',
+  '✨',
+  '🎮',
+  '🏃',
+  '🎵',
+  '🎨',
+  '📷',
+  '🌟',
+  '🚀',
+  '💪',
+  '🧡',
+  '💙',
+  '💚',
+  '🦊',
+  '🐱',
+  '🐶',
+  '🌙',
+  '☀️',
+  '🍀',
+  '🎪',
+  '🏆',
+  '🎓',
+  '📝',
+  '🧠',
+  '💡',
+  '🎬',
+  '🌍',
+  '⚡',
+  '🌊',
+  '🍕',
+  '☕',
+  '🎂',
+  '🎁',
+  '🦄',
+  '🌸',
+  '🍓',
+];
+
+const AFFILIATION_EMOJI_SET = new Set(AFFILIATION_EMOJI_CHOICES);
+
+function defaultAffiliationEmojiForRole(role) {
+  if (role === 'developer') return '🛠️';
+  if (role === 'beta') return '🧪';
+  return '👤';
+}
+
+/** Нормализация выбранного смайлика (только из списка) или null = «как у роли по умолчанию». */
+export function normalizeAffiliationEmoji(input) {
+  if (input == null || input === '') return null;
+  const t = String(input).trim();
+  if (!t) return null;
+  return AFFILIATION_EMOJI_SET.has(t) ? t : null;
+}
+
+export function effectiveAffiliationEmoji(nickname, storedRole, storedEmoji) {
+  const role = computeEffectiveDisplayRole(nickname, storedRole);
+  const picked = normalizeAffiliationEmoji(storedEmoji);
+  if (picked) return picked;
+  return defaultAffiliationEmojiForRole(role);
+}
+
 export function mapPublicUser(row) {
   if (!row) return null;
   const avatarPath = row.avatarPath ?? row.avatar_path;
+  const aboutRaw = row.about;
+  const storedRole = row.displayRole ?? row.display_role;
+  const displayRole = computeEffectiveDisplayRole(row.nickname, storedRole);
+  const storedEmoji = row.displayRoleEmoji ?? row.display_role_emoji;
+  const affiliationEmoji = effectiveAffiliationEmoji(row.nickname, storedRole, storedEmoji);
+  const customAffiliationEmoji = normalizeAffiliationEmoji(storedEmoji);
   return {
     id: row.id,
     phone: row.phone,
@@ -286,13 +478,18 @@ export function mapPublicUser(row) {
     nickname: row.nickname,
     createdAt: row.createdAt,
     avatarUrl: avatarPath ? `/uploads/${avatarPath}` : null,
+    about: aboutRaw != null && String(aboutRaw).trim() ? String(aboutRaw).trim() : null,
+    displayRole,
+    affiliationEmoji,
+    /** Явный выбор из списка; null — «по умолчанию для роли». */
+    customAffiliationEmoji,
   };
 }
 
 export function findUserByPhone(phone) {
   const row = getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath FROM users WHERE phone = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE phone = ?`
     )
     .get(phone);
   return mapPublicUser(row);
@@ -301,7 +498,7 @@ export function findUserByPhone(phone) {
 export function findUserByNickname(nickname) {
   const row = getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath FROM users WHERE nickname = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE nickname = ?`
     )
     .get(nickname);
   return mapPublicUser(row);
@@ -310,7 +507,7 @@ export function findUserByNickname(nickname) {
 export function findUserById(id) {
   const row = getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath FROM users WHERE id = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji FROM users WHERE id = ?`
     )
     .get(id);
   return mapPublicUser(row);
@@ -320,7 +517,7 @@ export function findUserById(id) {
 export function findUserWithSecretByNickname(nickname) {
   return getDb()
     .prepare(
-      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, password_hash AS passwordHash FROM users WHERE nickname = ?`
+      `SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, password_hash AS passwordHash FROM users WHERE nickname = ?`
     )
     .get(nickname);
 }
@@ -346,4 +543,26 @@ export function createUser({ phone, firstName, lastName, nickname, passwordHash 
 
 export function setUserAvatarPath(userId, relativePath) {
   getDb().prepare(`UPDATE users SET avatar_path = ? WHERE id = ?`).run(relativePath, userId);
+}
+
+/** «О себе», до 100 символов (обрезка на сервере). */
+export function setUserAbout(userId, about) {
+  const t = String(about ?? '').trim().slice(0, 100);
+  getDb().prepare(`UPDATE users SET about = ? WHERE id = ?`).run(t, userId);
+}
+
+/** Только user или beta; «разработчик» задаётся только логикой ника. */
+export function setUserDisplayRole(userId, role) {
+  const r = role === 'beta' ? 'beta' : 'user';
+  getDb().prepare(`UPDATE users SET display_role = ? WHERE id = ?`).run(r, userId);
+}
+
+/** null — сброс к смайлику по умолчанию для роли. */
+export function setUserAffiliationEmoji(userId, emojiOrNull) {
+  const v = normalizeAffiliationEmoji(emojiOrNull);
+  if (v == null) {
+    getDb().prepare(`UPDATE users SET display_role_emoji = NULL WHERE id = ?`).run(userId);
+  } else {
+    getDb().prepare(`UPDATE users SET display_role_emoji = ? WHERE id = ?`).run(v, userId);
+  }
 }

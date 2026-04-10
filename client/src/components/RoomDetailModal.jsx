@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
+import UserAvatar from './UserAvatar.jsx';
+import NicknameWithBadge from './NicknameWithBadge.jsx';
 
 export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated }) {
   const [room, setRoom] = useState(null);
@@ -277,21 +279,11 @@ export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated
                           onChange={() => togglePeer(p.id)}
                           style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
                         />
-                        {p.avatarUrl ? (
-                          <img src={p.avatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }} />
-                        ) : (
-                          <div
-                            style={{
-                              width: 32,
-                              height: 32,
-                              borderRadius: '50%',
-                              background: '#252830',
-                              border: '1px solid var(--border)',
-                            }}
-                          />
-                        )}
+                        <UserAvatar src={p.avatarUrl} size={32} />
                         <span style={{ minWidth: 0 }}>
-                          <span style={{ color: 'var(--accent)' }}>@{p.nickname}</span>
+                          <span style={{ color: 'var(--accent)' }}>
+                            <NicknameWithBadge nickname={p.nickname} affiliationEmoji={p.affiliationEmoji} />
+                          </span>
                           <span className="muted" style={{ display: 'block', fontSize: 10 }}>
                             {p.firstName} {p.lastName}
                           </span>
@@ -330,14 +322,12 @@ export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated
                     fontSize: 12,
                   }}
                 >
-                  {m.avatarUrl ? (
-                    <img src={m.avatarUrl} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-                  ) : (
-                    <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#252830', border: '1px solid var(--border)' }} />
-                  )}
+                  <UserAvatar src={m.avatarUrl} size={36} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div>
-                      <span style={{ color: 'var(--accent)' }}>@{m.nickname}</span>
+                      <span style={{ color: 'var(--accent)' }}>
+                        <NicknameWithBadge nickname={m.nickname} affiliationEmoji={m.affiliationEmoji} />
+                      </span>
                       {m.role === 'owner' ? (
                         <span className="muted" style={{ marginLeft: 8, fontSize: 10 }}>
                           создатель

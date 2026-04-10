@@ -19,6 +19,10 @@ import {
   createUser,
   mapPublicUser,
   setUserAvatarPath,
+  setUserAbout,
+  setUserDisplayRole,
+  setUserAffiliationEmoji,
+  normalizeAffiliationEmoji,
 } from './db.js';
 import { uploadsRoot, avatarUpload } from './avatarUpload.js';
 import { chatVoiceUpload, chatVideoNoteUpload, chatAttachmentUpload, chatMediaRelativePath } from './chatMediaUpload.js';
@@ -41,15 +45,29 @@ import {
   listPeerUserIds,
   listFeedPostsForViewer,
   createPost,
+  updateFeedPost,
+  deleteFeedPost,
   listStoryBucketsForViewer,
   listActiveStoryItems,
   listArchivedStoriesForViewer,
   createStory,
   areFriends,
+  haveDirectChatLink,
+  removeFriendship,
+  blockUser,
+  unblockUser,
+  getFriendshipMetaForProfile,
   recordStoryView,
   insertStoryReactionMessage,
   toggleMessageReaction,
+  hideDirectMessageForViewer,
+  revokeDirectMessageForEveryone,
+  hideRoomMessageForViewer,
+  revokeRoomMessageForEveryone,
+  forwardMessageToDirectChat,
+  forwardMessageToRoom,
   listFriendPeersForUser,
+  listUsersDirectoryForViewer,
   listRoomsForUser,
   getRoomByIdForUser,
   createRoom,
@@ -66,6 +84,7 @@ import {
   listRoomMemberUserIds,
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
+import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -262,6 +281,50 @@ app.post('/api/friends/request', (req, res) => {
   res.status(201).json(result);
 });
 
+app.post('/api/friends/remove', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const peerId = req.body?.peerUserId;
+  if (typeof peerId !== 'string' || !peerId.trim()) {
+    res.status(400).json({ error: 'Укажите пользователя' });
+    return;
+  }
+  const out = removeFriendship(userId, peerId.trim());
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/friends/block', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const peerId = req.body?.peerUserId;
+  if (typeof peerId !== 'string' || !peerId.trim()) {
+    res.status(400).json({ error: 'Укажите пользователя' });
+    return;
+  }
+  const out = blockUser(userId, peerId.trim());
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/friends/unblock', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const peerId = req.body?.peerUserId;
+  if (typeof peerId !== 'string' || !peerId.trim()) {
+    res.status(400).json({ error: 'Укажите пользователя' });
+    return;
+  }
+  unblockUser(userId, peerId.trim());
+  res.json({ ok: true });
+});
+
 app.get('/api/friends/requests/incoming', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -304,16 +367,66 @@ app.get('/api/feed', (req, res) => {
   res.json({ posts: listFeedPostsForViewer(userId) });
 });
 
+app.post('/api/feed/upload', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  feedPostUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    if (!req.file) {
+      res.status(400).json({ error: 'Выберите файл' });
+      return;
+    }
+    res.json({ mediaPath: feedMediaRelativePath(req.file.filename) });
+  });
+});
+
 app.post('/api/feed', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const out = createPost(userId, req.body?.body);
+  const out = createPost(userId, { body: req.body?.body, mediaPath: req.body?.mediaPath });
   if (out.error) {
     res.status(400).json({ error: out.error });
     return;
   }
   notifyPeers(userId, { type: 'feed:new', payload: { postId: out.post.id } });
   res.status(201).json({ post: out.post });
+});
+
+app.patch('/api/feed/:postId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = updateFeedPost(req.params.postId, userId, req.body?.body);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId } });
+  res.json({ ok: true, editedAt: out.editedAt });
+});
+
+app.delete('/api/feed/:postId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = deleteFeedPost(req.params.postId, userId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  if (out.mediaPath) {
+    try {
+      const full = path.join(uploadsRoot, out.mediaPath);
+      if (fs.existsSync(full)) fs.unlinkSync(full);
+    } catch {
+      /* ignore */
+    }
+  }
+  notifyPeers(userId, { type: 'feed:changed', payload: { postId: req.params.postId, deleted: true } });
+  res.json({ ok: true });
 });
 
 app.get('/api/users/:targetId/profile', (req, res) => {
@@ -329,12 +442,13 @@ app.get('/api/users/:targetId/profile', (req, res) => {
     res.json({ user: target, isSelf: true });
     return;
   }
-  if (!areFriends(viewerId, targetId)) {
+  if (!areFriends(viewerId, targetId) && !haveDirectChatLink(viewerId, targetId)) {
     res.status(403).json({ error: 'Профиль доступен только друзьям' });
     return;
   }
   const { phone: _p, ...user } = target;
-  res.json({ user, isSelf: false });
+  const friendship = getFriendshipMetaForProfile(viewerId, targetId);
+  res.json({ user, isSelf: false, friendship });
 });
 
 app.get('/api/chats', (req, res) => {
@@ -366,6 +480,78 @@ app.post('/api/chats/:chatId/read', (req, res) => {
     });
   }
   res.json({ ok: true, readAt: out.readAt });
+});
+
+app.patch('/api/users/me', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const about = req.body?.about;
+  if (about !== undefined && about !== null && typeof about !== 'string') {
+    res.status(400).json({ error: 'Поле «о себе» должно быть строкой' });
+    return;
+  }
+  if (typeof about === 'string' && about.length > 100) {
+    res.status(400).json({ error: 'Не больше 100 символов' });
+    return;
+  }
+  if (typeof about === 'string') {
+    setUserAbout(userId, about);
+  }
+  const roleRaw = req.body?.displayRole;
+  if (roleRaw !== undefined && roleRaw !== null) {
+    if (typeof roleRaw !== 'string') {
+      res.status(400).json({ error: 'Роль должна быть строкой' });
+      return;
+    }
+    const r = roleRaw.toLowerCase();
+    if (r !== 'user' && r !== 'beta') {
+      res.status(400).json({ error: 'Можно выбрать только «Пользователь» или «Бета-тестер»' });
+      return;
+    }
+    setUserDisplayRole(userId, r);
+  }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'affiliationEmoji')) {
+    const raw = req.body?.affiliationEmoji;
+    if (raw === null || raw === '') {
+      setUserAffiliationEmoji(userId, null);
+    } else if (typeof raw !== 'string') {
+      res.status(400).json({ error: 'Смайлик принадлежности должен быть строкой или пустым' });
+      return;
+    } else {
+      const n = normalizeAffiliationEmoji(raw);
+      if (raw.trim() && !n) {
+        res.status(400).json({ error: 'Выберите смайлик из предложенного списка' });
+        return;
+      }
+      setUserAffiliationEmoji(userId, n);
+    }
+  }
+  const user = findUserById(userId);
+  res.json({ user });
+});
+
+app.get('/api/users/lookup/:nickname', (req, res) => {
+  const viewerId = requireUser(req, res);
+  if (!viewerId) return;
+  const nick = normalizeNickname(req.params.nickname);
+  if (!nick) {
+    res.status(400).json({ error: 'Некорректный никнейм' });
+    return;
+  }
+  const target = findUserByNickname(nick);
+  if (!target) {
+    res.status(404).json({ error: 'Пользователь не найден' });
+    return;
+  }
+  if (target.id === viewerId) {
+    res.json({ user: { id: target.id, nickname: target.nickname } });
+    return;
+  }
+  if (!areFriends(viewerId, target.id) && !haveDirectChatLink(viewerId, target.id)) {
+    res.status(403).json({ error: 'Упоминание: профиль доступен только друзьям' });
+    return;
+  }
+  res.json({ user: { id: target.id, nickname: target.nickname } });
 });
 
 app.post('/api/users/me/avatar', (req, res) => {
@@ -401,7 +587,7 @@ app.get('/api/chats/:chatId/messages', (req, res) => {
 app.post('/api/chats/:chatId/messages', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const result = insertDirectMessage(req.params.chatId, userId, req.body?.body);
+  const result = insertDirectMessage(req.params.chatId, userId, req.body?.body, { replyToId: req.body?.replyToId });
   if (result.error) {
     const code = result.error.includes('доступ') ? 403 : 400;
     res.status(code).json({ error: result.error });
@@ -549,6 +735,54 @@ app.post('/api/chats/:chatId/messages/:messageId/reaction', (req, res) => {
   res.json({ reactions: result.reactions });
 });
 
+app.post('/api/chats/:chatId/messages/:messageId/delete-for-me', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { chatId, messageId } = req.params;
+  const out = hideDirectMessageForViewer(chatId, userId, messageId);
+  if (out.error) {
+    res.status(out.error.includes('не найден') ? 404 : 403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/chats/:chatId/messages/:messageId/delete-for-everyone', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { chatId, messageId } = req.params;
+  const out = revokeDirectMessageForEveryone(chatId, userId, messageId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  const peerId = out.peerId;
+  const msgPeer = peerId ? getMessageByIdForChat(chatId, messageId, peerId) : null;
+  const msgSelf = getMessageByIdForChat(chatId, messageId, userId);
+  if (peerId && msgPeer) sendToUser(peerId, { type: 'chat:message:updated', payload: { chatId, message: msgPeer } });
+  if (msgSelf) sendToUser(userId, { type: 'chat:message:updated', payload: { chatId, message: msgSelf } });
+  res.json({ ok: true, message: msgSelf || msgPeer });
+});
+
+app.post('/api/chats/:chatId/forward', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { fromChatId, fromRoomId, messageId } = req.body || {};
+  const out = forwardMessageToDirectChat(req.params.chatId, userId, fromChatId, fromRoomId, messageId);
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  const chatId = req.params.chatId;
+  const msgOut = getMessageByIdForChat(chatId, out.messageId, userId);
+  sendToUser(out.peerId, {
+    type: 'chat:message:new',
+    payload: { chatId, message: msgOut },
+  });
+  res.status(201).json({ message: msgOut });
+});
+
 app.post('/api/stories/view', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -602,6 +836,14 @@ app.get('/api/friends/peers', (req, res) => {
   res.json({ peers: listFriendPeersForUser(userId) });
 });
 
+/** Каталог пользователей для «Возможно друзья»; query q — поиск по нику, имени или цифрам телефона. */
+app.get('/api/friends/directory', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const q = typeof req.query.q === 'string' ? req.query.q : '';
+  res.json({ users: listUsersDirectoryForViewer(userId, q) });
+});
+
 app.get('/api/rooms', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -635,7 +877,7 @@ app.get('/api/rooms/:roomId/messages', (req, res) => {
 app.post('/api/rooms/:roomId/messages', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const result = insertRoomMessage(req.params.roomId, userId, req.body?.body);
+  const result = insertRoomMessage(req.params.roomId, userId, req.body?.body, { replyToId: req.body?.replyToId });
   if (result.error) {
     const code = result.error.includes('доступ') ? 403 : 400;
     res.status(code).json({ error: result.error });
@@ -776,6 +1018,54 @@ app.post('/api/rooms/:roomId/messages/:messageId/reaction', (req, res) => {
     payload: { roomId, messageId, reactions: result.reactions },
   });
   res.json({ reactions: result.reactions });
+});
+
+app.post('/api/rooms/:roomId/messages/:messageId/delete-for-me', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { roomId, messageId } = req.params;
+  const out = hideRoomMessageForViewer(roomId, userId, messageId);
+  if (out.error) {
+    res.status(out.error.includes('не найден') ? 404 : 403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/rooms/:roomId/messages/:messageId/delete-for-everyone', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { roomId, messageId } = req.params;
+  const out = revokeRoomMessageForEveryone(roomId, userId, messageId);
+  if (out.error) {
+    const st = out.error.includes('не найден') ? 404 : out.error.includes('Нет доступа') ? 403 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  for (const uid of listRoomMemberUserIds(roomId)) {
+    const m = getMessageByIdForRoom(roomId, messageId, uid);
+    sendToUser(uid, { type: 'room:message:updated', payload: { roomId, message: m } });
+  }
+  const msgSelf = getMessageByIdForRoom(roomId, messageId, userId);
+  res.json({ ok: true, message: msgSelf });
+});
+
+app.post('/api/rooms/:roomId/forward', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { fromChatId, fromRoomId, messageId } = req.body || {};
+  const out = forwardMessageToRoom(req.params.roomId, userId, fromChatId, fromRoomId, messageId);
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  const roomId = req.params.roomId;
+  const msgOut = getMessageByIdForRoom(roomId, out.messageId, userId);
+  broadcastRoom(roomId, {
+    type: 'room:message:new',
+    payload: { roomId, message: msgOut },
+  });
+  res.status(201).json({ message: msgOut });
 });
 
 app.get('/api/rooms/:roomId', (req, res) => {
