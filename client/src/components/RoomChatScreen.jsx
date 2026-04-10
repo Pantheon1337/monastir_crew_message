@@ -20,6 +20,14 @@ const MIN_MS = 400;
 /** Видеокружок можно чуть короче голоса (как в Telegram). */
 const MIN_MS_VIDEO = 320;
 
+const CHAT_TIMELINE_STACK_STYLE = {
+  minHeight: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'flex-end',
+  boxSizing: 'border-box',
+};
+
 function pickAudioMime() {
   if (typeof MediaRecorder === 'undefined') return '';
   if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
@@ -1227,39 +1235,39 @@ export default function RoomChatScreen({
         }
         timelineRef={scrollRef}
         timeline={
-          <>
+          <div style={CHAT_TIMELINE_STACK_STYLE}>
             {loading ? (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Загрузка…
-          </p>
-        ) : err && messages.length === 0 ? (
-          <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
-        ) : messages.length === 0 ? (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
-          </p>
-        ) : (
-            messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                m={m}
-                userId={userId}
-                roomId={roomId}
-                formatTime={formatTime}
-                onReactionsLocalUpdate={(id, reactions) =>
-                  setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
-                }
-                onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
-                onMentionProfile={onMentionProfile}
-              />
-            ))
+              <p className="muted" style={{ fontSize: 12 }}>
+                Загрузка…
+              </p>
+            ) : err && messages.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
+            ) : messages.length === 0 ? (
+              <p className="muted" style={{ fontSize: 12 }}>
+                Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
+              </p>
+            ) : (
+              messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  m={m}
+                  userId={userId}
+                  roomId={roomId}
+                  formatTime={formatTime}
+                  onReactionsLocalUpdate={(id, reactions) =>
+                    setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
+                  }
+                  onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
+                  onMentionProfile={onMentionProfile}
+                />
+              ))
             )}
             <div
               ref={messagesEndRef}
               aria-hidden
               style={{ height: 1, width: '100%', overflow: 'hidden', flexShrink: 0 }}
             />
-          </>
+          </div>
         }
         errorBanner={
           err && messages.length > 0 ? (

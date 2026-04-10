@@ -23,6 +23,7 @@ import {
   setUserDisplayRole,
   setUserAffiliationEmoji,
   normalizeAffiliationEmoji,
+  setUserLastSeenAt,
 } from './db.js';
 import { uploadsRoot, avatarUpload } from './avatarUpload.js';
 import { chatVoiceUpload, chatVideoNoteUpload, chatAttachmentUpload, chatMediaRelativePath } from './chatMediaUpload.js';
@@ -1278,7 +1279,7 @@ app.get('/api/users/presence', (req, res) => {
   if (!userId) return;
   const raw = req.query.ids;
   if (!raw || typeof raw !== 'string') {
-    res.json({ online: {} });
+    res.json({ online: {}, lastSeenAt: {} });
     return;
   }
   const ids = raw
@@ -1286,11 +1287,19 @@ app.get('/api/users/presence', (req, res) => {
     .map((x) => x.trim())
     .filter(Boolean);
   const online = {};
+  const lastSeenAt = {};
+  const stmt = getDb().prepare(`SELECT last_seen_at AS lastSeenAt FROM users WHERE id = ?`);
   for (const id of ids) {
     const set = socketsByUser.get(id);
     online[id] = Boolean(set && set.size > 0);
+    if (!online[id]) {
+      const row = stmt.get(id);
+      if (row?.lastSeenAt != null) {
+        lastSeenAt[id] = row.lastSeenAt;
+      }
+    }
   }
-  res.json({ online });
+  res.json({ online, lastSeenAt });
 });
 
 const server = http.createServer(app);
@@ -1372,7 +1381,9 @@ wss.on('connection', (ws, req) => {
       if (set.size === 0) {
         socketsByUser.delete(userId);
         if (!userId.startsWith('guest-') && findUserById(userId)) {
-          notifyPeers(userId, { type: 'presence', payload: { userId, online: false } });
+          const ts = Date.now();
+          setUserLastSeenAt(userId, ts);
+          notifyPeers(userId, { type: 'presence', payload: { userId, online: false, lastSeenAt: ts } });
         }
       }
     }

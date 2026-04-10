@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 16;
+const SCHEMA_VERSION = 17;
 
 let db;
 
@@ -374,6 +374,15 @@ function migrate(database) {
     `);
     setSchemaVersion(database, 16);
   }
+
+  if (ver < 17) {
+    const uInfo = database.prepare('PRAGMA table_info(users)').all();
+    const uNames = new Set(uInfo.map((row) => row.name));
+    if (!uNames.has('last_seen_at')) {
+      database.exec('ALTER TABLE users ADD COLUMN last_seen_at INTEGER;');
+    }
+    setSchemaVersion(database, 17);
+  }
 }
 
 export function getDb() {
@@ -590,4 +599,9 @@ export function setUserAffiliationEmoji(userId, emojiOrNull) {
   } else {
     getDb().prepare(`UPDATE users SET display_role_emoji = ? WHERE id = ?`).run(v, userId);
   }
+}
+
+/** Время «был в сети» при отключении последнего WebSocket-соединения. */
+export function setUserLastSeenAt(userId, atMs) {
+  getDb().prepare(`UPDATE users SET last_seen_at = ? WHERE id = ?`).run(atMs, userId);
 }

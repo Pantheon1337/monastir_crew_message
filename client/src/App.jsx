@@ -61,6 +61,8 @@ export default function App() {
   const [roomDetailId, setRoomDetailId] = useState(null);
   /** userId → в сети (WebSocket-сессия), для друзей в ленте/чатах/историях */
   const [presenceOnline, setPresenceOnline] = useState({});
+  /** userId → lastSeenAt (мс), только для офлайн; подпись «был(а) в сети …» в чате */
+  const [presenceLastSeen, setPresenceLastSeen] = useState({});
   const [networkOnline, setNetworkOnline] = useState(
     () => typeof navigator !== 'undefined' && navigator.onLine,
   );
@@ -232,8 +234,9 @@ export default function App() {
     for (const c of chats) if (c.peerUserId) s.add(String(c.peerUserId));
     for (const b of storyBuckets) if (b.userId) s.add(String(b.userId));
     for (const p of feed) if (p.authorId) s.add(String(p.authorId));
+    if (openChat?.peerUserId) s.add(String(openChat.peerUserId));
     return [...s].sort().join(',');
-  }, [chats, storyBuckets, feed]);
+  }, [chats, storyBuckets, feed, openChat?.peerUserId]);
 
   useEffect(() => {
     if (session !== 'in' || !user?.id || !presenceIdKey) return undefined;
@@ -242,8 +245,20 @@ export default function App() {
     let cancelled = false;
     (async () => {
       const r = await api(`/api/users/presence?ids=${ids.map(encodeURIComponent).join(',')}`, { userId: user.id });
-      if (!cancelled && r.ok && r.data?.online) {
-        setPresenceOnline((prev) => ({ ...prev, ...r.data.online }));
+      if (cancelled || !r.ok) return;
+      if (r.data?.online) {
+        const on = r.data.online;
+        setPresenceOnline((prev) => ({ ...prev, ...on }));
+        setPresenceLastSeen((prev) => {
+          const next = { ...prev };
+          for (const id of Object.keys(on)) {
+            if (on[id]) delete next[id];
+          }
+          return next;
+        });
+      }
+      if (r.data?.lastSeenAt && typeof r.data.lastSeenAt === 'object') {
+        setPresenceLastSeen((prev) => ({ ...prev, ...r.data.lastSeenAt }));
       }
     })();
     return () => {
@@ -343,8 +358,17 @@ export default function App() {
     if (lastEvent.type === 'feed:new' || lastEvent.type === 'feed:changed') refreshFeed();
     if (lastEvent.type === 'stories:new') refreshStories();
     if (lastEvent.type === 'presence' && lastEvent.payload?.userId != null) {
-      const { userId: pid, online } = lastEvent.payload;
+      const { userId: pid, online, lastSeenAt } = lastEvent.payload;
       setPresenceOnline((prev) => ({ ...prev, [pid]: online }));
+      if (online) {
+        setPresenceLastSeen((prev) => {
+          const next = { ...prev };
+          delete next[String(pid)];
+          return next;
+        });
+      } else if (typeof lastSeenAt === 'number') {
+        setPresenceLastSeen((prev) => ({ ...prev, [String(pid)]: lastSeenAt }));
+      }
     }
   }, [lastEvent, refreshSocial, refreshFeed, refreshStories]);
 
@@ -567,8 +591,14 @@ export default function App() {
           peerUserId={openChatResolved.peerUserId}
           peerAvatarUrl={openChatResolved.peerAvatarUrl}
           peerOnline={
-            openChatResolved.peerUserId != null
+            openChatResolved.peerUserId != null &&
+            Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
               ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
+              : undefined
+          }
+          peerLastSeenAt={
+            openChatResolved.peerUserId != null
+              ? presenceLastSeen[String(openChatResolved.peerUserId)]
               : undefined
           }
           canMessage={openChatResolved.canMessage !== false}

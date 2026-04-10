@@ -19,6 +19,47 @@ import {
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
+
+/** Лента «прижата» к низу при малом числе сообщений — иначе жест и колесо ощущаются перевёрнутыми. */
+const CHAT_TIMELINE_STACK_STYLE = {
+  minHeight: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'flex-end',
+  boxSizing: 'border-box',
+};
+
+function formatRuSeenAgo(ts) {
+  const diff = Math.max(0, Date.now() - ts);
+  if (diff < 60_000) return 'только что';
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins} мин назад`;
+  const hours = Math.floor(diff / 3_600_000);
+  const minsRem = Math.floor((diff % 3_600_000) / 60_000);
+  if (diff < 86_400_000) {
+    if (minsRem < 2) return `${hours} ч назад`;
+    return `${hours} ч ${minsRem} мин назад`;
+  }
+  try {
+    return new Date(ts).toLocaleString('ru-RU', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return 'давно';
+  }
+}
+
+function peerPresenceSubtitle(online, lastSeenAt) {
+  if (online === true) return 'онлайн';
+  if (online === false && typeof lastSeenAt === 'number' && lastSeenAt > 0) {
+    return `был(а) в сети · ${formatRuSeenAgo(lastSeenAt)}`;
+  }
+  if (online === false) return 'не в сети';
+  return null;
+}
 /** Видеокружок можно чуть короче голоса (как в Telegram). */
 const MIN_MS_VIDEO = 320;
 
@@ -523,6 +564,7 @@ export default function DirectChatScreen({
   peerUserId,
   peerAvatarUrl,
   peerOnline,
+  peerLastSeenAt,
   onClose,
   lastEvent,
   onAfterChange,
@@ -1220,6 +1262,14 @@ export default function DirectChatScreen({
 
   const hasTypedText = Boolean(text.trim());
 
+  const peerPresenceLine =
+    peerUserId != null
+      ? peerPresenceSubtitle(
+          typeof peerOnline === 'boolean' ? peerOnline : undefined,
+          peerLastSeenAt,
+        )
+      : null;
+
   useLayoutEffect(() => {
     const el = composerInputRef.current;
     if (!el || el.tagName !== 'TEXTAREA') return;
@@ -1268,9 +1318,9 @@ export default function DirectChatScreen({
               peerLabel || 'Чат'
             )}
           </div>
-          {peerUserId && onOpenPeerProfile ? (
-            <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
-              открыть профиль
+          {peerPresenceLine != null ? (
+            <div className="muted" style={{ fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>
+              {peerPresenceLine}
             </div>
           ) : null}
         </button>
@@ -1294,39 +1344,39 @@ export default function DirectChatScreen({
         }
         timelineRef={scrollRef}
         timeline={
-          <>
+          <div style={CHAT_TIMELINE_STACK_STYLE}>
             {loading ? (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Загрузка…
-          </p>
-        ) : err && messages.length === 0 ? (
-          <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
-        ) : messages.length === 0 ? (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
-          </p>
-        ) : (
-          messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              m={m}
-              userId={userId}
-              chatId={chatId}
-              formatTime={formatTime}
-              onReactionsLocalUpdate={(id, reactions) =>
-                setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
-              }
-              onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
-              onMentionProfile={onMentionProfile}
-            />
-          ))
-        )}
+              <p className="muted" style={{ fontSize: 12 }}>
+                Загрузка…
+              </p>
+            ) : err && messages.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
+            ) : messages.length === 0 ? (
+              <p className="muted" style={{ fontSize: 12 }}>
+                Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
+              </p>
+            ) : (
+              messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  m={m}
+                  userId={userId}
+                  chatId={chatId}
+                  formatTime={formatTime}
+                  onReactionsLocalUpdate={(id, reactions) =>
+                    setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
+                  }
+                  onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
+                  onMentionProfile={onMentionProfile}
+                />
+              ))
+            )}
             <div
               ref={messagesEndRef}
               aria-hidden
               style={{ height: 1, width: '100%', overflow: 'hidden', flexShrink: 0 }}
             />
-          </>
+          </div>
         }
         errorBanner={
           <>
