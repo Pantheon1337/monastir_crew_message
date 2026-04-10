@@ -189,21 +189,24 @@ function getCopyTextForMessage(m) {
   return m.body || '';
 }
 
+/** Меню слева от точки касания (палец не попадает на первую кнопку). */
 function clampMenuPosition(x, y, w, h) {
-  if (typeof window === 'undefined') return { left: x - w / 2, top: y - h - 8 };
+  const gapX = 22;
+  const gapY = 16;
+  if (typeof window === 'undefined') return { left: x - w - gapX, top: y - h - gapY };
   const vv = window.visualViewport;
   if (!vv) {
-    const left = Math.max(8, Math.min(x - w / 2, window.innerWidth - w - 8));
-    const top = Math.max(8, Math.min(y - h - 8, window.innerHeight - h - 8));
+    const left = Math.max(8, Math.min(x - w - gapX, window.innerWidth - w - 8));
+    const top = Math.max(8, Math.min(y - h - gapY, window.innerHeight - h - 8));
     return { left, top };
   }
   const ox = vv.offsetLeft;
   const oy = vv.offsetTop;
   const vw = vv.width;
   const vh = vv.height;
-  const left = Math.max(ox + 8, Math.min(x - w / 2, ox + vw - w - 8));
-  let top = y - h - 8;
-  if (top < oy + 8) top = y + 8;
+  const left = Math.max(ox + 8, Math.min(x - w - gapX, ox + vw - w - 8));
+  let top = y - h - gapY;
+  if (top < oy + 8) top = y + gapY;
   return { left, top: Math.max(oy + 8, Math.min(top, oy + vh - h - 8)) };
 }
 
@@ -650,6 +653,7 @@ export default function RoomChatScreen({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setMessages([]);
     const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, { userId });
     if (!ok) {
       setErr(data?.error || 'Не удалось загрузить чат');
@@ -756,6 +760,11 @@ export default function RoomChatScreen({
     if (loading) return;
     if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
+    const a = requestAnimationFrame(() => {
+      scrollMessagesToBottomImmediate();
+      requestAnimationFrame(() => scrollMessagesToBottomImmediate());
+    });
+    return () => cancelAnimationFrame(a);
   }, [messages, loading, scrollMessagesToBottomImmediate]);
 
   /** После смены высоты области (клавиатура, vv) — один кадр без каскада таймеров. */
@@ -807,10 +816,11 @@ export default function RoomChatScreen({
       setShowScrollDownFab(false);
       return;
     }
+    if (loading) return;
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = gap <= 96;
     setShowScrollDownFab(gap > 96);
-  }, [messages.length]);
+  }, [messages.length, loading]);
 
   useEffect(() => {
     const el = scrollRef.current;
