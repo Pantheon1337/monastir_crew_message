@@ -1,7 +1,6 @@
 const items = [
   { id: 'home', label: 'Главная', icon: 'home' },
   { id: 'chats', label: 'Чаты', icon: 'chat' },
-  { id: 'create', label: 'Создать', icon: 'plus' },
   { id: 'rooms', label: 'Комнаты', icon: 'hash' },
   { id: 'profile', label: 'Профиль', icon: 'user' },
 ];
@@ -20,13 +19,6 @@ function Icon({ name, active }) {
       return (
         <svg viewBox="0 0 24 24" {...props}>
           <path d="M21 15a4 4 0 0 1-4 4H8l-5 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
-        </svg>
-      );
-    case 'plus':
-      return (
-        <svg viewBox="0 0 24 24" {...props}>
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 8v8M8 12h8" />
         </svg>
       );
     case 'hash':

@@ -30,6 +30,18 @@ body {
   min-height: 100dvh;
 }
 
+/* Полноэкранные модалки: непрозрачный фон, контент под ними не просвечивает */
+.modal-overlay {
+  background: var(--bg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.modal-panel {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 button {
   font-family: inherit;
   cursor: pointer;
@@ -88,9 +100,10 @@ a:hover {
   font-size: 12px;
 }
 
+/* ≥16px в полях ввода — iOS Safari не масштабирует страницу при фокусе */
 .text-input {
   font-family: inherit;
-  font-size: 13px;
+  font-size: 16px;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
@@ -101,6 +114,27 @@ a:hover {
 
 .text-input:focus {
   border-color: var(--accent);
+}
+
+/* Композер чата: плотнее к клавиатуре (visualViewport уже поднимает блок) */
+.chat-composer-bar .text-input {
+  padding: 8px 10px;
+}
+
+/* Каркас как Element X: лёгкое отделение композера от ленты */
+.chat-scaffold-composer-host {
+  flex-shrink: 0;
+  background: var(--bg);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Многострочный композер (аналог TextComposer): min/max; точная высота — из JS */
+textarea.chat-composer-textarea {
+  min-height: 40px;
+  max-height: 130px;
+  line-height: 1.35;
+  resize: none;
+  overflow-y: auto;
 }
 
 .btn-primary {
@@ -133,4 +167,151 @@ a:hover {
 .btn-outline:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.header-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-radius: 4px;
+  color: inherit;
+}
+
+.header-menu-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Модалка «Новая комната»: без лишнего zoom на iOS (font-size ≥16px в компоненте) и без масштабирования текста */
+.create-room-modal-overlay,
+.create-room-modal-panel {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+/* Кнопка записи голоса/кружка: без выделения текста/эмодзи при удержании */
+.chat-media-record-btn {
+  -webkit-user-select: none;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-media-record-btn * {
+  pointer-events: none;
+}
+
+/* Видеокружок в чате: квадрат + круг; кольцо прогресса как в Telegram */
+.chat-video-note-wrap {
+  position: relative;
+  width: min(200px, 70vw);
+  height: min(200px, 70vw);
+  max-width: min(200px, 70vw);
+  max-height: min(200px, 70vw);
+  box-sizing: border-box;
+  margin-left: auto;
+  margin-right: auto;
+  transition: transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+  cursor: pointer;
+  overflow: visible;
+}
+
+.chat-video-note-inner {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  background: #000;
+}
+
+.chat-video-note-ring-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform: rotate(-90deg);
+}
+
+.chat-video-note-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-width: 2.8;
+}
+
+.chat-video-note-ring-progress {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.8;
+  stroke-linecap: round;
+}
+
+video.chat-video-note {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  background: #000;
+}
+
+.chat-video-note-wrap--boosted {
+  transform: scale(1.22);
+  z-index: 1;
+}
+
+.chat-video-note-pause-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-video-note-pause-overlay--visible {
+  opacity: 1;
+}
+
+.chat-video-note-pause-overlay--flash {
+  animation: chatVideoPauseFlash 0.55s ease;
+}
+
+@keyframes chatVideoPauseFlash {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.chat-video-note-pause-icon {
+  width: 44px;
+  height: 44px;
+  color: rgba(255, 255, 255, 0.95);
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+
+/* Сообщения в чате: без выделения всей страницы при удержании */
+.chat-message-bubble-shell {
+  -webkit-user-select: none;
+  user-select: none;
+  -moz-user-select: none;
+  -webkit-touch-callout: none;
 }

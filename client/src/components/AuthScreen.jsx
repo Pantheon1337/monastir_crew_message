@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { apiPath } from '../api.js';
 import { setStoredUser } from '../authStorage.js';
+import { requestNotificationPermission } from '../browserNotification.js';
 
 export default function AuthScreen({ onAuthSuccess }) {
   const [mode, setMode] = useState('login');
@@ -22,7 +24,7 @@ export default function AuthScreen({ onAuthSuccess }) {
     }
     setLoading(true);
     try {
-      const r = await fetch('/api/auth/login', {
+      const r = await fetch(apiPath('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -36,6 +38,7 @@ export default function AuthScreen({ onAuthSuccess }) {
         return;
       }
       setStoredUser(data.user);
+      void requestNotificationPermission();
       onAuthSuccess?.(data.user);
     } catch {
       setError('Нет связи с сервером');
@@ -63,7 +66,7 @@ export default function AuthScreen({ onAuthSuccess }) {
     setLoading(true);
     const nickname = `@${nick}`;
     try {
-      const r = await fetch('/api/auth/register', {
+      const r = await fetch(apiPath('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -80,6 +83,7 @@ export default function AuthScreen({ onAuthSuccess }) {
         return;
       }
       setStoredUser(data.user);
+      void requestNotificationPermission();
       onAuthSuccess?.(data.user);
     } catch {
       setError('Нет связи с сервером');

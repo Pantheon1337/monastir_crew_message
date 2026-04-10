@@ -2,6 +2,9 @@
   "name": "monastir-crew-server",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js"

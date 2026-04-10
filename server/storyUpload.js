@@ -1,3 +1,7 @@
+/**
+ * Медиа историй на диске: каталог <server>/uploads/stories/
+ * (рядом с avatars/; корень uploads задаётся в avatarUpload.js).
+ */
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';

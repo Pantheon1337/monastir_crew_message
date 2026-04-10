@@ -21,6 +21,7 @@ import {
   setUserAvatarPath,
 } from './db.js';
 import { uploadsRoot, avatarUpload } from './avatarUpload.js';
+import { chatVoiceUpload, chatVideoNoteUpload, chatAttachmentUpload, chatMediaRelativePath } from './chatMediaUpload.js';
 import { hashPassword, verifyPassword, validatePasswordStrength } from './password.js';
 import {
   resolveTargetUser,
@@ -32,7 +33,10 @@ import {
   listDirectChatsForUser,
   listMessagesForChat,
   insertDirectMessage,
+  insertChatMediaMessage,
+  getMessageByIdForChat,
   markChatRead,
+  getPeerIdInDirectChat,
   countTotalUnreadMessages,
   listPeerUserIds,
   listFeedPostsForViewer,
@@ -42,6 +46,24 @@ import {
   listArchivedStoriesForViewer,
   createStory,
   areFriends,
+  recordStoryView,
+  insertStoryReactionMessage,
+  toggleMessageReaction,
+  listFriendPeersForUser,
+  listRoomsForUser,
+  getRoomByIdForUser,
+  createRoom,
+  updateRoom,
+  addRoomMembers,
+  listRoomMessages,
+  insertRoomMessage,
+  insertRoomMediaMessage,
+  insertChatAttachmentMessage,
+  insertRoomAttachmentMessage,
+  getMessageByIdForRoom,
+  markRoomRead,
+  toggleRoomMessageReaction,
+  listRoomMemberUserIds,
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 
@@ -50,7 +72,14 @@ const PORT = Number(process.env.PORT) || 3001;
 getDb();
 
 const app = express();
-app.use(cors({ origin: true, allowedHeaders: ['Content-Type', 'X-User-Id'] }));
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'X-User-Id', 'Authorization'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  }),
+);
 app.use(express.json());
 app.use('/uploads', express.static(uploadsRoot));
 
@@ -71,6 +100,12 @@ function notifyPeers(userId, event) {
     sendToUser(pid, event);
   }
   sendToUser(userId, event);
+}
+
+function broadcastRoom(roomId, event) {
+  for (const uid of listRoomMemberUserIds(roomId)) {
+    sendToUser(uid, event);
+  }
 }
 
 function requireUser(req, res) {
@@ -317,12 +352,20 @@ app.get('/api/chats/unread-total', (req, res) => {
 app.post('/api/chats/:chatId/read', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const out = markChatRead(userId, req.params.chatId);
+  const chatId = req.params.chatId;
+  const out = markChatRead(userId, chatId);
   if (out.error) {
     res.status(403).json({ error: out.error });
     return;
   }
-  res.json({ ok: true });
+  const peerId = getPeerIdInDirectChat(chatId, userId);
+  if (peerId && out.readAt != null) {
+    sendToUser(peerId, {
+      type: 'chat:peerRead',
+      payload: { chatId, readAt: out.readAt },
+    });
+  }
+  res.json({ ok: true, readAt: out.readAt });
 });
 
 app.post('/api/users/me/avatar', (req, res) => {
@@ -364,18 +407,411 @@ app.post('/api/chats/:chatId/messages', (req, res) => {
     res.status(code).json({ error: result.error });
     return;
   }
+  const chatId = req.params.chatId;
+  const msgOut =
+    getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
   sendToUser(result.peerId, {
     type: 'chat:message:new',
     payload: {
-      chatId: req.params.chatId,
-      message: result.message,
+      chatId,
+      message: msgOut,
     },
   });
-  res.status(201).json({ message: result.message });
+  res.status(201).json({ message: msgOut });
 });
 
-app.get('/api/rooms', (_req, res) => {
-  res.json({ rooms: [] });
+app.post('/api/chats/:chatId/messages/voice', (req, res) => {
+  chatVoiceUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    const userId = requireUser(req, res);
+    if (!userId) return;
+    if (!req.file) {
+      res.status(400).json({ error: 'Нет аудиофайла' });
+      return;
+    }
+    const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
+    const rel = chatMediaRelativePath(req.file.filename);
+    const result = insertChatMediaMessage(req.params.chatId, userId, 'voice', rel, durationMs);
+    if (result.error) {
+      const code = result.error.includes('доступ') ? 403 : 400;
+      res.status(code).json({ error: result.error });
+      return;
+    }
+    const chatId = req.params.chatId;
+    const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+    sendToUser(result.peerId, {
+      type: 'chat:message:new',
+      payload: {
+        chatId,
+        message: msgOut,
+      },
+    });
+    res.status(201).json({ message: msgOut });
+  });
+});
+
+app.post('/api/chats/:chatId/messages/video-note', (req, res) => {
+  chatVideoNoteUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    const userId = requireUser(req, res);
+    if (!userId) return;
+    if (!req.file) {
+      res.status(400).json({ error: 'Нет видеофайла' });
+      return;
+    }
+    const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
+    const rel = chatMediaRelativePath(req.file.filename);
+    const result = insertChatMediaMessage(req.params.chatId, userId, 'video_note', rel, durationMs);
+    if (result.error) {
+      const code = result.error.includes('доступ') ? 403 : 400;
+      res.status(code).json({ error: result.error });
+      return;
+    }
+    const chatId = req.params.chatId;
+    const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+    sendToUser(result.peerId, {
+      type: 'chat:message:new',
+      payload: {
+        chatId,
+        message: msgOut,
+      },
+    });
+    res.status(201).json({ message: msgOut });
+  });
+});
+
+app.post('/api/chats/:chatId/messages/media', (req, res) => {
+  chatAttachmentUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    const userId = requireUser(req, res);
+    if (!userId) return;
+    if (!req.file) {
+      res.status(400).json({ error: 'Нет файла' });
+      return;
+    }
+    const mime = (req.file.mimetype || '').toLowerCase();
+    const kind = mime.startsWith('image/') ? 'image' : 'file';
+    const rel = chatMediaRelativePath(req.file.filename);
+    const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
+    const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
+    const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
+    const result = insertChatAttachmentMessage(req.params.chatId, userId, kind, rel, bodyField);
+    if (result.error) {
+      const code = result.error.includes('доступ') ? 403 : 400;
+      res.status(code).json({ error: result.error });
+      return;
+    }
+    const chatId = req.params.chatId;
+    const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+    sendToUser(result.peerId, {
+      type: 'chat:message:new',
+      payload: {
+        chatId,
+        message: msgOut,
+      },
+    });
+    res.status(201).json({ message: msgOut });
+  });
+});
+
+app.post('/api/chats/:chatId/messages/:messageId/reaction', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const reaction = req.body?.reaction;
+  if (typeof reaction !== 'string' || !reaction.trim()) {
+    res.status(400).json({ error: 'Нет реакции' });
+    return;
+  }
+  const result = toggleMessageReaction(req.params.chatId, userId, req.params.messageId, reaction.trim());
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const { chatId, messageId } = req.params;
+  sendToUser(result.peerId, {
+    type: 'chat:message:reaction',
+    payload: { chatId, messageId, reactions: result.reactions },
+  });
+  sendToUser(userId, {
+    type: 'chat:message:reaction',
+    payload: { chatId, messageId, reactions: result.reactions },
+  });
+  res.json({ reactions: result.reactions });
+});
+
+app.post('/api/stories/view', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const storyId = req.body?.storyId;
+  if (!storyId || typeof storyId !== 'string') {
+    res.status(400).json({ error: 'Нет storyId' });
+    return;
+  }
+  const result = recordStoryView(userId, storyId);
+  if (result.error) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/stories/react', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const storyId = req.body?.storyId;
+  const reaction = req.body?.reaction;
+  if (!storyId || typeof storyId !== 'string') {
+    res.status(400).json({ error: 'Нет storyId' });
+    return;
+  }
+  if (typeof reaction !== 'string' || !reaction.trim()) {
+    res.status(400).json({ error: 'Нет реакции' });
+    return;
+  }
+  const result = insertStoryReactionMessage(userId, storyId, reaction.trim());
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const chatId = result.message.chatId;
+  const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+  sendToUser(result.peerId, {
+    type: 'chat:message:new',
+    payload: {
+      chatId,
+      message: msgOut,
+    },
+  });
+  res.status(201).json({ message: msgOut });
+});
+
+app.get('/api/friends/peers', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  res.json({ peers: listFriendPeersForUser(userId) });
+});
+
+app.get('/api/rooms', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  res.json({ rooms: listRoomsForUser(userId) });
+});
+
+/** POST до маршрута с :roomId, чтобы прокси/порядок маршрутов не мешали созданию. */
+app.post('/api/rooms', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { title, description, memberIds } = req.body || {};
+  const out = createRoom(userId, { title, description, memberIds });
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.status(201).json(out);
+});
+
+app.get('/api/rooms/:roomId/messages', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const msgs = listRoomMessages(req.params.roomId, userId);
+  if (msgs === null) {
+    res.status(404).json({ error: 'Комната не найдена или нет доступа' });
+    return;
+  }
+  res.json({ messages: msgs });
+});
+
+app.post('/api/rooms/:roomId/messages', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const result = insertRoomMessage(req.params.roomId, userId, req.body?.body);
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const roomId = req.params.roomId;
+  const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+  broadcastRoom(roomId, {
+    type: 'room:message:new',
+    payload: { roomId, message: msgOut },
+  });
+  res.status(201).json({ message: msgOut });
+});
+
+app.post('/api/rooms/:roomId/read', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = markRoomRead(userId, req.params.roomId);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, readAt: out.readAt });
+});
+
+app.post('/api/rooms/:roomId/messages/voice', (req, res) => {
+  chatVoiceUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    const userId = requireUser(req, res);
+    if (!userId) return;
+    if (!req.file) {
+      res.status(400).json({ error: 'Нет аудиофайла' });
+      return;
+    }
+    const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
+    const rel = chatMediaRelativePath(req.file.filename);
+    const result = insertRoomMediaMessage(req.params.roomId, userId, 'voice', rel, durationMs);
+    if (result.error) {
+      const code = result.error.includes('доступ') ? 403 : 400;
+      res.status(code).json({ error: result.error });
+      return;
+    }
+    const roomId = req.params.roomId;
+    const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+    broadcastRoom(roomId, {
+      type: 'room:message:new',
+      payload: { roomId, message: msgOut },
+    });
+    res.status(201).json({ message: msgOut });
+  });
+});
+
+app.post('/api/rooms/:roomId/messages/video-note', (req, res) => {
+  chatVideoNoteUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    const userId = requireUser(req, res);
+    if (!userId) return;
+    if (!req.file) {
+      res.status(400).json({ error: 'Нет видеофайла' });
+      return;
+    }
+    const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
+    const rel = chatMediaRelativePath(req.file.filename);
+    const result = insertRoomMediaMessage(req.params.roomId, userId, 'video_note', rel, durationMs);
+    if (result.error) {
+      const code = result.error.includes('доступ') ? 403 : 400;
+      res.status(code).json({ error: result.error });
+      return;
+    }
+    const roomId = req.params.roomId;
+    const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+    broadcastRoom(roomId, {
+      type: 'room:message:new',
+      payload: { roomId, message: msgOut },
+    });
+    res.status(201).json({ message: msgOut });
+  });
+});
+
+app.post('/api/rooms/:roomId/messages/media', (req, res) => {
+  chatAttachmentUpload.single('file')(req, res, (err) => {
+    if (err) {
+      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      return;
+    }
+    const userId = requireUser(req, res);
+    if (!userId) return;
+    if (!req.file) {
+      res.status(400).json({ error: 'Нет файла' });
+      return;
+    }
+    const mime = (req.file.mimetype || '').toLowerCase();
+    const kind = mime.startsWith('image/') ? 'image' : 'file';
+    const rel = chatMediaRelativePath(req.file.filename);
+    const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
+    const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
+    const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
+    const result = insertRoomAttachmentMessage(req.params.roomId, userId, kind, rel, bodyField);
+    if (result.error) {
+      const code = result.error.includes('доступ') ? 403 : 400;
+      res.status(code).json({ error: result.error });
+      return;
+    }
+    const roomId = req.params.roomId;
+    const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+    broadcastRoom(roomId, {
+      type: 'room:message:new',
+      payload: { roomId, message: msgOut },
+    });
+    res.status(201).json({ message: msgOut });
+  });
+});
+
+app.post('/api/rooms/:roomId/messages/:messageId/reaction', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const reaction = req.body?.reaction;
+  if (typeof reaction !== 'string' || !reaction.trim()) {
+    res.status(400).json({ error: 'Нет реакции' });
+    return;
+  }
+  const roomId = req.params.roomId;
+  const result = toggleRoomMessageReaction(roomId, userId, req.params.messageId, reaction.trim());
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const { messageId } = req.params;
+  broadcastRoom(roomId, {
+    type: 'room:message:reaction',
+    payload: { roomId, messageId, reactions: result.reactions },
+  });
+  res.json({ reactions: result.reactions });
+});
+
+app.get('/api/rooms/:roomId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const room = getRoomByIdForUser(req.params.roomId, userId);
+  if (!room) {
+    res.status(404).json({ error: 'Комната не найдена' });
+    return;
+  }
+  res.json({ room });
+});
+
+app.patch('/api/rooms/:roomId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { title, description } = req.body || {};
+  const out = updateRoom(req.params.roomId, userId, { title, description });
+  if (out.error) {
+    const code = out.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: out.error });
+    return;
+  }
+  res.json({ room: out.room });
+});
+
+app.post('/api/rooms/:roomId/members', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = addRoomMembers(req.params.roomId, userId, req.body?.memberIds);
+  if (out.error) {
+    const code = out.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: out.error });
+    return;
+  }
+  res.json({ room: out.room, addedCount: out.addedCount });
 });
 
 app.get('/api/stories', (req, res) => {

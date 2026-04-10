@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 10;
 
 let db;
 
@@ -151,6 +151,100 @@ function migrate(database) {
       CREATE INDEX IF NOT EXISTS idx_stories_expires ON stories(expires_at);
     `);
     setSchemaVersion(database, 6);
+    ver = 6;
+  }
+
+  if (ver < 7) {
+    const msgInfo = database.prepare('PRAGMA table_info(messages)').all();
+    const msgNames = new Set(msgInfo.map((row) => row.name));
+    if (!msgNames.has('kind')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'text';`);
+    }
+    if (!msgNames.has('media_path')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN media_path TEXT;`);
+    }
+    if (!msgNames.has('duration_ms')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN duration_ms INTEGER;`);
+    }
+    setSchemaVersion(database, 7);
+    ver = 7;
+  }
+
+  if (ver < 8) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS story_views (
+        viewer_id TEXT NOT NULL,
+        story_id TEXT NOT NULL,
+        viewed_at INTEGER NOT NULL,
+        PRIMARY KEY (viewer_id, story_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_story_views_viewer ON story_views(viewer_id);
+      CREATE TABLE IF NOT EXISTS message_reactions (
+        message_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        reaction TEXT NOT NULL CHECK(reaction IN ('up','down','fire','poop')),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (message_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_msg_react_msg ON message_reactions(message_id);
+    `);
+    const msgInfo8 = database.prepare('PRAGMA table_info(messages)').all();
+    const msgNames8 = new Set(msgInfo8.map((row) => row.name));
+    if (!msgNames8.has('ref_story_id')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN ref_story_id TEXT;`);
+    }
+    if (!msgNames8.has('story_reaction_key')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN story_reaction_key TEXT;`);
+    }
+    setSchemaVersion(database, 8);
+    ver = 8;
+  }
+
+  if (ver < 9) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS rooms (
+        id TEXT PRIMARY KEY NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        created_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS room_members (
+        room_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('owner','member')),
+        joined_at INTEGER NOT NULL,
+        PRIMARY KEY (room_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_room_members_user ON room_members(user_id);
+    `);
+    setSchemaVersion(database, 9);
+    ver = 9;
+  }
+
+  if (ver < 10) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS room_messages (
+        id TEXT PRIMARY KEY NOT NULL,
+        room_id TEXT NOT NULL,
+        sender_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'text',
+        media_path TEXT,
+        duration_ms INTEGER,
+        ref_story_id TEXT,
+        story_reaction_key TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_room_msg_room ON room_messages(room_id, created_at);
+      CREATE TABLE IF NOT EXISTS room_last_read (
+        user_id TEXT NOT NULL,
+        room_id TEXT NOT NULL,
+        last_read_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, room_id)
+      );
+    `);
+    setSchemaVersion(database, 10);
   }
 }
 

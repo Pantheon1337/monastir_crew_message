@@ -42,21 +42,22 @@ export default function AddFriendModal({ userId, open, onClose, onSuccess }) {
     <div
       role="dialog"
       aria-modal="true"
+      className="modal-overlay"
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 200,
-        background: 'rgba(0,0,0,0.55)',
         display: 'flex',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         justifyContent: 'center',
-        padding: '48px 16px 16px',
+        padding: 16,
+        paddingTop: 'max(48px, env(safe-area-inset-top))',
       }}
       onClick={() => !loading && (reset(), onClose?.())}
       onKeyDown={(e) => e.key === 'Escape' && !loading && (reset(), onClose?.())}
     >
       <div
-        className="block"
+        className="block modal-panel"
         style={{ width: '100%', maxWidth: 360, padding: 16 }}
         onClick={(e) => e.stopPropagation()}
       >

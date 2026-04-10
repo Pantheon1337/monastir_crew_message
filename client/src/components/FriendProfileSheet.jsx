@@ -38,28 +38,29 @@ export default function FriendProfileSheet({ targetUserId, viewerId, onClose }) 
     <div
       role="dialog"
       aria-modal="true"
+      className="modal-overlay"
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 120,
-        background: 'rgba(0,0,0,0.55)',
         display: 'flex',
-        alignItems: 'flex-end',
+        alignItems: 'center',
         justifyContent: 'center',
-        padding: 12,
+        padding: 16,
+        paddingTop: 'max(16px, env(safe-area-inset-top))',
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
       }}
       onClick={onClose}
     >
       <div
-        className="block"
+        className="block modal-panel"
         style={{
           width: '100%',
-          maxWidth: 400,
-          maxHeight: '85dvh',
+          maxWidth: 420,
+          maxHeight: 'min(85dvh, 640px)',
           overflow: 'auto',
           padding: 16,
           borderRadius: 'var(--radius)',
-          marginBottom: 'env(safe-area-inset-bottom)',
         }}
         onClick={(e) => e.stopPropagation()}
       >

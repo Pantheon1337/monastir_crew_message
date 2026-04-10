@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 
-function AvatarRing({ children, highlight }) {
+/** new | self — градиент; seen — серое кольцо «все просмотрено» */
+function AvatarRing({ children, variant = 'new' }) {
+  const muted = variant === 'seen';
   return (
     <div style={{ position: 'relative', width: 56, flexShrink: 0 }}>
       <div
@@ -8,8 +10,8 @@ function AvatarRing({ children, highlight }) {
           width: 56,
           height: 56,
           borderRadius: '50%',
-          padding: highlight ? 2 : 1,
-          background: highlight ? 'linear-gradient(135deg, var(--accent), #8b5cf6)' : 'var(--border)',
+          padding: muted ? 1 : 2,
+          background: muted ? 'var(--border)' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -34,21 +36,14 @@ function AvatarRing({ children, highlight }) {
   );
 }
 
-export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAuthor, onOpenArchive }) {
-  const selfBucket = buckets.find((b) => b.userId === user?.id);
-  const friendBuckets = buckets.filter((b) => b.userId !== user?.id);
-
-  const openSelf = useCallback(() => {
-    if (!user?.id) return;
-    if (selfBucket?.itemCount) {
-      onOpenAuthor?.(user.id);
-    } else {
-      onAddStory?.();
-    }
-  }, [user?.id, selfBucket?.itemCount, onAddStory, onOpenAuthor]);
-
-  const openFriend = useCallback(
+/**
+ * Первая кнопка — всегда только создание новой истории.
+ * Далее — кружки всех с активными историями (вы и друзья), как в ленте.
+ */
+export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAuthor }) {
+  const openBucket = useCallback(
     (authorId) => {
+      if (!authorId) return;
       onOpenAuthor?.(authorId);
     },
     [onOpenAuthor]
@@ -56,52 +51,64 @@ export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAutho
 
   return (
     <section
+      style={{
+        padding: '12px 0 8px 12px',
+        borderBottom: '1px solid var(--border)',
+      }}
+    >
+      <div
         style={{
-          padding: '12px 0 8px 12px',
-          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          gap: 14,
+          overflowX: 'auto',
+          paddingBottom: 4,
+          scrollbarWidth: 'thin',
         }}
       >
-        <div
+        <button
+          type="button"
+          onClick={() => onAddStory?.()}
           style={{
             display: 'flex',
-            gap: 14,
-            overflowX: 'auto',
-            paddingBottom: 4,
-            scrollbarWidth: 'thin',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 6,
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            color: 'var(--text)',
+            flexShrink: 0,
           }}
         >
-          <button
-            type="button"
-            onClick={openSelf}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 6,
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              color: 'var(--text)',
-            }}
-          >
-            <AvatarRing highlight={Boolean(selfBucket?.itemCount)}>
-              {user?.avatarUrl ? (
-                <img src={user.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                <span style={{ fontSize: 20, color: 'var(--muted)' }}>+</span>
-              )}
-            </AvatarRing>
-            <span className="muted" style={{ fontSize: 10 }}>
-              Ваша история
+          <AvatarRing variant="self">
+            <span
+              style={{
+                fontSize: 30,
+                fontWeight: 300,
+                color: 'var(--accent)',
+                lineHeight: 1,
+                userSelect: 'none',
+              }}
+              aria-hidden
+            >
+              +
             </span>
-          </button>
+          </AvatarRing>
+          <span className="muted" style={{ fontSize: 10, maxWidth: 72, textAlign: 'center' }}>
+            Новая
+          </span>
+        </button>
 
-          {friendBuckets.map((b) => (
+        {buckets.map((b) => {
+          const isSelf = Boolean(b.isSelf) || String(b.userId) === String(user?.id);
+          const label = isSelf ? 'Вы' : b.label;
+          const ringVariant = isSelf ? 'self' : b.allViewed ? 'seen' : 'new';
+          return (
             <button
               key={b.userId}
               type="button"
-              onClick={() => openFriend(b.userId)}
+              onClick={() => openBucket(b.userId)}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -112,28 +119,23 @@ export default function StoriesBar({ user, buckets = [], onAddStory, onOpenAutho
                 padding: 0,
                 cursor: 'pointer',
                 color: 'var(--text)',
+                flexShrink: 0,
               }}
             >
-              <AvatarRing highlight>
+              <AvatarRing variant={ringVariant}>
                 {b.avatarUrl ? (
                   <img src={b.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{b.label?.slice(0, 2) || '?'}</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{label?.slice(0, 2) || '?'}</span>
                 )}
               </AvatarRing>
               <span className="muted" style={{ fontSize: 10, maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {b.label}
+                {label}
               </span>
             </button>
-          ))}
-        </div>
-        {onOpenArchive ? (
-          <div style={{ padding: '4px 12px 0 0', textAlign: 'right' }}>
-            <button type="button" className="muted" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer' }} onClick={onOpenArchive}>
-              Архив историй
-            </button>
-          </div>
-        ) : null}
-      </section>
+          );
+        })}
+      </div>
+    </section>
   );
 }

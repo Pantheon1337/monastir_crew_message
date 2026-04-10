@@ -1,12 +1,16 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { clearStoredUser, setStoredUser } from '../authStorage.js';
 import { api, apiUpload } from '../api.js';
+import { requestNotificationPermission } from '../browserNotification.js';
 
-export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriendsChanged, onUserUpdated }) {
+export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriendsChanged, onUserUpdated, onOpenArchive }) {
   const fileRef = useRef(null);
   const [incoming, setIncoming] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState(null);
+  const [notifPerm, setNotifPerm] = useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied',
+  );
 
   const loadIncoming = useCallback(async () => {
     if (!user?.id) return;
@@ -19,6 +23,14 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
   useEffect(() => {
     loadIncoming();
   }, [loadIncoming, socialTick]);
+
+  useEffect(() => {
+    const sync = () => {
+      if (typeof Notification !== 'undefined') setNotifPerm(Notification.permission);
+    };
+    document.addEventListener('visibilitychange', sync);
+    return () => document.removeEventListener('visibilitychange', sync);
+  }, []);
 
   async function accept(id) {
     setActionId(id);
@@ -117,6 +129,32 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
         </p>
         <p style={{ margin: '0 0 12px', fontSize: 13 }}>{displayPhone || user?.phone}</p>
 
+        {typeof Notification !== 'undefined' && notifPerm === 'default' ? (
+          <div style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{ width: '100%' }}
+              onClick={() => {
+                void (async () => {
+                  const p = await requestNotificationPermission();
+                  setNotifPerm(p);
+                })();
+              }}
+            >
+              Включить уведомления
+            </button>
+            <p className="muted" style={{ margin: '6px 0 0', fontSize: 10, lineHeight: 1.35 }}>
+              О новых сообщениях и заявках в друзья, когда вкладка в фоне или открыт другой раздел.
+            </p>
+          </div>
+        ) : null}
+        {typeof Notification !== 'undefined' && notifPerm === 'denied' ? (
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 10 }}>
+            Уведомления отключены в настройках браузера для этого сайта.
+          </p>
+        ) : null}
+
         <p className="muted" style={{ margin: 0, fontSize: 10 }}>
           Подтверждение номера по SMS будет добавлено позже.
         </p>
@@ -133,6 +171,18 @@ export default function ProfileScreen({ user, onLogout, socialTick = 0, onFriend
           Выйти из аккаунта
         </button>
       </div>
+
+      {onOpenArchive ? (
+        <div className="block" style={{ padding: 14, marginBottom: 12 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Истории</p>
+          <p className="muted" style={{ margin: '0 0 10px', fontSize: 10, lineHeight: 1.4 }}>
+            Активные истории видят только друзья. Здесь — архив истёкших (вы и друзья).
+          </p>
+          <button type="button" className="btn-outline" onClick={() => onOpenArchive()}>
+            Архив историй
+          </button>
+        </div>
+      ) : null}
 
       <div className="block" style={{ padding: 14 }}>
         <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600 }}>Заявки в друзья</p>

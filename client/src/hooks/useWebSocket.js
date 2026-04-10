@@ -8,6 +8,15 @@ function buildDefaultWsUrl(userId) {
     const base = String(import.meta.env.VITE_WS_URL).replace(/\/?$/, '');
     return `${base}${q}`;
   }
+  if (import.meta.env.VITE_API_ORIGIN) {
+    try {
+      const u = new URL(String(import.meta.env.VITE_API_ORIGIN));
+      const wsProto = u.protocol === 'https:' ? 'wss:' : 'ws:';
+      return `${wsProto}//${u.host}/ws${q}`;
+    } catch {
+      /* fall through */
+    }
+  }
   if (typeof window !== 'undefined' && window.location?.host) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}/ws${q}`;

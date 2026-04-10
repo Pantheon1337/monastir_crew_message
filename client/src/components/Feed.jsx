@@ -30,7 +30,7 @@ export default function Feed({ posts = [], userId, onPosted }) {
         <textarea
           className="text-input"
           style={{ width: '100%', minHeight: 72, resize: 'vertical', marginBottom: 8 }}
-          placeholder="Что у вас нового? Видно только друзьям."
+          placeholder="Что у вас нового? Видно друзьям — в том числе тем, кого добавите позже."
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           maxLength={8000}

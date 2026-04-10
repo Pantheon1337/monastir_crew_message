@@ -1,22 +1,44 @@
 import { useEffect, useState, useCallback } from 'react';
+import { api } from '../api.js';
 
 const SLIDE_MS = 4800;
 
-export default function StoryViewer({ story, onClose, onProgress }) {
+const REACTION_ICONS = { up: '👍', down: '👎', fire: '🔥', poop: '💩' };
+const REACTION_KEYS = ['up', 'down', 'fire', 'poop'];
+
+/** До архива: при остатке ≥ 1 ч — в часах, иначе в минутах. */
+function formatStoryArchiveEta(expiresAt) {
+  if (expiresAt == null) return null;
+  const msLeft = expiresAt - Date.now();
+  if (msLeft <= 0) return null;
+  const hoursLeft = msLeft / 3600000;
+  if (hoursLeft >= 1) {
+    const h = Math.max(1, Math.round(hoursLeft));
+    return `≈ ${h} ч до архива`;
+  }
+  const minLeft = msLeft / 60000;
+  if (minLeft < 1) return 'меньше минуты до архива';
+  const m = Math.max(1, Math.ceil(minLeft));
+  return `≈ ${m} мин до архива`;
+}
+
+export default function StoryViewer({ story, userId, onClose, onProgress, onAfterLastItem }) {
   const [slide, setSlide] = useState(0);
   const items = story?.items ?? [];
   const total = items.length;
 
+  /** Следующий кадр или переход к следующему автору (не закрывать просмотр сразу). */
   const advance = useCallback(() => {
     setSlide((s) => {
       if (total === 0) return 0;
-      if (s >= total - 1) {
-        onClose();
-        return 0;
-      }
-      return s + 1;
+      if (s < total - 1) return s + 1;
+      queueMicrotask(() => {
+        const next = onAfterLastItem ?? onClose;
+        next();
+      });
+      return s;
     });
-  }, [onClose, total]);
+  }, [onAfterLastItem, onClose, total]);
 
   useEffect(() => {
     if (!story || total === 0) return undefined;
@@ -30,7 +52,12 @@ export default function StoryViewer({ story, onClose, onProgress }) {
 
   useEffect(() => {
     const cur = items[slide];
-    onProgress?.({ storyId: story?.authorId, index: slide, total });
+    onProgress?.({
+      authorId: story?.authorId,
+      itemId: cur?.id,
+      index: slide,
+      total,
+    });
   }, [slide, items, onProgress, story?.authorId, total]);
 
   useEffect(() => {
@@ -44,8 +71,19 @@ export default function StoryViewer({ story, onClose, onProgress }) {
   if (!story || total === 0) return null;
 
   const cur = items[slide];
-  const expiresIn =
-    cur?.expiresAt != null ? Math.max(0, Math.floor((cur.expiresAt - Date.now()) / 60000)) : null;
+
+  const archiveEta = cur?.expiresAt != null ? formatStoryArchiveEta(cur.expiresAt) : null;
+
+  const canReact = Boolean(userId) && !story.isSelf;
+
+  async function sendReact(k) {
+    if (!userId || !cur?.id) return;
+    await api('/api/stories/react', {
+      method: 'POST',
+      body: { storyId: cur.id, reaction: k },
+      userId,
+    });
+  }
 
   return (
     <div
@@ -116,10 +154,8 @@ export default function StoryViewer({ story, onClose, onProgress }) {
         )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{story.label}</div>
-          {expiresIn != null ? (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>
-              {expiresIn < 1 ? 'меньше минуты' : `≈ ${expiresIn} мин до архива`}
-            </div>
+          {archiveEta ? (
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>{archiveEta}</div>
           ) : null}
         </div>
         <button
@@ -163,6 +199,43 @@ export default function StoryViewer({ story, onClose, onProgress }) {
           </p>
         ) : null}
       </div>
+
+      {canReact ? (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: 10,
+            padding: '12px 16px',
+            borderTop: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          <span style={{ width: '100%', textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+            Реакция уйдёт в чат автору
+          </span>
+          {REACTION_KEYS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => void sendReact(k)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.2)',
+                background: 'rgba(255,255,255,0.06)',
+                fontSize: 20,
+                cursor: 'pointer',
+                color: 'inherit',
+              }}
+              aria-label={`Реакция ${k}`}
+            >
+              {REACTION_ICONS[k]}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
         <button

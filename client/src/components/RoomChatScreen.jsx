@@ -168,16 +168,14 @@ function clampMenuPosition(x, y, w, h) {
   return { left, top };
 }
 
-function ChatMessageReactions({ chatId, roomId, messageId, userId, reactions, onUpdate, align = 'flex-start' }) {
+function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, align = 'flex-start' }) {
   const counts = reactions?.counts ?? { up: 0, down: 0, fire: 0, poop: 0 };
   const mine = reactions?.mine ?? null;
   const keysToShow = REACTION_KEYS.filter((k) => (counts[k] ?? 0) > 0);
   if (keysToShow.length === 0) return null;
 
   async function pick(key) {
-    const path = roomId
-      ? `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reaction`
-      : `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reaction`;
+    const path = `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reaction`;
     const { ok, data } = await api(path, {
       method: 'POST',
       body: { reaction: key },
@@ -247,7 +245,7 @@ function AvatarPlaceholder({ label }) {
   );
 }
 
-function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocalUpdate, onOpenActionMenu }) {
+function MessageBubble({ m, userId, roomId, formatTime, onReactionsLocalUpdate, onOpenActionMenu }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
   const shellRef = useRef(null);
@@ -388,7 +386,6 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
         )}
         {inner}
         <ChatMessageReactions
-          chatId={chatId}
           roomId={roomId}
           messageId={m.id}
           userId={userId}
@@ -428,16 +425,14 @@ function MessageBubble({ m, userId, chatId, roomId, formatTime, onReactionsLocal
   );
 }
 
-export default function DirectChatScreen({
+export default function RoomChatScreen({
   userId,
-  chatId,
-  peerLabel,
-  peerUserId,
-  peerAvatarUrl,
+  roomId,
+  roomTitle,
   onClose,
   lastEvent,
   onAfterChange,
-  onOpenPeerProfile,
+  onOpenRoomInfo,
 }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -508,7 +503,7 @@ export default function DirectChatScreen({
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, { userId });
+    const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, { userId });
     if (!ok) {
       setErr(data?.error || 'Не удалось загрузить чат');
       setLoading(false);
@@ -517,27 +512,27 @@ export default function DirectChatScreen({
     setMessages((data.messages || []).map(normalizeChatMessage));
     setErr(null);
     setLoading(false);
-  }, [chatId, userId]);
+  }, [roomId, userId]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    if (!chatId || !userId) return undefined;
+    if (!roomId || !userId) return undefined;
     let cancelled = false;
     (async () => {
-      await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
+      await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
       if (!cancelled) onAfterChange?.();
     })();
     return () => {
       cancelled = true;
     };
-  }, [chatId, userId, onAfterChange]);
+  }, [roomId, userId, onAfterChange]);
 
   useEffect(() => {
-    if (lastEvent?.type !== 'chat:message:new') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
+    if (lastEvent?.type !== 'room:message:new') return;
+    if (lastEvent.payload?.roomId !== roomId) return;
     const m = normalizeChatMessage(lastEvent.payload?.message);
     if (!m?.id) return;
     setMessages((prev) => {
@@ -545,30 +540,18 @@ export default function DirectChatScreen({
       return [...prev, m];
     });
     (async () => {
-      await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
+      await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
       onAfterChange?.();
     })();
-  }, [lastEvent, chatId, userId, onAfterChange]);
+  }, [lastEvent, roomId, userId, onAfterChange]);
 
   useEffect(() => {
-    if (lastEvent?.type !== 'chat:peerRead') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const readAt = lastEvent.payload.readAt;
-    if (readAt == null) return;
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.senderId === userId && (msg.createdAt ?? 0) <= readAt ? { ...msg, readByPeer: true } : msg,
-      ),
-    );
-  }, [lastEvent, chatId, userId]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:message:reaction') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
+    if (lastEvent?.type !== 'room:message:reaction') return;
+    if (lastEvent.payload?.roomId !== roomId) return;
     const { messageId, reactions } = lastEvent.payload || {};
     if (!messageId || !reactions) return;
     setMessages((prev) => prev.map((x) => (x.id === messageId ? { ...x, reactions } : x)));
-  }, [lastEvent, chatId]);
+  }, [lastEvent, roomId]);
 
   useEffect(() => {
     if (!messageMenu) return undefined;
@@ -659,7 +642,7 @@ export default function DirectChatScreen({
       setErr(null);
       try {
         const isImg = (file.type || '').startsWith('image/');
-        const { ok, data } = await apiUpload(`/api/chats/${encodeURIComponent(chatId)}/messages/media`, {
+        const { ok, data } = await apiUpload(`/api/rooms/${encodeURIComponent(roomId)}/messages/media`, {
           file,
           userId,
           fieldName: 'file',
@@ -673,13 +656,13 @@ export default function DirectChatScreen({
           setText('');
         }
         appendMessage(data.message);
-        await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
+        await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
         onAfterChange?.();
       } finally {
         setMediaUploading(false);
       }
     },
-    [chatId, userId, text, appendMessage, onAfterChange],
+    [roomId, userId, text, appendMessage, onAfterChange],
   );
 
   const stopVoiceGlobal = useRef(null);
@@ -763,7 +746,7 @@ export default function DirectChatScreen({
         }
         const blob = new Blob(ch, { type: recorder.mimeType || 'audio/webm' });
         const file = new File([blob], 'voice.webm', { type: blob.type || 'audio/webm' });
-        const { ok, data } = await apiUpload(`/api/chats/${encodeURIComponent(chatId)}/messages/voice`, {
+        const { ok, data } = await apiUpload(`/api/rooms/${encodeURIComponent(roomId)}/messages/voice`, {
           file,
           userId,
           fieldName: 'file',
@@ -774,7 +757,7 @@ export default function DirectChatScreen({
           return;
         }
         appendMessage(data.message);
-        await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
+        await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
         onAfterChange?.();
       }
 
@@ -784,7 +767,7 @@ export default function DirectChatScreen({
     } catch (e) {
       setErr(e?.message || 'Нет доступа к микрофону');
     }
-  }, [chatId, userId, appendMessage, onAfterChange, stopVoiceAndSend]);
+  }, [roomId, userId, appendMessage, onAfterChange, stopVoiceAndSend]);
 
   useEffect(() => {
     return () => {
@@ -812,7 +795,7 @@ export default function DirectChatScreen({
   async function sendTextMessage() {
     const t = text.trim();
     if (!t) return;
-    const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
+    const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, {
       method: 'POST',
       body: { body: t },
       userId,
@@ -832,7 +815,7 @@ export default function DirectChatScreen({
     });
     [40, 160, 320, 600, 1200].forEach((ms) => window.setTimeout(refocusComposer, ms));
     window.setTimeout(() => {
-      void api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId }).then(() => {
+      void api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId }).then(() => {
         onAfterChange?.();
       });
     }, 450);
@@ -987,7 +970,7 @@ export default function DirectChatScreen({
       return;
     }
     const file = buildVideoNoteFile(blob, mr);
-    const { ok, data } = await apiUpload(`/api/chats/${encodeURIComponent(chatId)}/messages/video-note`, {
+    const { ok, data } = await apiUpload(`/api/rooms/${encodeURIComponent(roomId)}/messages/video-note`, {
       file,
       userId,
       fieldName: 'file',
@@ -999,7 +982,7 @@ export default function DirectChatScreen({
       return;
     }
     appendMessage(data.message);
-    await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
+    await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
     onAfterChange?.();
     closeVideoModal();
   }
@@ -1093,54 +1076,19 @@ export default function DirectChatScreen({
         <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
           ‹
         </button>
-        <button
-          type="button"
-          onClick={() => peerUserId && onOpenPeerProfile?.()}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            textAlign: 'left',
-            background: 'none',
-            border: 'none',
-            color: 'inherit',
-            padding: '4px 0',
-            cursor: peerUserId && onOpenPeerProfile ? 'pointer' : 'default',
-          }}
-          disabled={!peerUserId || !onOpenPeerProfile}
-        >
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {peerLabel || 'Чат'}
+            <span style={{ color: 'var(--accent)' }}>#</span> {roomTitle || 'Комната'}
           </div>
-          {peerUserId && onOpenPeerProfile ? (
-            <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
-              открыть профиль
-            </div>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          onClick={() => peerUserId && onOpenPeerProfile?.()}
-          aria-label="Профиль собеседника"
-          style={{
-            padding: 0,
-            border: 'none',
-            background: 'none',
-            cursor: peerUserId && onOpenPeerProfile ? 'pointer' : 'default',
-            borderRadius: '50%',
-            flexShrink: 0,
-          }}
-          disabled={!peerUserId || !onOpenPeerProfile}
-        >
-          {peerAvatarUrl ? (
-            <img
-              src={peerAvatarUrl}
-              alt=""
-              style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--border)' }}
-            />
-          ) : (
-            <AvatarPlaceholder label={peerLabel} />
-          )}
-        </button>
+          <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
+            Групповой чат
+          </div>
+        </div>
+        {onOpenRoomInfo ? (
+          <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onOpenRoomInfo} aria-label="Об участниках">
+            ℹ
+          </button>
+        ) : null}
           </header>
         }
         timelineRef={scrollRef}
@@ -1157,20 +1105,20 @@ export default function DirectChatScreen({
             Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
           </p>
         ) : (
-          messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              m={m}
-              userId={userId}
-              chatId={chatId}
-              formatTime={formatTime}
-              onReactionsLocalUpdate={(id, reactions) =>
-                setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
-              }
-              onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y })}
-            />
-          ))
-        )}
+            messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                m={m}
+                userId={userId}
+                roomId={roomId}
+                formatTime={formatTime}
+                onReactionsLocalUpdate={(id, reactions) =>
+                  setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
+                }
+                onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y })}
+              />
+            ))
+            )}
             <div
               ref={messagesEndRef}
               aria-hidden
@@ -1488,7 +1436,7 @@ export default function DirectChatScreen({
                   onClick={async () => {
                     const msg = messageMenu.m;
                     const { ok, data } = await api(
-                      `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(msg.id)}/reaction`,
+                      `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(msg.id)}/reaction`,
                       { method: 'POST', body: { reaction: k }, userId },
                     );
                     if (ok && data?.reactions) {
