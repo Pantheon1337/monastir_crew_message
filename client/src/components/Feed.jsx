@@ -109,6 +109,25 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
         onSubmit={submit}
       >
         <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Новый пост</div>
+        <div className="feed-privacy-row">
+          <div className="feed-privacy-row__text">
+            Только для друзей
+            <div className="feed-privacy-row__hint">Иначе пост виден всем в приложении</div>
+          </div>
+          <label className="ios-toggle" style={{ cursor: userId ? 'pointer' : 'not-allowed' }}>
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Показывать пост только друзьям"
+              checked={friendsOnlyPost}
+              disabled={!userId}
+              onChange={(e) => setFriendsOnlyPost(e.target.checked)}
+            />
+            <span className="ios-toggle-track">
+              <span className="ios-toggle-thumb" />
+            </span>
+          </label>
+        </div>
         <textarea
           className="text-input feed-composer-textarea"
           style={{ width: '100%', minHeight: 72, resize: 'vertical', marginBottom: 8 }}
@@ -118,29 +137,6 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
           maxLength={8000}
         />
         <input ref={fileRef} type="file" hidden onChange={onPickFile} />
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            marginBottom: 8,
-            fontSize: 12,
-            cursor: userId ? 'pointer' : 'default',
-            userSelect: 'none',
-          }}
-        >
-          <span>Показывать только друзьям</span>
-          <input
-            type="checkbox"
-            role="switch"
-            aria-label="Показывать пост только друзьям"
-            checked={friendsOnlyPost}
-            disabled={!userId}
-            onChange={(e) => setFriendsOnlyPost(e.target.checked)}
-            style={{ width: 22, height: 22, flexShrink: 0, marginTop: 2, accentColor: 'var(--accent)' }}
-          />
-        </label>
         {pendingMediaPath ? (
           <div className="muted" style={{ fontSize: 11, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{pendingName}</span>

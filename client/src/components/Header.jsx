@@ -10,6 +10,7 @@ export default function Header({
   onOpenSecurity,
   onOpenPossibleFriends,
   onOpenBugReport,
+  onOpenSearch,
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,7 +57,7 @@ export default function Header({
               <path d="M12 8v8M8 12h8" />
             </svg>
           </button>
-          <button type="button" className="icon-btn" aria-label="Поиск">
+          <button type="button" className="icon-btn" aria-label="Поиск" onClick={() => onOpenSearch?.()}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="7" />
               <path d="M20 20l-3-3" />

@@ -23,12 +23,15 @@ function splitMentions(text) {
   return parts;
 }
 
-/** pre-line; overflow-wrap normal — перенос по пробелам; длинные «слова» ломает оболочка пузыря при необходимости. */
+/** pre-line; ширина блока = ширина пузыря — строки набираются по всей полосе, не по одному слову. */
 const textWrapStyle = {
-  display: 'inline',
+  display: 'block',
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
   whiteSpace: 'pre-line',
-  overflowWrap: 'normal',
   wordBreak: 'normal',
+  overflowWrap: 'break-word',
   lineHeight: 'inherit',
   letterSpacing: 'normal',
   hyphens: 'none',

@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
-export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated }) {
+export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated, onRoomDeleted }) {
   const [room, setRoom] = useState(null);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -19,6 +19,7 @@ export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated
   const [selectedPeers, setSelectedPeers] = useState(() => new Set());
   const [adding, setAdding] = useState(false);
   const [addErr, setAddErr] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadRoom = useCallback(async () => {
     if (!userId || !roomId) return;
@@ -107,6 +108,20 @@ export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated
     setEditTitle(r.title ?? '');
     setEditDescription(r.description ?? '');
     onRoomUpdated?.(r);
+  }
+
+  async function deleteRoomConfirm() {
+    if (!userId || !roomId || !isOwner || deleting) return;
+    if (!window.confirm('Удалить комнату для всех? Сообщения будут удалены без восстановления.')) return;
+    setDeleting(true);
+    const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}`, { method: 'DELETE', userId });
+    setDeleting(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось удалить');
+      return;
+    }
+    onRoomDeleted?.(roomId);
+    onClose();
   }
 
   async function addFriends(e) {
@@ -227,9 +242,20 @@ export default function RoomDetailModal({ userId, roomId, onClose, onRoomUpdated
                 {saveErr ? (
                   <p style={{ fontSize: 11, color: '#c45c5c', margin: '0 0 8px' }}>{saveErr}</p>
                 ) : null}
-                <button type="submit" className="btn-primary" style={{ padding: '8px 14px', width: 'auto' }} disabled={saving}>
-                  {saving ? 'Сохранение…' : 'Сохранить'}
-                </button>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                  <button type="submit" className="btn-primary" style={{ padding: '8px 14px', width: 'auto' }} disabled={saving}>
+                    {saving ? 'Сохранение…' : 'Сохранить'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    style={{ padding: '8px 14px', width: 'auto', borderColor: '#a85c5c', color: '#e08080' }}
+                    disabled={deleting}
+                    onClick={() => void deleteRoomConfirm()}
+                  >
+                    {deleting ? 'Удаление…' : 'Удалить комнату'}
+                  </button>
+                </div>
               </form>
             ) : (
               <>

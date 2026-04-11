@@ -301,31 +301,34 @@ export default function ProfileScreen({
 
   return (
     <>
-    <section style={{ padding: 16 }}>
-      <h2 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Профиль</h2>
+    <section style={{ padding: '12px 14px 28px', maxWidth: 520, margin: '0 auto' }}>
+      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>Профиль</h2>
+      <p className="muted" style={{ margin: '0 0 16px', fontSize: 12, lineHeight: 1.4 }}>
+        Данные аккаунта и отображение в чатах
+      </p>
 
-      {typeof onPreviewOwnProfile === 'function' ? (
-        <div style={{ marginBottom: 12 }}>
-          <button type="button" className="btn-outline" style={{ width: '100%' }} onClick={() => onPreviewOwnProfile()}>
-            Как выглядит мой профиль
-          </button>
-        </div>
-      ) : null}
-
-      <div className="block" style={{ padding: 14, marginBottom: 12 }}>
+      <p className="profile-settings-section-title">Аккаунт</p>
+      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
         <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" hidden onChange={onPickAvatar} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
           <UserAvatar
             src={user?.avatarUrl}
             size={72}
             onOpen={user?.avatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(user.avatarUrl) : undefined}
           />
           <button type="button" className="btn-outline" style={{ width: 'auto', padding: '8px 12px' }} onClick={() => fileRef.current?.click()}>
-            Аватар
+            Сменить фото
           </button>
         </div>
+        {typeof onPreviewOwnProfile === 'function' ? (
+          <button type="button" className="btn-outline" style={{ width: '100%', marginBottom: 12 }} onClick={() => onPreviewOwnProfile()}>
+            Как меня видят другие
+          </button>
+        ) : null}
 
-        <div style={{ marginBottom: 12 }}>
+        <div className="profile-settings-divider" />
+
+        <div style={{ marginBottom: 0 }}>
           <div
             style={{
               display: 'flex',
@@ -423,10 +426,13 @@ export default function ProfileScreen({
             </button>
           </div>
         </div>
+      </div>
 
+      <p className="profile-settings-section-title">Отображение в приложении</p>
+      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
         <div style={{ margin: '0 0 12px' }}>
           <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-            Как в приложении
+            Ник и смайлик в чатах
           </p>
           <div style={{ fontSize: 14, color: 'var(--accent)' }}>
             {user?.nickname ? (
@@ -439,6 +445,8 @@ export default function ProfileScreen({
             {profileRoleCaption(user?.displayRole)}
           </p>
         </div>
+
+        <div className="profile-settings-divider" />
 
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
           {user?.displayRole === 'developer' ? 'Роль' : 'Сменить роль'}
@@ -485,8 +493,8 @@ export default function ProfileScreen({
           </div>
         )}
 
-        <p style={{ margin: '0 0 6px', fontSize: 11 }} className="muted">
-          Смайлик у ника (набор совместим с iOS)
+        <p style={{ margin: '12px 0 6px', fontSize: 11 }} className="muted">
+          Смайлик у ника
         </p>
         <div ref={emojiPickerRef} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12, position: 'relative' }}>
           <button
@@ -609,10 +617,14 @@ export default function ProfileScreen({
           ) : null}
         </div>
 
+      </div>
+
+      <p className="profile-settings-section-title">Контакты и о себе</p>
+      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
           Телефон
         </p>
-        <p style={{ margin: '0 0 12px', fontSize: 13 }}>{displayPhone || '—'}</p>
+        <p style={{ margin: '0 0 14px', fontSize: 13 }}>{displayPhone || '—'}</p>
 
         <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
           О себе
@@ -646,6 +658,10 @@ export default function ProfileScreen({
           </button>
         </div>
 
+      </div>
+
+      <p className="profile-settings-section-title">Уведомления</p>
+      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
         {typeof Notification !== 'undefined' && notifPerm === 'default' ? (
           <div style={{ marginBottom: 12 }}>
             <button
@@ -682,11 +698,14 @@ export default function ProfileScreen({
         <p className="muted" style={{ margin: 0, fontSize: 10 }}>
           Подтверждение номера по SMS будет добавлено позже.
         </p>
+      </div>
 
+      <p className="profile-settings-section-title">Сессия</p>
+      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
         <button
           type="button"
           className="btn-outline"
-          style={{ marginTop: 16 }}
+          style={{ width: '100%' }}
           onClick={() => {
             clearStoredUser();
             onLogout?.();
@@ -697,19 +716,23 @@ export default function ProfileScreen({
       </div>
 
       {onOpenArchive ? (
-        <div className="block" style={{ padding: 14, marginBottom: 12 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Истории</p>
+        <>
+          <p className="profile-settings-section-title">Истории</p>
+          <div className="profile-settings-card" style={{ marginBottom: 12 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Архив</p>
           <p className="muted" style={{ margin: '0 0 10px', fontSize: 10, lineHeight: 1.4 }}>
             В ленте кружков — 24 часа. В профиле кадры висят, пока не уберёте в архив или не удалите. Архив — снятые с ленты и истёкшие без показа в профиле.
           </p>
           <button type="button" className="btn-outline" onClick={() => onOpenArchive()}>
-            Архив историй
+            Открыть архив
           </button>
         </div>
+        </>
       ) : null}
 
-      <div className="block" style={{ padding: 14 }}>
-        <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600 }}>Заявки в друзья</p>
+      <p className="profile-settings-section-title">Заявки в друзья</p>
+      <div className="profile-settings-card" style={{ padding: 14 }}>
+        <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600 }}>Входящие</p>
         {loading ? (
           <p className="muted" style={{ margin: 0, fontSize: 11 }}>
             Загрузка…
@@ -733,15 +756,14 @@ export default function ProfileScreen({
                 }}
               >
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 500 }}>
-                    {r.from?.nickname ? (
-                      <NicknameWithBadge nickname={r.from.nickname} affiliationEmoji={r.from?.affiliationEmoji} />
-                    ) : (
-                      '—'
-                    )}
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>
+                    {[r.from?.firstName, r.from?.lastName].filter(Boolean).join(' ').trim() ||
+                      (r.from?.nickname ? `@${r.from.nickname}` : '—')}
                   </div>
-                  <div className="muted" style={{ fontSize: 10 }}>
-                    {r.from?.firstName} {r.from?.lastName}
+                  <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
+                    {[r.from?.firstName, r.from?.lastName].filter(Boolean).join(' ').trim() && r.from?.nickname ? (
+                      <NicknameWithBadge nickname={r.from.nickname} affiliationEmoji={r.from?.affiliationEmoji} />
+                    ) : null}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>

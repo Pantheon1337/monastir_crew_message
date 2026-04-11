@@ -21,6 +21,7 @@ import PossibleFriendsModal from './components/PossibleFriendsModal.jsx';
 import CreateRoomModal from './components/CreateRoomModal.jsx';
 import RoomDetailModal from './components/RoomDetailModal.jsx';
 import BugReportModal from './components/BugReportModal.jsx';
+import SearchModal from './components/SearchModal.jsx';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { getStoredUser, setStoredUser, clearStoredUser } from './authStorage.js';
 import { api, apiPath } from './api.js';
@@ -68,6 +69,7 @@ export default function App() {
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const [roomDetailId, setRoomDetailId] = useState(null);
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   /** userId → в сети (WebSocket-сессия), для друзей в ленте/чатах/историях */
   const [presenceOnline, setPresenceOnline] = useState({});
   /** userId → lastSeenAt (мс), только для офлайн; подпись «был(а) в сети …» в чате */
@@ -178,6 +180,8 @@ export default function App() {
       ...openChat,
       name: c.name ?? openChat.name,
       peerNickname: c.peerNickname ?? openChat.peerNickname,
+      peerFirstName: c.peerFirstName ?? openChat.peerFirstName,
+      peerLastName: c.peerLastName ?? openChat.peerLastName,
       peerAffiliationEmoji: c.peerAffiliationEmoji ?? openChat.peerAffiliationEmoji,
       peerAvatarUrl: c.peerAvatarUrl ?? openChat.peerAvatarUrl,
       peerUserId: c.peerUserId ?? openChat.peerUserId,
@@ -664,6 +668,7 @@ export default function App() {
           onSocialChanged={refreshSocial}
           onOpenAppStatus={() => setAppStatusOpen(true)}
           onOpenPossibleFriends={() => setPossibleFriendsOpen(true)}
+          onOpenSearch={() => setSearchOpen(true)}
           onOpenSettings={() => setMenuStub('settings')}
           onOpenPrivacy={() => setMenuStub('privacy')}
           onOpenSecurity={() => setMenuStub('security')}
@@ -746,6 +751,8 @@ export default function App() {
           chatId={openChatResolved.id}
           peerLabel={openChatResolved.name}
           peerNickname={openChatResolved.peerNickname}
+          peerFirstName={openChatResolved.peerFirstName}
+          peerLastName={openChatResolved.peerLastName}
           peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
           peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
           peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
@@ -917,6 +924,22 @@ export default function App() {
             setOpenRoomChat((prev) =>
               prev && String(prev.id) === String(r.id) ? { ...prev, title: r.title } : prev,
             );
+          }}
+          onRoomDeleted={(deletedId) => {
+            void refreshSocial();
+            setRoomDetailId(null);
+            setOpenRoomChat((prev) => (prev && String(prev.id) === String(deletedId) ? null : prev));
+          }}
+        />
+      ) : null}
+      {searchOpen ? (
+        <SearchModal
+          open
+          userId={user.id}
+          onClose={() => setSearchOpen(false)}
+          onSelectUser={(u) => {
+            setSearchOpen(false);
+            if (u?.id) setPeerProfileUserId(u.id);
           }}
         />
       ) : null}

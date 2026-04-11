@@ -21,6 +21,9 @@ import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js'
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
+
+const POST_LOAD_STICK_MS = 1200;
+
 function scrollTimelineToBottom(el) {
   if (!el) return;
   const max = el.scrollHeight - el.clientHeight;
@@ -619,6 +622,20 @@ export default function RoomChatScreen({
     stickToBottomRef.current = true;
   }, [roomId]);
 
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+    if (!wasLoading || loading || messages.length === 0) return;
+    let frames = 0;
+    const tick = () => {
+      scrollTimelineToBottom(scrollRef.current);
+      frames += 1;
+      if (frames < 10) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [loading, messages.length]);
+
   useEffect(() => {
     if (!roomId || !userId) return undefined;
     let cancelled = false;
@@ -755,9 +772,10 @@ export default function RoomChatScreen({
       return;
     }
     if (loading) return;
-    if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < 420) {
+    if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < POST_LOAD_STICK_MS) {
       stickToBottomRef.current = true;
       setShowScrollDownFab(false);
+      scrollTimelineToBottom(el);
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;

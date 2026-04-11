@@ -84,6 +84,7 @@ import {
   getRoomByIdForUser,
   createRoom,
   updateRoom,
+  deleteRoom,
   addRoomMembers,
   listRoomMessages,
   insertRoomMessage,
@@ -1367,6 +1368,18 @@ app.patch('/api/rooms/:roomId', (req, res) => {
     return;
   }
   res.json({ room: out.room });
+});
+
+app.delete('/api/rooms/:roomId', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = deleteRoom(req.params.roomId, userId);
+  if (out.error) {
+    const code = out.error.includes('доступ') || out.error.includes('владелец') ? 403 : 400;
+    res.status(code).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 app.post('/api/rooms/:roomId/members', (req, res) => {

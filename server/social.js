@@ -314,6 +314,8 @@ export function listDirectChatsForUser(userId) {
       kind: 'direct',
       isSavedMessages,
       peerNickname: isSavedMessages ? null : peer.nickname || null,
+      peerFirstName: isSavedMessages ? null : peer.firstName || null,
+      peerLastName: isSavedMessages ? null : peer.lastName || null,
       name: isSavedMessages ? 'Избранное' : peer.nickname ? `@${peer.nickname}` : peer.firstName,
       peerAffiliationEmoji: isSavedMessages ? null : peerAff,
       lastMessage: formatLastMessagePreview(last),
@@ -1789,6 +1791,10 @@ function formatRoomActivity(ts) {
 export function listUsersDirectoryForViewer(viewerId, query) {
   const db = getDb();
   const q = String(query ?? '').trim();
+  /* Один символ буквы — слишком широкий LIKE; для поиска нужны ≥2 символа (цифры телефона — отдельно). */
+  if (q.length === 1 && /[a-zA-Zа-яА-ЯёЁ]/.test(q)) {
+    return [];
+  }
   const params = [viewerId];
   let sql = `
     SELECT id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath,
@@ -2029,6 +2035,35 @@ export function updateRoom(roomId, editorId, { title, description }) {
  * Участник комнаты добавляет своих друзей (ещё не в комнате).
  * Каждый приглашённый должен быть в списке друзей приглашающего.
  */
+/**
+ * Удаление комнаты: только владелец (роль owner). Каскадно удаляет сообщения и участников.
+ */
+export function deleteRoom(roomId, requesterId) {
+  if (!userInRoom(roomId, requesterId)) return { error: 'Нет доступа к комнате' };
+  if (roomMemberRole(roomId, requesterId) !== 'owner') {
+    return { error: 'Только владелец может удалить комнату' };
+  }
+  const db = getDb();
+  try {
+    db.transaction(() => {
+      db.prepare(
+        `DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM room_messages WHERE room_id = ?)`,
+      ).run(roomId);
+      db.prepare(
+        `DELETE FROM room_message_hide WHERE message_id IN (SELECT id FROM room_messages WHERE room_id = ?)`,
+      ).run(roomId);
+      db.prepare(`DELETE FROM room_messages WHERE room_id = ?`).run(roomId);
+      db.prepare(`DELETE FROM room_last_read WHERE room_id = ?`).run(roomId);
+      db.prepare(`DELETE FROM room_members WHERE room_id = ?`).run(roomId);
+      db.prepare(`DELETE FROM rooms WHERE id = ?`).run(roomId);
+    })();
+  } catch (e) {
+    console.error('deleteRoom', e);
+    return { error: 'Не удалось удалить комнату' };
+  }
+  return { ok: true };
+}
+
 export function addRoomMembers(roomId, inviterId, memberIds) {
   if (!userInRoom(roomId, inviterId)) return { error: 'Нет доступа к комнате' };
   const allowed = new Set(listPeerUserIds(inviterId));

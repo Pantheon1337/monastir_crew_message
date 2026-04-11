@@ -35,11 +35,28 @@ function ChatRow({ chat, onOpen, peerOnline }) {
       />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: unread ? 700 : 500 }}>
-          {chat.peerNickname ? (
-            <NicknameWithBadge nickname={chat.peerNickname} affiliationEmoji={chat.peerAffiliationEmoji} />
-          ) : (
+          {saved ? (
             chat.name
-          )}
+          ) : (() => {
+              const full = [chat.peerFirstName, chat.peerLastName].filter(Boolean).join(' ').trim();
+              if (full) {
+                return (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: unread ? 700 : 600, lineHeight: 1.25 }}>{full}</div>
+                    {chat.peerNickname ? (
+                      <div className="muted" style={{ fontSize: 11, marginTop: 2, fontWeight: 400 }}>
+                        <NicknameWithBadge nickname={chat.peerNickname} affiliationEmoji={chat.peerAffiliationEmoji} />
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              }
+              return chat.peerNickname ? (
+                <NicknameWithBadge nickname={chat.peerNickname} affiliationEmoji={chat.peerAffiliationEmoji} />
+              ) : (
+                chat.name
+              );
+            })()}
         </div>
         <div
           className={unread ? undefined : 'muted'}

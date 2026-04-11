@@ -24,6 +24,9 @@ import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache
 const MAX_MS = 15000;
 const MIN_MS = 400;
 
+/** После загрузки истории не доверяем gap и держим низ, пока не уляжется вёрстка и медиа. */
+const POST_LOAD_STICK_MS = 1200;
+
 /** Надёжный скролл к последним сообщениям (scrollHeight без clientHeight даёт лишнее в некоторых браузерах). */
 function scrollTimelineToBottom(el) {
   if (!el) return;
@@ -597,6 +600,8 @@ export default function DirectChatScreen({
   chatId,
   peerLabel,
   peerNickname,
+  peerFirstName,
+  peerLastName,
   peerAffiliationEmoji,
   peerUserId,
   peerAvatarUrl,
@@ -702,6 +707,20 @@ export default function DirectChatScreen({
   useLayoutEffect(() => {
     stickToBottomRef.current = true;
   }, [chatId]);
+
+  const prevLoadingRef = useRef(loading);
+  useEffect(() => {
+    const wasLoading = prevLoadingRef.current;
+    prevLoadingRef.current = loading;
+    if (!wasLoading || loading || messages.length === 0) return;
+    let frames = 0;
+    const tick = () => {
+      scrollTimelineToBottom(scrollRef.current);
+      frames += 1;
+      if (frames < 10) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, [loading, messages.length]);
 
   useEffect(() => {
     if (!chatId || !userId) return undefined;
@@ -864,9 +883,10 @@ export default function DirectChatScreen({
       return;
     }
     if (loading) return;
-    if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < 420) {
+    if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < POST_LOAD_STICK_MS) {
       stickToBottomRef.current = true;
       setShowScrollDownFab(false);
+      scrollTimelineToBottom(el);
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -1282,14 +1302,48 @@ export default function DirectChatScreen({
           }}
           disabled={!peerUserId || !onOpenPeerProfile}
         >
-          <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ minWidth: 0 }}>
             {isSavedMessages ? (
-              'Избранное'
-            ) : peerNickname ? (
-              <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
-            ) : (
-              peerLabel || 'Чат'
-            )}
+              <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                Избранное
+              </div>
+            ) : (() => {
+                const full = [peerFirstName, peerLastName].filter(Boolean).join(' ').trim();
+                if (full) {
+                  return (
+                    <>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {full}
+                      </div>
+                      {peerNickname ? (
+                        <div className="muted" style={{ fontSize: 12, marginTop: 2, lineHeight: 1.25, color: 'var(--muted)' }}>
+                          <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
+                        </div>
+                      ) : null}
+                    </>
+                  );
+                }
+                if (peerNickname) {
+                  return (
+                    <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {peerLabel || 'Чат'}
+                  </div>
+                );
+              })()}
           </div>
           {peerPresenceLine != null ? (
             <div className="muted" style={{ fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>
