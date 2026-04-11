@@ -191,9 +191,11 @@ export default function App() {
   }, [refreshSocial, refreshFeed, refreshStories]);
 
   const openStoryAuthor = useCallback(
-    async (authorId, startItemId) => {
+    async (authorId, startItemId, opts = {}) => {
       if (!user?.id) return;
-      const r = await api(`/api/stories/author/${encodeURIComponent(authorId)}`, { userId: user.id });
+      const profileReel = opts.profileReel === true;
+      const q = profileReel ? '?profileGrid=1' : '';
+      const r = await api(`/api/stories/author/${encodeURIComponent(authorId)}${q}`, { userId: user.id });
       if (!r.ok) return;
       const items = r.data.items || [];
       if (items.length === 0) return;
@@ -207,6 +209,7 @@ export default function App() {
       setStoryViewer({
         authorId,
         isSelf,
+        profileReel,
         label: isSelf ? 'Вы' : b?.label || 'История',
         avatarUrl: isSelf ? user.avatarUrl : b?.avatarUrl,
         items,
@@ -217,13 +220,14 @@ export default function App() {
   );
 
   const onStoryArchivedFromViewer = useCallback(
-    async (authorId) => {
+    async (authorId, profileReel) => {
       await refreshStories();
       if (!user?.id || !authorId) {
         setStoryViewer(null);
         return;
       }
-      const r = await api(`/api/stories/author/${encodeURIComponent(authorId)}`, { userId: user.id });
+      const q = profileReel ? '?profileGrid=1' : '';
+      const r = await api(`/api/stories/author/${encodeURIComponent(authorId)}${q}`, { userId: user.id });
       if (!r.ok || !(r.data.items || []).length) {
         setStoryViewer(null);
         return;
@@ -873,8 +877,8 @@ export default function App() {
             await syncOpenChatFromServer();
           }}
           onViewAvatar={(url) => setAvatarLightboxUrl(url)}
-          onOpenStory={(authorId, startItemId) => {
-            void openStoryAuthor(authorId, startItemId);
+          onOpenStory={(authorId, startItemId, opts) => {
+            void openStoryAuthor(authorId, startItemId, opts || {});
           }}
           onStoriesUpdated={() => void refreshStories()}
           viewerPreview={peerFullProfileViewerPreview}

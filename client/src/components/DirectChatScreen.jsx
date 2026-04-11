@@ -25,6 +25,15 @@ import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping
 const MAX_MS = 15000;
 const MIN_MS = 400;
 
+/** Надёжный скролл к последним сообщениям (scrollHeight без clientHeight даёт лишнее в некоторых браузерах). */
+function scrollTimelineToBottom(el) {
+  if (!el) return;
+  const max = el.scrollHeight - el.clientHeight;
+  if (max <= 0) return;
+  if (Math.abs(el.scrollTop - max) < 2) return;
+  el.scrollTop = max;
+}
+
 /** Лента «прижата» к низу при малом числе сообщений — иначе жест и колесо ощущаются перевёрнутыми. */
 const CHAT_TIMELINE_STACK_STYLE = {
   minHeight: '100%',
@@ -666,6 +675,8 @@ export default function DirectChatScreen({
   const stickToBottomRef = useRef(true);
   /** Первые мс после загрузки истории не сбрасываем «прилипание к низу» (иначе scrollTop=0 даёт ложный «не внизу»). */
   const loadEndedAtRef = useRef(0);
+  /** Один rAF на кадр: vv/resize/observer не дёргают scroll по несколько раз подряд. */
+  const stickScrollRafRef = useRef(0);
 
   const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -827,10 +838,7 @@ export default function DirectChatScreen({
 
   /** Скролл ленты без scrollIntoView — на iOS scrollIntoView уводит фокус с поля и закрывает клавиатуру. */
   const scrollMessagesToBottomImmediate = useCallback(() => {
-    const root = scrollRef.current;
-    if (root) {
-      root.scrollTop = root.scrollHeight;
-    }
+    scrollTimelineToBottom(scrollRef.current);
   }, []);
 
   /** Для ResizeObserver / visualViewport: только если «прилипли» к низу; не дёргать при чтении истории. */
@@ -842,52 +850,48 @@ export default function DirectChatScreen({
     scrollMessagesToBottomImmediate();
   }, [scrollMessagesToBottomImmediate]);
 
-  /** Новые сообщения — вниз только пока пользователь у последних (при входе в чат — всегда). */
+  const scheduleScrollToBottomIfStuck = useCallback(() => {
+    if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
+    if (!stickToBottomRef.current) return;
+    cancelAnimationFrame(stickScrollRafRef.current);
+    stickScrollRafRef.current = requestAnimationFrame(() => {
+      stickScrollRafRef.current = 0;
+      scrollMessagesToBottom();
+    });
+  }, [scrollMessagesToBottom]);
+
+  /** После загрузки / новых сообщений — к низу один раз в layout и один раз на следующем кадре (без тройного rAF). */
   useLayoutEffect(() => {
     if (loading) return;
     if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
-    const a = requestAnimationFrame(() => {
-      scrollMessagesToBottomImmediate();
-      requestAnimationFrame(() => scrollMessagesToBottomImmediate());
-    });
-    return () => cancelAnimationFrame(a);
+    requestAnimationFrame(scrollMessagesToBottomImmediate);
   }, [messages, loading, scrollMessagesToBottomImmediate]);
 
-  /** После смены высоты области (клавиатура, vv) — без лишних отложенных каскадов, один кадр. */
+  /** Клавиатура / vv / смена высоты — не чаще одного выравнивания за кадр. */
   useEffect(() => {
     const root = scrollRef.current;
     if (!root) return undefined;
-    let raf = 0;
     const ro = new ResizeObserver(() => {
-      if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) {
-        return;
-      }
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        scrollMessagesToBottom();
-      });
+      scheduleScrollToBottomIfStuck();
     });
     ro.observe(root);
     return () => {
-      cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [scrollMessagesToBottom]);
+  }, [scheduleScrollToBottomIfStuck]);
 
   useEffect(() => {
     const onWinResize = () => {
-      if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
-      requestAnimationFrame(scrollMessagesToBottom);
+      scheduleScrollToBottomIfStuck();
     };
     window.addEventListener('resize', onWinResize);
     return () => window.removeEventListener('resize', onWinResize);
-  }, [scrollMessagesToBottom]);
+  }, [scheduleScrollToBottomIfStuck]);
 
   const onVisualViewportSync = useCallback(() => {
-    if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
-    requestAnimationFrame(scrollMessagesToBottom);
-  }, [scrollMessagesToBottom]);
+    scheduleScrollToBottomIfStuck();
+  }, [scheduleScrollToBottomIfStuck]);
 
   const vvRect = useVisualViewportRect(onVisualViewportSync);
 
@@ -947,7 +951,7 @@ export default function DirectChatScreen({
     };
   }, [syncScrollDownFab, messages.length]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     syncScrollDownFab();
   }, [messages, loading, syncScrollDownFab]);
 
@@ -1739,11 +1743,8 @@ export default function DirectChatScreen({
                 }}
                 onFocus={() => {
                   stickToBottomRef.current = true;
-                  const run = () => scrollMessagesToBottomImmediate();
-                  run();
-                  requestAnimationFrame(run);
-                  window.setTimeout(run, 160);
-                  window.setTimeout(run, 420);
+                  scrollMessagesToBottomImmediate();
+                  requestAnimationFrame(scrollMessagesToBottomImmediate);
                 }}
                 maxLength={4000}
               />

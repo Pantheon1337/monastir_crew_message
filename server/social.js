@@ -1546,16 +1546,16 @@ export function deleteStoryByAuthor(storyId, userId) {
   return { ok: true };
 }
 
-/** Все неистёкшие кадры автора (включая убранные в архив) — для управления в своём профиле. */
+/** Кадры в сетке «мой профиль»: с флагом «в профиле», не снятые с ленты в архив — без лимита 24 ч (пока не удалишь или не уберёшь в архив). */
 export function listOwnStoriesForManagement(userId) {
-  const now = Date.now();
   const rows = getDb()
     .prepare(
       `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden,
         COALESCE(show_in_profile, 1) AS showInProfile
-       FROM stories WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC`,
+       FROM stories WHERE user_id = ? AND COALESCE(show_in_profile, 1) = 1 AND COALESCE(feed_hidden, 0) = 0
+       ORDER BY created_at DESC`,
     )
-    .all(userId, now);
+    .all(userId);
   return rows.map((s) => ({
     id: s.id,
     body: s.body || '',
@@ -1637,18 +1637,24 @@ export function listStoryBucketsForViewer(viewerId) {
   return out;
 }
 
-/** Просмотр историй пользователя (неистёкшие кадры), только если друг или это вы сами. */
+/** Просмотр историй пользователя: лента кружков — только неистёкшие; сетка профиля — кадры «в профиле», пока не архив (без лимита 24 ч). */
 export function listActiveStoryItems(viewerId, authorId, options = {}) {
   if (!canViewerSeeUserStories(viewerId, authorId)) return [];
   const profileGridOnly = options.profileGridOnly === true;
   const now = Date.now();
-  let sql = `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
-       FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0`;
+  let sql;
+  let params;
   if (profileGridOnly) {
-    sql += ` AND COALESCE(show_in_profile, 1) = 1`;
+    sql = `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
+       FROM stories WHERE user_id = ? AND COALESCE(feed_hidden, 0) = 0 AND COALESCE(show_in_profile, 1) = 1`;
+    params = [authorId];
+  } else {
+    sql = `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
+       FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0`;
+    params = [authorId, now];
   }
   sql += ` ORDER BY created_at ASC`;
-  const rows = getDb().prepare(sql).all(authorId, now);
+  const rows = getDb().prepare(sql).all(...params);
   return rows.map((s) => ({
     id: s.id,
     body: s.body || '',
@@ -1658,7 +1664,10 @@ export function listActiveStoryItems(viewerId, authorId, options = {}) {
   }));
 }
 
-/** Архив: истёкшие по времени и снятые с ленты — только кадры самого пользователя (не чужие). */
+/**
+ * Архив: снятые с ленты (feed_hidden) и истёкшие без удержания в профиле.
+ * Кадр с «в профиле» и не убранный в архив с ленты не попадает сюда по одному только истечению 24 ч — он остаётся в сетке профиля.
+ */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const now = Date.now();
   const rows = getDb()
@@ -1670,7 +1679,13 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       FROM stories s
       JOIN users u ON u.id = s.user_id
       WHERE s.user_id = ?
-      AND (s.expires_at <= ? OR COALESCE(s.feed_hidden, 0) = 1)
+      AND (
+        COALESCE(s.feed_hidden, 0) = 1
+        OR (
+          s.expires_at <= ?
+          AND (COALESCE(s.feed_hidden, 0) = 1 OR COALESCE(s.show_in_profile, 1) = 0)
+        )
+      )
       ORDER BY COALESCE(s.feed_hidden_at, s.expires_at) DESC
       LIMIT ?`
     )

@@ -700,7 +700,7 @@ export default function ProfileScreen({
         <div className="block" style={{ padding: 14, marginBottom: 12 }}>
           <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Истории</p>
           <p className="muted" style={{ margin: '0 0 10px', fontSize: 10, lineHeight: 1.4 }}>
-            Активные истории видны только друзьям. Архив — истёкшие за 24 часа и снятые с ленты (свои и друзей).
+            В ленте кружков — 24 часа. В профиле кадры висят, пока не уберёте в архив или не удалите. Архив — снятые с ленты и истёкшие без показа в профиле.
           </p>
           <button type="button" className="btn-outline" onClick={() => onOpenArchive()}>
             Архив историй

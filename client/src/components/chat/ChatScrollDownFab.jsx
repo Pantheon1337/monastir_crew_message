@@ -11,7 +11,8 @@ export default function ChatScrollDownFab({ visible, scrollRef, bottomOffsetPx =
         const el = scrollRef?.current;
         if (!el) return;
         onJumpToBottom?.();
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        el.scrollTo({ top: max, behavior: 'smooth' });
       }}
       style={{
         position: 'fixed',

@@ -25,6 +25,14 @@ const MIN_MS = 400;
 /** Видеокружок можно чуть короче голоса. */
 const MIN_MS_VIDEO = 320;
 
+function scrollTimelineToBottom(el) {
+  if (!el) return;
+  const max = el.scrollHeight - el.clientHeight;
+  if (max <= 0) return;
+  if (Math.abs(el.scrollTop - max) < 2) return;
+  el.scrollTop = max;
+}
+
 const CHAT_TIMELINE_STACK_STYLE = {
   minHeight: '100%',
   display: 'flex',
@@ -589,6 +597,7 @@ export default function RoomChatScreen({
   /** Автоскролл при новых сообщениях / resize только если пользователь у нижней границы ленты. */
   const stickToBottomRef = useRef(true);
   const loadEndedAtRef = useRef(0);
+  const stickScrollRafRef = useRef(0);
 
   const scrollRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -745,10 +754,7 @@ export default function RoomChatScreen({
 
   /** Скролл ленты без scrollIntoView — на iOS scrollIntoView уводит фокус с поля и закрывает клавиатуру. */
   const scrollMessagesToBottomImmediate = useCallback(() => {
-    const root = scrollRef.current;
-    if (root) {
-      root.scrollTop = root.scrollHeight;
-    }
+    scrollTimelineToBottom(scrollRef.current);
   }, []);
 
   /** Для ResizeObserver / visualViewport: только если «прилипли» к низу; не дёргать при чтении истории. */
@@ -760,51 +766,46 @@ export default function RoomChatScreen({
     scrollMessagesToBottomImmediate();
   }, [scrollMessagesToBottomImmediate]);
 
+  const scheduleScrollToBottomIfStuck = useCallback(() => {
+    if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
+    if (!stickToBottomRef.current) return;
+    cancelAnimationFrame(stickScrollRafRef.current);
+    stickScrollRafRef.current = requestAnimationFrame(() => {
+      stickScrollRafRef.current = 0;
+      scrollMessagesToBottom();
+    });
+  }, [scrollMessagesToBottom]);
+
   useLayoutEffect(() => {
     if (loading) return;
     if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
-    const a = requestAnimationFrame(() => {
-      scrollMessagesToBottomImmediate();
-      requestAnimationFrame(() => scrollMessagesToBottomImmediate());
-    });
-    return () => cancelAnimationFrame(a);
+    requestAnimationFrame(scrollMessagesToBottomImmediate);
   }, [messages, loading, scrollMessagesToBottomImmediate]);
 
-  /** После смены высоты области (клавиатура, vv) — один кадр без каскада таймеров. */
   useEffect(() => {
     const root = scrollRef.current;
     if (!root) return undefined;
-    let raf = 0;
     const ro = new ResizeObserver(() => {
-      if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) {
-        return;
-      }
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        scrollMessagesToBottom();
-      });
+      scheduleScrollToBottomIfStuck();
     });
     ro.observe(root);
     return () => {
-      cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [scrollMessagesToBottom]);
+  }, [scheduleScrollToBottomIfStuck]);
 
   useEffect(() => {
     const onWinResize = () => {
-      if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
-      requestAnimationFrame(scrollMessagesToBottom);
+      scheduleScrollToBottomIfStuck();
     };
     window.addEventListener('resize', onWinResize);
     return () => window.removeEventListener('resize', onWinResize);
-  }, [scrollMessagesToBottom]);
+  }, [scheduleScrollToBottomIfStuck]);
 
   const onVisualViewportSync = useCallback(() => {
-    if (typeof window !== 'undefined' && Date.now() < suppressChatScrollUntilRef.current) return;
-    requestAnimationFrame(scrollMessagesToBottom);
-  }, [scrollMessagesToBottom]);
+    scheduleScrollToBottomIfStuck();
+  }, [scheduleScrollToBottomIfStuck]);
 
   const vvRect = useVisualViewportRect(onVisualViewportSync);
 
@@ -846,7 +847,7 @@ export default function RoomChatScreen({
     };
   }, [syncScrollDownFab, messages.length]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     syncScrollDownFab();
   }, [messages, loading, syncScrollDownFab]);
 
@@ -1555,11 +1556,8 @@ export default function RoomChatScreen({
                 }}
                 onFocus={() => {
                   stickToBottomRef.current = true;
-                  const run = () => scrollMessagesToBottomImmediate();
-                  run();
-                  requestAnimationFrame(run);
-                  window.setTimeout(run, 160);
-                  window.setTimeout(run, 420);
+                  scrollMessagesToBottomImmediate();
+                  requestAnimationFrame(scrollMessagesToBottomImmediate);
                 }}
                 maxLength={4000}
               />

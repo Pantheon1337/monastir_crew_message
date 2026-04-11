@@ -181,7 +181,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
       alert(data?.error || 'Не удалось архивировать');
       return;
     }
-    onStoryArchived?.(story.authorId);
+    onStoryArchived?.(story.authorId, story.profileReel === true);
   }
 
   async function sendReact(k) {

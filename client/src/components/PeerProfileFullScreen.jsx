@@ -77,7 +77,7 @@ export default function PeerProfileFullScreen({
     };
   }, [load]);
 
-  /** В сетке: у себя (не предпросмотр) — все неистёкшие кадры включая скрытые с ленты; у других — только активные в ленте. */
+  /** В сетке: у себя — кадры «в профиле», не убранные в архив с ленты; у других — то же по API (без лимита 24 ч). */
   const gridStories = useMemo(() => {
     if (isSelf && !viewerPreview) return manageItems;
     return storyItems;
@@ -294,7 +294,7 @@ export default function PeerProfileFullScreen({
                     <div key={s.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
                       <button
                         type="button"
-                        onClick={() => onOpenStory?.(targetUserId, s.id)}
+                        onClick={() => onOpenStory?.(targetUserId, s.id, { profileReel: true })}
                         style={{
                           border: '1px solid var(--border)',
                           borderRadius: 10,
@@ -434,7 +434,7 @@ export default function PeerProfileFullScreen({
                 </div>
               ) : (
                 <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
-                  Нет историй за последние 24 ч.
+                  Нет историй в профиле.
                 </p>
               )}
             </div>
