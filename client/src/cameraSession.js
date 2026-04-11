@@ -24,10 +24,10 @@ const DEFAULT_CONSTRAINTS = {
 
 /** Квадратный кадр 1:1 для видеокружка — без «лишнего» кропа в круге и с предсказуемым масштабом. */
 const VIDEO_NOTE_BASE = {
-  width: { ideal: 720, min: 360 },
-  height: { ideal: 720, min: 360 },
+  width: { ideal: 540, min: 360 },
+  height: { ideal: 540, min: 360 },
   aspectRatio: { ideal: 1 },
-  frameRate: { ideal: 30, max: 30 },
+  frameRate: { ideal: 24, max: 24 },
 };
 
 function streamAlive(stream) {

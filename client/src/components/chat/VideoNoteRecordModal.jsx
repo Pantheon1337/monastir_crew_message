@@ -10,6 +10,40 @@ import {
   VIDEO_RING_R,
 } from './videoNoteUtils.js';
 
+/** Внутреннее разрешение canvas: ниже — меньше нагрузка на CPU/GPU при rAF + MediaRecorder. */
+const CANVAS_SIZE = 480;
+const CAPTURE_FPS = 24;
+
+/**
+ * object-fit: cover + горизонтальное отражение для селфи (как в Telegram: превью и запись с одного кадра).
+ * Для environment отражение выключено.
+ */
+function drawVideoNoteFrame(video, canvas, flipHorizontal) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh || cw < 2 || ch < 2) return;
+
+  const scale = Math.max(cw / vw, ch / vh);
+  const dw = vw * scale;
+  const dh = vh * scale;
+  const dx = (cw - dw) / 2;
+  const dy = (ch - dh) / 2;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, cw, ch);
+  ctx.save();
+  if (flipHorizontal) {
+    ctx.translate(cw, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+  ctx.restore();
+}
+
 function useRecordingClock() {
   const recStartRef = useRef(0);
   const pausedMsRef = useRef(0);
@@ -71,11 +105,15 @@ function useRecordingClock() {
  */
 export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanner = null }) {
   const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const recRef = useRef(null);
   const maxDurTimerRef = useRef(null);
-  const rafRingRef = useRef(null);
+  const masterRafRef = useRef(null);
   const ringRef = useRef(null);
+  const phaseRef = useRef('preview');
+  const facingModeRef = useRef('user');
+  const snapshotElapsedRef = useRef(() => 0);
   const clock = useRecordingClock();
 
   const [phase, setPhase] = useState('preview'); // preview | recording | paused
@@ -87,13 +125,13 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
   const [sending, setSending] = useState(false);
 
   const cleanupStream = useCallback(() => {
+    if (masterRafRef.current) {
+      cancelAnimationFrame(masterRafRef.current);
+      masterRafRef.current = null;
+    }
     if (maxDurTimerRef.current) {
       clearTimeout(maxDurTimerRef.current);
       maxDurTimerRef.current = null;
-    }
-    if (rafRingRef.current) {
-      cancelAnimationFrame(rafRingRef.current);
-      rafRingRef.current = null;
     }
     const ctx = recRef.current;
     if (ctx?.mr) {
@@ -106,6 +144,11 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     recRef.current = null;
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
+    const c = canvasRef.current;
+    if (c) {
+      const cx = c.getContext('2d');
+      if (cx) cx.clearRect(0, 0, c.width || 1, c.height || 1);
+    }
     scheduleReleaseCameraStream();
   }, []);
 
@@ -129,16 +172,26 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     let cancelled = false;
     (async () => {
       setLoadErr(null);
+      const canvasEarly = canvasRef.current;
+      if (canvasEarly) {
+        canvasEarly.width = CANVAS_SIZE;
+        canvasEarly.height = CANVAS_SIZE;
+      }
       try {
         const stream = await getOrCreateVideoNoteStream(facingMode);
         if (cancelled) return;
         streamRef.current = stream;
         const el = videoRef.current;
+        const canvas = canvasRef.current;
         if (el) {
           el.srcObject = stream;
           el.muted = true;
           el.playsInline = true;
           await el.play().catch(() => {});
+        }
+        if (canvas) {
+          canvas.width = CANVAS_SIZE;
+          canvas.height = CANVAS_SIZE;
         }
       } catch (e) {
         if (!cancelled) setLoadErr(e?.message || 'Нет доступа к камере');
@@ -150,29 +203,34 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     };
   }, [open, facingMode, cleanupStream, resetState]);
 
+  /** Один rAF: кадр в canvas + кольцо и таймер при записи (без setInterval + второго rAF). */
   useEffect(() => {
-    if (!open || phase === 'preview') return undefined;
-    const id = window.setInterval(() => {
-      setElapsedMs(clock.snapshotElapsed());
-    }, 80);
-    return () => clearInterval(id);
-  }, [open, phase, clock]);
-
-  useEffect(() => {
-    if (!open || phase !== 'recording') return undefined;
-    const tick = () => {
-      const el = ringRef.current;
-      if (!el) return;
-      const t = clock.snapshotElapsed();
-      const p = Math.min(1, t / MAX_VIDEO_NOTE_MS);
-      el.setAttribute('stroke-dashoffset', String(VIDEO_RING_LEN * (1 - p)));
-      if (p < 1) rafRingRef.current = requestAnimationFrame(tick);
+    if (!open || loadErr) return undefined;
+    let frameIdx = 0;
+    const loop = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (video && canvas && video.readyState >= 2) {
+        drawVideoNoteFrame(video, canvas, facingModeRef.current === 'user');
+      }
+      const ph = phaseRef.current;
+      if (ph === 'recording' || ph === 'paused') {
+        const t = snapshotElapsedRef.current();
+        if (frameIdx++ % 2 === 0) setElapsedMs(t);
+        const el = ringRef.current;
+        if (el) {
+          const p = Math.min(1, t / MAX_VIDEO_NOTE_MS);
+          el.setAttribute('stroke-dashoffset', String(VIDEO_RING_LEN * (1 - p)));
+        }
+      }
+      masterRafRef.current = requestAnimationFrame(loop);
     };
-    rafRingRef.current = requestAnimationFrame(tick);
+    masterRafRef.current = requestAnimationFrame(loop);
     return () => {
-      if (rafRingRef.current) cancelAnimationFrame(rafRingRef.current);
+      if (masterRafRef.current) cancelAnimationFrame(masterRafRef.current);
+      masterRafRef.current = null;
     };
-  }, [open, phase, clock]);
+  }, [open, loadErr]);
 
   const stopMediaRecorder = useCallback(async () => {
     const ctx = recRef.current;
@@ -238,15 +296,33 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
 
   const handleStartRecording = useCallback(() => {
     const stream = streamRef.current;
-    if (!stream || recRef.current) return;
+    const canvas = canvasRef.current;
+    if (!stream || !canvas || recRef.current) return;
+
+    let recordStream = stream;
+    try {
+      const cap = canvas.captureStream(CAPTURE_FPS);
+      const vt = cap.getVideoTracks()[0];
+      const audio = stream.getAudioTracks();
+      if (vt) {
+        recordStream = audio.length ? new MediaStream([vt, ...audio]) : new MediaStream([vt]);
+      }
+    } catch {
+      recordStream = stream;
+    }
+
     const mime = pickVideoMime();
-    const opts = { videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 };
+    const opts = { videoBitsPerSecond: 1_800_000, audioBitsPerSecond: 128_000 };
     if (mime) opts.mimeType = mime;
     let mr;
     try {
-      mr = new MediaRecorder(stream, opts);
+      mr = new MediaRecorder(recordStream, opts);
     } catch {
-      mr = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+      try {
+        mr = new MediaRecorder(recordStream, mime ? { mimeType: mime } : {});
+      } catch {
+        mr = new MediaRecorder(recordStream);
+      }
     }
     const chunks = [];
     mr.ondataavailable = (e) => {
@@ -325,6 +401,10 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
 
   const canPause = typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.prototype?.pause === 'function';
 
+  snapshotElapsedRef.current = clock.snapshotElapsed;
+  phaseRef.current = phase;
+  facingModeRef.current = facingMode;
+
   if (!open) return null;
 
   const circleSize = 'min(88vmin, 380px)';
@@ -386,6 +466,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   overflow: 'hidden',
                   background: '#000',
                   boxShadow: '0 8px 40px rgba(0,0,0,0.45)',
+                  position: 'relative',
                 }}
               >
                 <video
@@ -394,10 +475,25 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   playsInline
                   muted
                   style={{
+                    position: 'absolute',
+                    inset: 0,
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    transform: 'none',
+                    opacity: 0,
+                    pointerEvents: 'none',
+                  }}
+                />
+                <canvas
+                  ref={canvasRef}
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                    objectFit: 'cover',
                   }}
                 />
               </div>
@@ -449,12 +545,12 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     width: 44,
                     height: 44,
                     borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--panel)',
                     fontSize: 18,
                     cursor: phase === 'preview' ? 'pointer' : 'default',
                     opacity: phase === 'preview' ? 1 : 0.45,
-                    color: '#fff',
+                    color: 'var(--text)',
                   }}
                 >
                   ⇄
@@ -468,12 +564,12 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     width: 44,
                     height: 44,
                     borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--panel)',
                     fontSize: 18,
                     cursor: facingMode === 'environment' ? 'pointer' : 'default',
                     opacity: facingMode === 'environment' ? 1 : 0.35,
-                    color: '#fff',
+                    color: 'var(--text)',
                   }}
                 >
                   {torchOn ? '⚡' : '⚡̸'}
@@ -489,11 +585,11 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     width: 44,
                     height: 44,
                     borderRadius: '50%',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: 'rgba(255,255,255,0.1)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--panel)',
                     fontSize: 14,
                     cursor: canPause ? 'pointer' : 'not-allowed',
-                    color: '#fff',
+                    color: 'var(--text)',
                     opacity: canPause ? 1 : 0.4,
                   }}
                 >
@@ -511,14 +607,22 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                 gap: 10,
                 padding: '12px 14px',
                 borderRadius: 999,
-                background: 'rgba(246, 246, 247, 0.98)',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.25)',
+                background: 'var(--panel)',
+                border: '1px solid var(--border)',
+                boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
               }}
             >
               {(phase === 'recording' || phase === 'paused') && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#e53935', flexShrink: 0 }} aria-hidden />
-                  <span style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', color: '#111', fontWeight: 600 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} aria-hidden />
+                  <span
+                    style={{
+                      fontSize: 14,
+                      fontVariantNumeric: 'tabular-nums',
+                      color: 'var(--text)',
+                      fontWeight: 600,
+                    }}
+                  >
                     {formatVideoNoteTimer(elapsedMs)}
                   </span>
                 </span>
@@ -532,9 +636,9 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     flex: 1,
                     padding: '10px 12px',
                     borderRadius: 999,
-                    border: 'none',
-                    background: '#e53935',
-                    color: '#fff',
+                    border: '1px solid var(--accent)',
+                    background: 'var(--accent)',
+                    color: 'var(--bg)',
                     fontWeight: 600,
                     fontSize: 14,
                     cursor: 'pointer',
@@ -551,7 +655,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   padding: '8px 12px',
                   border: 'none',
                   background: 'transparent',
-                  color: '#007aff',
+                  color: 'var(--muted)',
                   fontSize: 15,
                   fontWeight: 500,
                   cursor: 'pointer',
@@ -569,9 +673,9 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   height: 52,
                   marginLeft: 'auto',
                   borderRadius: '50%',
-                  border: 'none',
-                  background: 'linear-gradient(180deg, #3d9aed, #2b8ae8)',
-                  color: '#fff',
+                  border: '1px solid var(--accent)',
+                  background: 'var(--accent)',
+                  color: 'var(--bg)',
                   fontSize: 22,
                   cursor: phase === 'preview' ? 'not-allowed' : 'pointer',
                   opacity: phase === 'preview' ? 0.45 : 1,
@@ -579,7 +683,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
-                  boxShadow: '0 4px 12px rgba(43,138,232,0.45)',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
                 }}
               >
                 {sending ? '…' : '↑'}
