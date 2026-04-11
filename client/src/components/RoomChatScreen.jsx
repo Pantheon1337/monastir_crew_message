@@ -19,6 +19,8 @@ import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
 
+const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
+
 const MAX_MS = 15000;
 const MIN_MS = 400;
 
@@ -161,10 +163,10 @@ function getCopyTextForMessage(m) {
   return m.body || '';
 }
 
-/** Меню слева от точки касания (палец не попадает на первую кнопку). */
-function clampMenuPosition(x, y, w, h) {
-  const gapX = 22;
-  const gapY = 16;
+/** Меню слева от точки касания (палец не попадает на первую кнопку). opts — доп. отступ от пальца. */
+function clampMenuPosition(x, y, w, h, opts = {}) {
+  const gapX = opts.gapX ?? 32;
+  const gapY = opts.gapY ?? 22;
   if (typeof window === 'undefined') return { left: x - w - gapX, top: y - h - gapY };
   const vv = window.visualViewport;
   if (!vv) {
@@ -761,7 +763,16 @@ export default function RoomChatScreen({
 
   const messageMenuPosition = useMemo(() => {
     if (!messageMenu) return null;
-    return clampMenuPosition(messageMenu.x, messageMenu.y, 232, 200);
+    const sm = messageMenu.submenu ?? 'actions';
+    if (sm === 'quick') {
+      return clampMenuPosition(messageMenu.x, messageMenu.y, 304, 54, { gapX: 34, gapY: 26 });
+    }
+    if (sm === 'reactions') {
+      const h =
+        typeof window !== 'undefined' ? Math.min(280, Math.max(200, window.innerHeight * 0.38)) : 260;
+      return clampMenuPosition(messageMenu.x, messageMenu.y, 300, h, { gapX: 34, gapY: 26 });
+    }
+    return clampMenuPosition(messageMenu.x, messageMenu.y, 268, 360, { gapX: 36, gapY: 28 });
   }, [messageMenu, vvRect]);
 
   const [showScrollDownFab, setShowScrollDownFab] = useState(false);
@@ -1211,7 +1222,7 @@ export default function RoomChatScreen({
                   onReactionsLocalUpdate={(id, reactions) =>
                     setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
                   }
-                  onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, showReactions: false })}
+                  onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, submenu: 'quick' })}
                   onMentionProfile={onMentionProfile}
                   onOpenImagePreview={(url) => setImagePreviewUrl(url)}
                 />
@@ -1480,32 +1491,124 @@ export default function RoomChatScreen({
           />
           <div
             role="menu"
+            onClick={(e) => e.stopPropagation()}
             style={{
               position: 'fixed',
               zIndex: 95,
-              width: 260,
+              width:
+                (messageMenu.submenu ?? 'actions') === 'quick'
+                  ? 'auto'
+                  : (messageMenu.submenu ?? 'actions') === 'reactions'
+                    ? 300
+                    : 260,
+              maxWidth: 'min(304px, calc(100vw - 20px))',
               ...(messageMenuPosition || { left: 8, top: 8 }),
               borderRadius: 'var(--radius)',
               border: '1px solid var(--border)',
               background: 'var(--bg)',
-              padding: 10,
+              padding: (messageMenu.submenu ?? 'actions') === 'quick' ? '6px 8px' : 10,
               boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
               userSelect: 'none',
               WebkitUserSelect: 'none',
             }}
           >
-            <div style={{ marginBottom: 10 }}>
-              {!messageMenu.showReactions ? (
+            {(messageMenu.submenu ?? 'actions') === 'quick' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap' }}>
+                {QUICK_REACTION_KEYS.map((k) => (
+                  <button
+                    key={k}
+                    type="button"
+                    aria-label={`Реакция ${k}`}
+                    onClick={async () => {
+                      const msg = messageMenu.m;
+                      const { ok, data } = await api(
+                        `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(msg.id)}/reaction`,
+                        { method: 'POST', body: { reaction: k }, userId },
+                      );
+                      if (!ok) {
+                        if (data?.error) alert(data.error);
+                      } else if (data?.reactions) {
+                        setMessages((prev) => prev.map((x) => (x.id === msg.id ? { ...x, reactions: data.reactions } : x)));
+                      }
+                      setMessageMenu(null);
+                    }}
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: '50%',
+                      border: '1px solid var(--border)',
+                      background: 'rgba(255,255,255,0.06)',
+                      fontSize: 20,
+                      cursor: 'pointer',
+                      color: 'inherit',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {REACTION_ICONS[k]}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-label="Все реакции"
+                  title="Все реакции"
+                  onClick={() => setMessageMenu((prev) => (prev ? { ...prev, submenu: 'reactions' } : null))}
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: '50%',
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.04)',
+                    fontSize: 18,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    flexShrink: 0,
+                  }}
+                >
+                  ···
+                </button>
+                <button
+                  type="button"
+                  aria-label="Другие действия"
+                  onClick={() => setMessageMenu((prev) => (prev ? { ...prev, submenu: 'actions' } : null))}
+                  style={{
+                    padding: '0 10px',
+                    height: 42,
+                    borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    background: 'rgba(255,255,255,0.06)',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    color: 'inherit',
+                    flexShrink: 0,
+                  }}
+                >
+                  Ещё
+                </button>
+              </div>
+            ) : null}
+            {(messageMenu.submenu ?? 'actions') === 'reactions' ? (
+              <>
                 <button
                   type="button"
                   className="btn-outline"
-                  style={{ width: '100%', fontSize: 12 }}
-                  onClick={() => setMessageMenu((prev) => (prev ? { ...prev, showReactions: true } : null))}
+                  style={{ width: '100%', marginBottom: 8, fontSize: 12 }}
+                  onClick={() => setMessageMenu((prev) => (prev ? { ...prev, submenu: 'quick' } : null))}
                 >
-                  Реакция…
+                  ← К быстрым
                 </button>
-              ) : (
-                <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 6,
+                    justifyContent: 'center',
+                    flexWrap: 'wrap',
+                    maxHeight: 'min(240px, 42vh)',
+                    overflowY: 'auto',
+                    WebkitOverflowScrolling: 'touch',
+                  }}
+                >
                   {REACTION_KEYS.map((k) => (
                     <button
                       key={k}
@@ -1538,8 +1641,18 @@ export default function RoomChatScreen({
                     </button>
                   ))}
                 </div>
-              )}
-            </div>
+              </>
+            ) : null}
+            {(messageMenu.submenu ?? 'actions') === 'actions' ? (
+              <>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  style={{ width: '100%', marginBottom: 10, fontSize: 12 }}
+                  onClick={() => setMessageMenu((prev) => (prev ? { ...prev, submenu: 'quick' } : null))}
+                >
+                  ← К реакциям
+                </button>
             {messageMenu.m.kind !== 'revoked' && !messageMenu.m.revokedForAll ? (
               <button
                 type="button"
@@ -1659,6 +1772,8 @@ export default function RoomChatScreen({
               >
                 Переслать…
               </button>
+            ) : null}
+              </>
             ) : null}
           </div>
         </>

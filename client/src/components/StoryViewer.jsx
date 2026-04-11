@@ -34,11 +34,15 @@ export default function StoryViewer({
   const [isHolding, setIsHolding] = useState(false);
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [reactionToast, setReactionToast] = useState(null);
+  const [replyToast, setReplyToast] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [replyBusy, setReplyBusy] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
   const [viewersLoading, setViewersLoading] = useState(false);
   const [viewersList, setViewersList] = useState([]);
   const reactionToastTimerRef = useRef(null);
+  const replyToastTimerRef = useRef(null);
   /** Не сбрасывать слайд при каждом новом массиве items (архив, refetch) — только при новом «сеансе» просмотра. */
   const sessionKeyRef = useRef('');
   const items = story?.items ?? [];
@@ -114,6 +118,9 @@ export default function StoryViewer({
     return () => {
       if (reactionToastTimerRef.current != null) {
         window.clearTimeout(reactionToastTimerRef.current);
+      }
+      if (replyToastTimerRef.current != null) {
+        window.clearTimeout(replyToastTimerRef.current);
       }
     };
   }, []);
@@ -215,6 +222,12 @@ export default function StoryViewer({
     const swipeTh = 40;
     const tapMax = 22;
 
+    const downward = endY > start.y + 36;
+    if (downward && dy > 52 && Math.abs(dx) < 48) {
+      onClose();
+      return;
+    }
+
     if (Math.abs(dx) >= swipeTh && Math.abs(dx) >= Math.abs(dy) * 0.55) {
       if (dx < 0) goNext();
       else goPrev();
@@ -243,14 +256,8 @@ export default function StoryViewer({
 
   const cur = items[slide];
   const archiveEta = cur?.expiresAt != null ? formatStoryArchiveEta(cur.expiresAt) : null;
-  const canReact = Boolean(userId) && !story.isSelf;
+  const canInteract = Boolean(userId) && !story.isSelf;
   const pct = total > 0 ? (slide / total) * 100 : 0;
-  const isProfile = story.profileReel === true;
-  const feedPrev = story.feedHasPrevAuthor === true;
-  const feedNext = story.feedHasNextAuthor === true;
-  const leftNavLabel = slide > 0 ? '← Назад' : isProfile || !feedPrev ? '← Закрыть' : '← Назад';
-  const rightNavLabel =
-    slide < total - 1 ? 'Вперёд →' : isProfile || !feedNext ? 'Закрыть →' : 'Далее →';
 
   async function archiveCurrentToFeed() {
     if (!userId || !cur?.id || !story?.isSelf) return;
@@ -283,6 +290,33 @@ export default function StoryViewer({
       }, 1500);
     }
   }
+
+  async function sendReply() {
+    const t = replyText.trim();
+    if (!userId || !cur?.id || !t || replyBusy) return;
+    setReplyBusy(true);
+    const { ok, data } = await api('/api/stories/reply', {
+      method: 'POST',
+      body: { storyId: cur.id, body: t },
+      userId,
+    });
+    setReplyBusy(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось отправить');
+      return;
+    }
+    setReplyText('');
+    setReactionBarOpen(false);
+    if (replyToastTimerRef.current != null) window.clearTimeout(replyToastTimerRef.current);
+    setReplyToast('Ответ отправлен в чат');
+    replyToastTimerRef.current = window.setTimeout(() => {
+      replyToastTimerRef.current = null;
+      setReplyToast(null);
+    }, 1600);
+  }
+
+  const safeBottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
+  const safeTop = 'max(10px, env(safe-area-inset-top, 0px))';
 
   return (
     <div
@@ -335,10 +369,40 @@ export default function StoryViewer({
         }
       `}</style>
 
+      <button
+        type="button"
+        aria-label="Закрыть"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }}
+        style={{
+          position: 'fixed',
+          top: safeTop,
+          right: 12,
+          zIndex: 60,
+          width: 40,
+          height: 40,
+          borderRadius: '50%',
+          border: '1px solid rgba(255,255,255,0.22)',
+          background: 'rgba(0,0,0,0.35)',
+          color: 'inherit',
+          cursor: 'pointer',
+          fontSize: 20,
+          lineHeight: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        ×
+      </button>
+
       <div
         className="story-viewer-chrome"
         style={{
-          padding: '6px 12px',
+          padding: '6px 52px 6px 12px',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -356,64 +420,26 @@ export default function StoryViewer({
             <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>{archiveEta}</div>
           ) : null}
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
-          {story.isSelf ? (
-            <button
-              type="button"
-              onClick={() => setViewersOpen(true)}
-              style={{
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 'var(--radius)',
-                padding: '6px 10px',
-                fontSize: 11,
-                background: 'rgba(255,255,255,0.06)',
-                color: 'inherit',
-                cursor: 'pointer',
-              }}
-              title="Кто и когда впервые открыл этот кадр"
-            >
-              Просмотры
-            </button>
-          ) : null}
-          {story.isSelf ? (
-            <button
-              type="button"
-              disabled={archiving}
-              onClick={() => void archiveCurrentToFeed()}
-              style={{
-                border: '1px solid rgba(255,255,255,0.2)',
-                borderRadius: 'var(--radius)',
-                padding: '6px 10px',
-                fontSize: 11,
-                background: 'rgba(255,255,255,0.06)',
-                color: 'inherit',
-                opacity: archiving ? 0.6 : 1,
-              }}
-              title="Убрать этот кадр из ленты кружков; останется в архиве до истечения 24 ч"
-            >
-              {archiving ? '…' : 'Архивировать'}
-            </button>
-          ) : null}
+        {story.isSelf ? (
           <button
             type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
+            disabled={archiving}
+            onClick={() => void archiveCurrentToFeed()}
             style={{
               border: '1px solid rgba(255,255,255,0.2)',
               borderRadius: 'var(--radius)',
               padding: '6px 10px',
               fontSize: 11,
-              background: 'transparent',
+              background: 'rgba(255,255,255,0.06)',
               color: 'inherit',
-              cursor: 'pointer',
+              opacity: archiving ? 0.6 : 1,
+              flexShrink: 0,
             }}
+            title="Убрать этот кадр из ленты кружков; останется в архиве до истечения 24 ч"
           >
-            Закрыть
+            {archiving ? '…' : 'Архивировать'}
           </button>
-        </div>
+        ) : null}
       </div>
 
       <div
@@ -488,39 +514,54 @@ export default function StoryViewer({
         </div>
       </div>
 
-      {canReact ? (
-        <div
-          className="story-viewer-chrome"
+      {story.isSelf ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewersOpen(true);
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
           style={{
+            position: 'fixed',
+            left: 12,
+            bottom: safeBottom,
+            zIndex: 55,
+            border: '1px solid rgba(255,255,255,0.22)',
+            borderRadius: 999,
+            padding: '10px 14px',
+            fontSize: 13,
+            fontWeight: 600,
+            background: 'rgba(0,0,0,0.42)',
+            color: 'inherit',
+            cursor: 'pointer',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
             gap: 8,
-            padding: '12px 16px',
+          }}
+          title="Кто и когда впервые открыл этот кадр"
+        >
+          <span aria-hidden style={{ opacity: 0.9 }}>
+            👁
+          </span>
+          Просмотры
+        </button>
+      ) : null}
+
+      {canInteract ? (
+        <div
+          className="story-viewer-chrome"
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            flexShrink: 0,
             borderTop: '1px solid rgba(255,255,255,0.08)',
+            paddingBottom: safeBottom,
+            position: 'relative',
+            zIndex: 40,
+            background: 'var(--bg)',
           }}
         >
-          <span style={{ width: '100%', textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
-            Реакция уйдёт в чат автору
-          </span>
-          <button
-            type="button"
-            aria-expanded={reactionBarOpen}
-            onClick={() => setReactionBarOpen((v) => !v)}
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: '50%',
-              border: '1px solid rgba(255,255,255,0.25)',
-              background: 'rgba(255,255,255,0.08)',
-              fontSize: 22,
-              cursor: 'pointer',
-              color: 'inherit',
-            }}
-            title="Реакции"
-          >
-            ☺
-          </button>
           {reactionBarOpen ? (
             <div
               style={{
@@ -529,10 +570,10 @@ export default function StoryViewer({
                 flexWrap: 'wrap',
                 gap: 10,
                 width: '100%',
-                maxHeight: 'min(220px, 42vh)',
+                maxHeight: 'min(200px, 36vh)',
                 overflowY: 'auto',
                 WebkitOverflowScrolling: 'touch',
-                paddingBottom: 4,
+                padding: '10px 12px 0',
               }}
             >
               {REACTION_KEYS.map((k) => (
@@ -560,62 +601,92 @@ export default function StoryViewer({
               ))}
             </div>
           ) : null}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 12px',
+            }}
+          >
+            <button
+              type="button"
+              aria-expanded={reactionBarOpen}
+              aria-label="Реакции"
+              onClick={() => setReactionBarOpen((v) => !v)}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.25)',
+                background: 'rgba(255,255,255,0.08)',
+                fontSize: 22,
+                cursor: 'pointer',
+                color: 'inherit',
+                flexShrink: 0,
+              }}
+              title="Реакции"
+            >
+              ☺
+            </button>
+            <input
+              type="text"
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void sendReply();
+                }
+              }}
+              placeholder="Ответить…"
+              maxLength={4000}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '10px 12px',
+                borderRadius: 20,
+                border: '1px solid rgba(255,255,255,0.18)',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'inherit',
+                fontSize: 15,
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              disabled={replyBusy || !replyText.trim()}
+              onClick={() => void sendReply()}
+              style={{
+                flexShrink: 0,
+                padding: '10px 14px',
+                borderRadius: 20,
+                border: 'none',
+                background: 'var(--accent)',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: replyBusy || !replyText.trim() ? 'default' : 'pointer',
+                opacity: replyBusy || !replyText.trim() ? 0.45 : 1,
+              }}
+            >
+              {replyBusy ? '…' : 'Отпр.'}
+            </button>
+          </div>
+          <p
+            className="muted"
+            style={{
+              margin: '0 12px 10px',
+              fontSize: 10,
+              textAlign: 'center',
+              lineHeight: 1.35,
+              opacity: 0.75,
+            }}
+          >
+            Ответ и реакция уходят в личный чат автору
+          </p>
         </div>
       ) : null}
-
-      <div
-        className="story-viewer-chrome"
-        role="toolbar"
-        aria-label="Навигация по истории"
-        style={{
-          display: 'flex',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          position: 'relative',
-          zIndex: 30,
-          flexShrink: 0,
-          paddingBottom: 'max(0px, env(safe-area-inset-bottom, 0px))',
-          touchAction: 'manipulation',
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <button
-          type="button"
-          style={{
-            flex: 1,
-            padding: 14,
-            borderRight: '1px solid rgba(255,255,255,0.08)',
-            fontSize: 12,
-            background: 'transparent',
-            color: 'inherit',
-            cursor: 'pointer',
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            goPrev();
-          }}
-        >
-          {leftNavLabel}
-        </button>
-        <button
-          type="button"
-          style={{
-            flex: 1,
-            padding: 14,
-            fontSize: 12,
-            background: 'transparent',
-            color: 'inherit',
-            cursor: 'pointer',
-          }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            goNext();
-          }}
-        >
-          {rightNavLabel}
-        </button>
-      </div>
 
       <StoryViewersModal
         open={viewersOpen}
@@ -633,7 +704,7 @@ export default function StoryViewer({
             left: '50%',
             top: '50%',
             transform: 'translate(-50%, -50%)',
-            zIndex: 200,
+            zIndex: 220,
             padding: '10px 18px',
             borderRadius: 10,
             background: 'rgba(30, 32, 38, 0.92)',
@@ -647,6 +718,32 @@ export default function StoryViewer({
           }}
         >
           {reactionToast}
+        </div>
+      ) : null}
+
+      {replyToast ? (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 220,
+            padding: '10px 18px',
+            borderRadius: 10,
+            background: 'rgba(30, 32, 38, 0.92)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+            fontSize: 14,
+            fontWeight: 500,
+            pointerEvents: 'none',
+            maxWidth: 'min(320px, calc(100vw - 32px))',
+            textAlign: 'center',
+          }}
+        >
+          {replyToast}
         </div>
       ) : null}
     </div>

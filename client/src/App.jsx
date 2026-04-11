@@ -861,13 +861,12 @@ export default function App() {
         />
       ) : menuStub === 'privacy' ? (
         <StubMenuModal open onClose={() => setMenuStub(null)} title="Конфиденциальность">
-          <label
+          <div
             style={{
               display: 'flex',
               alignItems: 'flex-start',
               justifyContent: 'space-between',
               gap: 14,
-              cursor: user?.id && !privacySaving ? 'pointer' : 'default',
             }}
           >
             <span style={{ flex: 1, minWidth: 0 }}>
@@ -876,16 +875,23 @@ export default function App() {
                 Скрыть от всех точное «был(а) в сети». Вместо времени будет показано: был(а) недавно.
               </span>
             </span>
-            <input
-              type="checkbox"
-              role="switch"
-              aria-label="Скрыть время входа от всех"
-              checked={Boolean(user?.hideLastSeen)}
-              disabled={!user?.id || privacySaving}
-              onChange={(e) => void savePrivacyHideLastSeen(e.target.checked)}
-              style={{ width: 22, height: 22, flexShrink: 0, marginTop: 2, accentColor: 'var(--accent)' }}
-            />
-          </label>
+            <label
+              className="ios-toggle"
+              style={{ cursor: user?.id && !privacySaving ? 'pointer' : 'not-allowed', flexShrink: 0, marginTop: 2 }}
+            >
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="Скрыть время входа от всех"
+                checked={Boolean(user?.hideLastSeen)}
+                disabled={!user?.id || privacySaving}
+                onChange={(e) => void savePrivacyHideLastSeen(e.target.checked)}
+              />
+              <span className="ios-toggle-track">
+                <span className="ios-toggle-thumb" />
+              </span>
+            </label>
+          </div>
         </StubMenuModal>
       ) : menuStub ? (
         <StubMenuModal

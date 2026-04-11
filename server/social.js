@@ -1010,6 +1010,62 @@ export function insertStoryReactionMessage(viewerId, storyId, reactionKey) {
   };
 }
 
+/** Текстовый ответ на чужую историю — сообщение в личный чат автору с привязкой к кадру. */
+export function insertStoryReplyMessage(viewerId, storyId, body) {
+  const trimmed = String(body ?? '').trim();
+  if (!trimmed) return { error: 'Пустое сообщение' };
+  if (trimmed.length > 4000) return { error: 'Сообщение не длиннее 4000 символов' };
+  const st = getDb()
+    .prepare(
+      `SELECT id, user_id AS userId, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden FROM stories WHERE id = ?`
+    )
+    .get(storyId);
+  if (!st) return { error: 'История не найдена' };
+  if (st.expiresAt <= Date.now()) return { error: 'История недоступна' };
+  if (st.feedHidden === 1) return { error: 'История недоступна' };
+  const authorId = st.userId;
+  if (String(authorId) === String(viewerId)) {
+    return { error: 'Нельзя ответить на свою историю' };
+  }
+  const chat = findDirectChatByPair(viewerId, authorId);
+  if (!chat || chat.friendsActive !== 1) {
+    return { error: 'Только для друзей' };
+  }
+  const gateStory = assertCanSendDirectMessage(chat.id, viewerId);
+  if (gateStory.error) return { error: gateStory.error };
+
+  const id = randomUUID();
+  const createdAt = Date.now();
+  getDb()
+    .prepare(
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, ref_story_id, story_reaction_key, media_path, duration_ms)
+       VALUES (?, ?, ?, ?, ?, 'text', ?, NULL, NULL, NULL)`
+    )
+    .run(id, chat.id, viewerId, trimmed, createdAt, storyId);
+
+  const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(viewerId);
+  const sp = getDb().prepare(`SELECT media_path AS mediaPath FROM stories WHERE id = ?`).get(storyId);
+  const refStoryPreviewUrl = sp?.mediaPath ? `/uploads/${sp.mediaPath}` : null;
+
+  return {
+    message: {
+      id,
+      chatId: chat.id,
+      senderId: viewerId,
+      body: trimmed,
+      kind: 'text',
+      mediaUrl: null,
+      durationMs: null,
+      createdAt,
+      senderNickname: sn?.nickname ?? null,
+      refStoryId: storyId,
+      storyReactionKey: null,
+      refStoryPreviewUrl,
+    },
+    peerId: authorId,
+  };
+}
+
 /** Реакция на сообщение в чате (до MAX_REACTIONS_PER_USER на пользователя; повтор по той же эмодзи — снять). */
 export function toggleMessageReaction(chatId, userId, messageId, reactionKey) {
   if (!MESSAGE_REACTION_KEYS.includes(reactionKey)) {
@@ -1736,7 +1792,8 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
         COALESCE(s.feed_hidden, 0) AS feedHidden, s.feed_hidden_at AS feedHiddenAt,
         u.nickname AS nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
-        u.display_role AS authorRole, u.display_role_emoji AS authorEmoji
+        u.display_role AS authorRole, u.display_role_emoji AS authorEmoji,
+        (SELECT COUNT(1) FROM story_views sv WHERE sv.story_id = s.id AND sv.viewer_id != s.user_id) AS viewerCount
       FROM stories s
       JOIN users u ON u.id = s.user_id
       WHERE s.user_id = ?
@@ -1760,6 +1817,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
     expiresAt: r.expiresAt,
     archivedEarly: Number(r.feedHidden) === 1 && r.expiresAt > now,
     feedHiddenAt: r.feedHiddenAt ?? null,
+    viewerCount: Number(r.viewerCount) || 0,
     authorLabel: r.nickname ? `@${r.nickname}` : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
     authorAffiliationEmoji: effectiveAffiliationEmoji(r.nickname, r.authorRole, r.authorEmoji),
     authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,

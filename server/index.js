@@ -71,6 +71,7 @@ import {
   recordStoryView,
   listStoryViewersForAuthor,
   insertStoryReactionMessage,
+  insertStoryReplyMessage,
   toggleMessageReaction,
   hideDirectMessageForViewer,
   revokeDirectMessageForEveryone,
@@ -1068,6 +1069,37 @@ app.post('/api/stories/react', (req, res) => {
     return;
   }
   const result = insertStoryReactionMessage(userId, storyId, reaction.trim());
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const chatId = result.message.chatId;
+  const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+  sendToUser(result.peerId, {
+    type: 'chat:message:new',
+    payload: {
+      chatId,
+      message: msgOut,
+    },
+  });
+  res.status(201).json({ message: msgOut });
+});
+
+app.post('/api/stories/reply', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const storyId = req.body?.storyId;
+  const body = req.body?.body;
+  if (!storyId || typeof storyId !== 'string') {
+    res.status(400).json({ error: 'Нет storyId' });
+    return;
+  }
+  if (typeof body !== 'string' || !body.trim()) {
+    res.status(400).json({ error: 'Пустой ответ' });
+    return;
+  }
+  const result = insertStoryReplyMessage(userId, storyId, body);
   if (result.error) {
     const code = result.error.includes('доступ') ? 403 : 400;
     res.status(code).json({ error: result.error });

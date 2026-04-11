@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   getOrCreateVideoNoteStream,
   replaceVideoNoteFacingMode,
-  scheduleReleaseCameraStream,
   releaseCameraStreamNow,
 } from '../../cameraSession.js';
 import {
@@ -156,7 +155,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
       const cx = c.getContext('2d');
       if (cx) cx.clearRect(0, 0, c.width || 1, c.height || 1);
     }
-    scheduleReleaseCameraStream();
+    releaseCameraStreamNow();
   }, []);
 
   const resetState = useCallback(() => {
@@ -458,6 +457,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
 
   return (
     <div
+      className="video-note-record-modal"
       role="dialog"
       aria-modal="true"
       aria-label="Видеокружок"
@@ -560,7 +560,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                 }}
                 aria-hidden
               >
-                <circle cx="120" cy="120" r={VIDEO_RING_R} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="5" />
+                <circle cx="120" cy="120" r={VIDEO_RING_R} fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="3" />
                 <circle
                   ref={ringRef}
                   cx="120"
@@ -568,7 +568,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   r={VIDEO_RING_R}
                   fill="none"
                   stroke="var(--accent, #c17b4b)"
-                  strokeWidth="5"
+                  strokeWidth="3"
                   strokeLinecap="round"
                   strokeDasharray={VIDEO_RING_LEN}
                   strokeDashoffset={VIDEO_RING_LEN}

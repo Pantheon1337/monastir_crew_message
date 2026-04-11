@@ -1,11 +1,24 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api } from '../api.js';
+import StoryViewersModal from './StoryViewersModal.jsx';
+
+function formatViewerCount(n) {
+  const x = n % 100;
+  if (x >= 11 && x <= 14) return `${n} просмотров`;
+  const m = n % 10;
+  if (m === 1) return `${n} просмотр`;
+  if (m >= 2 && m <= 4) return `${n} просмотра`;
+  return `${n} просмотров`;
+}
 
 export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [viewersStoryId, setViewersStoryId] = useState(null);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [viewersList, setViewersList] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -30,6 +43,26 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
       cancelled = true;
     };
   }, [load]);
+
+  useEffect(() => {
+    if (!viewersStoryId || !userId) return undefined;
+    let cancelled = false;
+    setViewersLoading(true);
+    setViewersList([]);
+    (async () => {
+      const { ok, data } = await api(`/api/stories/${encodeURIComponent(viewersStoryId)}/viewers`, { userId });
+      if (cancelled) return;
+      setViewersLoading(false);
+      if (ok) setViewersList(data.viewers || []);
+      else {
+        setViewersList([]);
+        if (data?.error) alert(data.error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewersStoryId, userId]);
 
   async function restoreToFeed(storyId) {
     if (!userId) return;
@@ -122,6 +155,7 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
               const notExpired = Number(it.expiresAt) > now;
               const canRestore = own && it.archivedEarly && notExpired;
               const canDelete = own;
+              const vc = typeof it.viewerCount === 'number' ? it.viewerCount : 0;
               return (
                 <li
                   key={it.id}
@@ -155,6 +189,19 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
                       ) : null}
                       истекает / истекла {new Date(it.expiresAt).toLocaleString('ru-RU')}
                     </div>
+                    {own ? (
+                      <div style={{ fontSize: 11, marginTop: 6, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                        <span className="muted">{formatViewerCount(vc)}</span>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          style={{ fontSize: 11, padding: '4px 10px', width: 'auto' }}
+                          onClick={() => setViewersStoryId(it.id)}
+                        >
+                          Кто смотрел
+                        </button>
+                      </div>
+                    ) : null}
                     {own ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                         {canRestore ? (
@@ -194,6 +241,13 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
           </ul>
         )}
       </div>
+
+      <StoryViewersModal
+        open={viewersStoryId != null}
+        loading={viewersLoading}
+        viewers={viewersList}
+        onClose={() => setViewersStoryId(null)}
+      />
     </div>
   );
 }

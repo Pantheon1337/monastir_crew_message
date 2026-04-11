@@ -174,13 +174,14 @@ a:hover {
   text-size-adjust: 100%;
 }
 
+/* Не ниже 16px — иначе iOS Safari при фокусе увеличивает страницу */
 .feed-composer-wrap .feed-composer-textarea {
-  font-size: 14px;
-  line-height: 1.35;
+  font-size: 16px;
+  line-height: 1.4;
 }
 
 .feed-composer-wrap .feed-composer-textarea::placeholder {
-  font-size: 12px;
+  font-size: 14px;
   opacity: 0.72;
 }
 
@@ -443,6 +444,20 @@ textarea.chat-composer-textarea {
   pointer-events: none;
 }
 
+/* Запись видеокружка: без подсветки выделения и системного «синего» тапа на iOS */
+.video-note-record-modal button {
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  outline: none;
+}
+
+.video-note-record-modal button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Контейнер: не даём кружку вылезти за экран при «увеличении» */
 .chat-video-note-outer {
   width: 100%;
@@ -467,6 +482,8 @@ textarea.chat-composer-textarea {
   margin-right: auto;
   cursor: pointer;
   overflow: visible;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
   transition:
     width 0.26s cubic-bezier(0.34, 1.15, 0.64, 1),
     height 0.26s cubic-bezier(0.34, 1.15, 0.64, 1),
@@ -480,7 +497,7 @@ textarea.chat-composer-textarea {
   z-index: 1;
   border-radius: 50%;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
   background: #000;
 }
@@ -526,14 +543,14 @@ textarea.chat-composer-textarea {
 
 .chat-video-note-ring-track {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.35);
-  stroke-width: 3.5;
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 2.25;
 }
 
 .chat-video-note-ring-progress {
   fill: none;
   stroke: var(--accent);
-  stroke-width: 3.5;
+  stroke-width: 2.25;
   stroke-linecap: round;
 }
 
@@ -546,6 +563,11 @@ video.chat-video-note {
 }
 
 /* Увеличение без scale — укладываемся в ширину/высоту экрана */
+.chat-video-note-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
 .chat-video-note-wrap--boosted {
   width: min(248px, calc(100vw - 20px), 58vmin);
   height: min(248px, calc(100vw - 20px), 58vmin);
