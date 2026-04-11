@@ -26,11 +26,17 @@ export const storyImageUpload = multer({
   storage,
   limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith('image/')) {
-      cb(new Error('Допустимы только изображения'));
+    const mt = String(file.mimetype || '').toLowerCase();
+    if (mt.startsWith('image/')) {
+      cb(null, true);
       return;
     }
-    cb(null, true);
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.avif'].includes(ext)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error('Допустимы только изображения'));
   },
 });
 

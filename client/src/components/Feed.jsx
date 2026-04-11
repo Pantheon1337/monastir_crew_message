@@ -3,8 +3,17 @@ import PostCard from './PostCard.jsx';
 import { api, apiUpload } from '../api.js';
 
 const FEED_NEW_TOAST_MS = 5200;
+const SWIPE_OPEN_STORY_MIN_PX = 72;
+const SWIPE_OPEN_STORY_MAX_MS = 900;
+/** Свайп вправо (палец движется вправо): открыть камеру истории; не мешает вертикальному скроллу. */
+const SWIPE_HORIZ_RATIO = 1.35;
 
-export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}, onViewAuthorAvatar }) {
+function swipeTargetOk(el) {
+  if (!(el instanceof Element)) return false;
+  return !el.closest('input, textarea, button, select, a, label, [data-feed-no-swipe]');
+}
+
+export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}, onViewAuthorAvatar, onSwipeOpenStory }) {
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState(null);
   const [sending, setSending] = useState(false);
@@ -16,6 +25,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
   const fileRef = useRef(null);
   const feedSeenInitRef = useRef(false);
   const feedLastTopIdRef = useRef(null);
+  const swipeStartRef = useRef(null);
 
   /** Новая запись сверху ленты (не от вас) — короткое всплывающее уведомление */
   useEffect(() => {
@@ -66,6 +76,19 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
     setPendingName('');
   }
 
+  function tryOpenStoryFromSwipe(clientX, clientY) {
+    if (!onSwipeOpenStory || !userId) return;
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const dx = clientX - start.x;
+    const dy = clientY - start.y;
+    if (dx < SWIPE_OPEN_STORY_MIN_PX) return;
+    if (Math.abs(dx) < Math.abs(dy) * SWIPE_HORIZ_RATIO) return;
+    if (Date.now() - start.t > SWIPE_OPEN_STORY_MAX_MS) return;
+    onSwipeOpenStory();
+  }
+
   async function submit(e) {
     e.preventDefault();
     if (!canSend) return;
@@ -88,7 +111,34 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
   }
 
   return (
-    <section style={{ padding: '4px 12px 24px' }}>
+    <section
+      style={{ padding: '4px 12px 24px' }}
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (!t || !swipeTargetOk(e.target)) return;
+        swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+      }}
+      onTouchEnd={(e) => {
+        const t = e.changedTouches[0];
+        if (!t) return;
+        tryOpenStoryFromSwipe(t.clientX, t.clientY);
+      }}
+      onTouchCancel={() => {
+        swipeStartRef.current = null;
+      }}
+      onPointerDown={(e) => {
+        if (e.pointerType === 'touch') return;
+        if (e.button !== 0 || !swipeTargetOk(e.target)) return;
+        swipeStartRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+      }}
+      onPointerUp={(e) => {
+        if (e.pointerType === 'touch') return;
+        tryOpenStoryFromSwipe(e.clientX, e.clientY);
+      }}
+      onPointerCancel={() => {
+        swipeStartRef.current = null;
+      }}
+    >
       {newFeedToastOpen ? (
         <div className="feed-new-post-toast" role="status">
           <span style={{ flex: 1, minWidth: 0 }}>В ленту добавили новую запись</span>

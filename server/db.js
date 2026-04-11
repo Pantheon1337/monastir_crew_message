@@ -665,13 +665,7 @@ export const AFFILIATION_EMOJI_CHOICES = [
 
 const AFFILIATION_EMOJI_SET = new Set(AFFILIATION_EMOJI_CHOICES);
 
-function defaultAffiliationEmojiForRole(role) {
-  if (role === 'developer') return '🛠️';
-  if (role === 'beta') return '🧪';
-  return '👤';
-}
-
-/** Нормализация выбранного смайлика (только из списка) или null = «как у роли по умолчанию». */
+/** Нормализация выбранного смайлика (только из списка) или null = не показывать. */
 export function normalizeAffiliationEmoji(input) {
   if (input == null || input === '') return null;
   const t = String(input).trim();
@@ -679,11 +673,9 @@ export function normalizeAffiliationEmoji(input) {
   return AFFILIATION_EMOJI_SET.has(t) ? t : null;
 }
 
+/** Смайлик у ника только если пользователь сам выбрал его в профиле; без подстановки по роли. */
 export function effectiveAffiliationEmoji(nickname, storedRole, storedEmoji) {
-  const role = computeEffectiveDisplayRole(nickname, storedRole);
-  const picked = normalizeAffiliationEmoji(storedEmoji);
-  if (picked) return picked;
-  return defaultAffiliationEmojiForRole(role);
+  return normalizeAffiliationEmoji(storedEmoji);
 }
 
 export function mapPublicUser(row) {

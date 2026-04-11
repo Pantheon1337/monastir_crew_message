@@ -29,12 +29,6 @@ function formatEditedAt(ts) {
   });
 }
 
-function fallbackAffiliationFromBadge(badge) {
-  if (badge === 'developer') return '🛠️';
-  if (badge === 'beta') return '🧪';
-  return '👤';
-}
-
 function mediaKind(url) {
   if (!url) return null;
   const u = url.split('?')[0].toLowerCase();
@@ -127,7 +121,7 @@ function useLongPress(onLongPress, { ms = 480, moveTol = 12 } = {}) {
 export default function PostCard({ post, viewerId, onChanged, authorOnline, onViewAuthorAvatar }) {
   const vvRect = useVisualViewportRect();
   const nick = post.authorNickname ? `@${post.authorNickname}` : post.authorName || '—';
-  const affiliationEmoji = post.authorAffiliationEmoji || fallbackAffiliationFromBadge(post.authorBadge || 'user');
+  const affiliationEmoji = post.authorAffiliationEmoji || null;
   const isMine = viewerId && String(post.authorId) === String(viewerId);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);

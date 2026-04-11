@@ -830,6 +830,16 @@ video.chat-video-note {
   -webkit-touch-callout: none;
 }
 
+.story-viewer-reply-input {
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+.story-viewer-reply-input::placeholder {
+  font-size: 15px;
+  opacity: 0.8;
+}
+
 .story-viewer-chrome button {
   -webkit-user-select: none;
   user-select: none;

@@ -316,7 +316,6 @@ export default function StoryViewer({
   }
 
   const safeBottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
-  const safeTop = 'max(10px, env(safe-area-inset-top, 0px))';
 
   return (
     <div
@@ -334,33 +333,75 @@ export default function StoryViewer({
     >
       <div
         className="story-viewer-chrome"
-        style={{ padding: '10px 12px', display: 'flex', gap: 4, position: 'relative', zIndex: 30, flexShrink: 0 }}
+        style={{ flexShrink: 0, zIndex: 30, position: 'relative' }}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {items.map((it, i) => (
-          <div
-            key={`${it.id}-${i}`}
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'flex-start',
+            paddingTop: 'max(4px, env(safe-area-inset-top, 0px))',
+            paddingLeft: 12,
+            paddingRight: 12,
+            paddingBottom: 4,
+            minHeight: 44,
+            boxSizing: 'border-box',
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Закрыть"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             style={{
-              flex: 1,
-              height: 3,
-              background: 'rgba(255,255,255,0.15)',
-              borderRadius: 1,
-              overflow: 'hidden',
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              border: '1px solid rgba(255,255,255,0.22)',
+              background: 'rgba(0,0,0,0.35)',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: 22,
+              lineHeight: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
             }}
           >
+            ×
+          </button>
+        </div>
+        <div style={{ padding: '4px 12px 8px', display: 'flex', gap: 4 }}>
+          {items.map((it, i) => (
             <div
+              key={`${it.id}-${i}`}
               style={{
-                height: '100%',
-                width: i < slide ? '100%' : i === slide ? '100%' : '0%',
-                background: 'var(--accent)',
-                transformOrigin: 'left',
-                transform: i === slide ? 'scaleX(0)' : i < slide ? 'scaleX(1)' : 'scaleX(0)',
-                animation: i === slide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
-                animationPlayState: i === slide && isHolding ? 'paused' : 'running',
+                flex: 1,
+                height: 3,
+                background: 'rgba(255,255,255,0.15)',
+                borderRadius: 1,
+                overflow: 'hidden',
               }}
-            />
-          </div>
-        ))}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: i < slide ? '100%' : i === slide ? '100%' : '0%',
+                  background: 'var(--accent)',
+                  transformOrigin: 'left',
+                  transform: i === slide ? 'scaleX(0)' : i < slide ? 'scaleX(1)' : 'scaleX(0)',
+                  animation: i === slide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
+                  animationPlayState: i === slide && isHolding ? 'paused' : 'running',
+                }}
+              />
+            </div>
+          ))}
+        </div>
       </div>
       <style>{`
         @keyframes storySeg {
@@ -369,40 +410,10 @@ export default function StoryViewer({
         }
       `}</style>
 
-      <button
-        type="button"
-        aria-label="Закрыть"
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onClose();
-        }}
-        style={{
-          position: 'fixed',
-          top: safeTop,
-          right: 12,
-          zIndex: 60,
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          border: '1px solid rgba(255,255,255,0.22)',
-          background: 'rgba(0,0,0,0.35)',
-          color: 'inherit',
-          cursor: 'pointer',
-          fontSize: 20,
-          lineHeight: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        ×
-      </button>
-
       <div
         className="story-viewer-chrome"
         style={{
-          padding: '6px 52px 6px 12px',
+          padding: '6px 12px',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -631,6 +642,7 @@ export default function StoryViewer({
             </button>
             <input
               type="text"
+              className="story-viewer-reply-input"
               value={replyText}
               onChange={(e) => setReplyText(e.target.value)}
               onKeyDown={(e) => {
@@ -649,7 +661,7 @@ export default function StoryViewer({
                 border: '1px solid rgba(255,255,255,0.18)',
                 background: 'rgba(255,255,255,0.06)',
                 color: 'inherit',
-                fontSize: 15,
+                fontSize: 16,
                 outline: 'none',
               }}
             />

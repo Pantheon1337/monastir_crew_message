@@ -40,7 +40,8 @@ export async function apiUpload(path, { file, userId, fieldName = 'avatar', extr
   fd.append(fieldName, file);
   if (extraFields && typeof extraFields === 'object') {
     for (const [k, v] of Object.entries(extraFields)) {
-      if (v != null && v !== '') fd.append(k, String(v));
+      if (v === undefined) continue;
+      fd.append(k, v === null ? '' : String(v));
     }
   }
   const headers = {};

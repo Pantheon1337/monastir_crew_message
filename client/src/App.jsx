@@ -699,6 +699,7 @@ export default function App() {
             presenceOnline={presenceOnline}
             onPosted={refreshFeed}
             onViewAuthorAvatar={(url) => setAvatarLightboxUrl(url)}
+            onSwipeOpenStory={() => setStoryCreateOpen(true)}
           />
         </>
       )}
