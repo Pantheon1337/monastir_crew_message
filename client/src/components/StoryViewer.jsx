@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
+import StoryViewersModal from './StoryViewersModal.jsx';
 
 const SLIDE_MS = 4800;
 
@@ -34,6 +35,9 @@ export default function StoryViewer({
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [reactionToast, setReactionToast] = useState(null);
   const [archiving, setArchiving] = useState(false);
+  const [viewersOpen, setViewersOpen] = useState(false);
+  const [viewersLoading, setViewersLoading] = useState(false);
+  const [viewersList, setViewersList] = useState([]);
   const reactionToastTimerRef = useRef(null);
   /** Не сбрасывать слайд при каждом новом массиве items (архив, refetch) — только при новом «сеансе» просмотра. */
   const sessionKeyRef = useRef('');
@@ -119,6 +123,27 @@ export default function StoryViewer({
       sessionKeyRef.current = '';
     };
   }, []);
+
+  useEffect(() => {
+    if (!viewersOpen || !userId || !story.isSelf) return undefined;
+    const id = items[slide]?.id;
+    if (!id) return undefined;
+    let cancelled = false;
+    setViewersLoading(true);
+    (async () => {
+      const { ok, data } = await api(`/api/stories/${encodeURIComponent(id)}/viewers`, { userId });
+      if (cancelled) return;
+      setViewersLoading(false);
+      if (ok) setViewersList(data.viewers || []);
+      else {
+        setViewersList([]);
+        if (data?.error) alert(data.error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewersOpen, slide, items, story.isSelf, userId]);
 
   useEffect(() => {
     const cur = items[slide];
@@ -332,6 +357,24 @@ export default function StoryViewer({
           ) : null}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>
+          {story.isSelf ? (
+            <button
+              type="button"
+              onClick={() => setViewersOpen(true)}
+              style={{
+                border: '1px solid rgba(255,255,255,0.2)',
+                borderRadius: 'var(--radius)',
+                padding: '6px 10px',
+                fontSize: 11,
+                background: 'rgba(255,255,255,0.06)',
+                color: 'inherit',
+                cursor: 'pointer',
+              }}
+              title="Кто и когда впервые открыл этот кадр"
+            >
+              Просмотры
+            </button>
+          ) : null}
           {story.isSelf ? (
             <button
               type="button"
@@ -573,6 +616,13 @@ export default function StoryViewer({
           {rightNavLabel}
         </button>
       </div>
+
+      <StoryViewersModal
+        open={viewersOpen}
+        loading={viewersLoading}
+        viewers={viewersList}
+        onClose={() => setViewersOpen(false)}
+      />
 
       {reactionToast ? (
         <div

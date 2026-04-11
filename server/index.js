@@ -69,6 +69,7 @@ import {
   unblockUser,
   getFriendshipMetaForProfile,
   recordStoryView,
+  listStoryViewersForAuthor,
   insertStoryReactionMessage,
   toggleMessageReaction,
   hideDirectMessageForViewer,
@@ -1390,6 +1391,19 @@ app.get('/api/stories/archive', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   res.json({ items: listArchivedStoriesForViewer(userId) });
+});
+
+/** Кто смотрел кадр (только автор); для каждого зрителя — время первого просмотра. */
+app.get('/api/stories/:storyId/viewers', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = listStoryViewersForAuthor(req.params.storyId, userId);
+  if (out.error) {
+    const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  res.json({ viewers: out.viewers });
 });
 
 app.get('/api/stories/me/manage', (req, res) => {

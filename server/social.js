@@ -914,13 +914,41 @@ export function recordStoryView(viewerId, storyId) {
     return { error: 'История недоступна' };
   }
   const now = Date.now();
+  /** Только первый просмотр сохраняется; повторные открытия не меняют дату (как в запросе «кто смотрел»). */
   getDb()
-    .prepare(
-      `INSERT INTO story_views (viewer_id, story_id, viewed_at) VALUES (?, ?, ?)
-       ON CONFLICT(viewer_id, story_id) DO UPDATE SET viewed_at = excluded.viewed_at`
-    )
+    .prepare(`INSERT OR IGNORE INTO story_views (viewer_id, story_id, viewed_at) VALUES (?, ?, ?)`)
     .run(viewerId, storyId, now);
   return { ok: true };
+}
+
+/** Список зрителей кадра (только автор). У каждого пользователя — время первого просмотра. */
+export function listStoryViewersForAuthor(storyId, authorId) {
+  const st = getDb().prepare(`SELECT id, user_id AS userId FROM stories WHERE id = ?`).get(storyId);
+  if (!st) return { error: 'История не найдена' };
+  if (String(st.userId) !== String(authorId)) return { error: 'Нет доступа' };
+  const rows = getDb()
+    .prepare(
+      `SELECT v.viewer_id AS viewerId, v.viewed_at AS viewedAt,
+        u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName,
+        u.avatar_path AS avatarPath, u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+       FROM story_views v
+       JOIN users u ON u.id = v.viewer_id
+       WHERE v.story_id = ? AND v.viewer_id != ?
+       ORDER BY v.viewed_at ASC`
+    )
+    .all(storyId, authorId);
+  return {
+    ok: true,
+    viewers: rows.map((r) => ({
+      userId: r.viewerId,
+      viewedAt: r.viewedAt,
+      nickname: r.authorNickname,
+      authorName: `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || '—',
+      avatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+      authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
+      authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+    })),
+  };
 }
 
 /** Реакция на чужую историю — сообщение в личный чат автору. */
