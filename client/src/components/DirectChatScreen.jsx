@@ -15,11 +15,9 @@ import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { REACTION_KEYS, REACTION_ICONS, emptyReactionCounts, normalizeReactionMine } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
-import {
-  getOrCreateCameraStream,
-  scheduleReleaseCameraStream,
-  releaseCameraStreamNow,
-} from '../cameraSession.js';
+import { useLeftEdgeSwipeBack } from '../hooks/useLeftEdgeSwipeBack.js';
+import { releaseCameraStreamNow } from '../cameraSession.js';
+import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
 
@@ -76,54 +74,12 @@ function peerPresenceSubtitle(online, lastSeenAt, lastSeenHidden) {
   if (online === false) return 'не в сети';
   return null;
 }
-/** Видеокружок можно чуть короче голоса. */
-const MIN_MS_VIDEO = 320;
-
 function pickAudioMime() {
   if (typeof MediaRecorder === 'undefined') return '';
   if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
   if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
   if (MediaRecorder.isTypeSupported('audio/mp4')) return 'audio/mp4';
   return '';
-}
-
-function pickVideoMime() {
-  if (typeof MediaRecorder === 'undefined') return '';
-  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) return 'video/webm;codecs=vp9,opus';
-  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) return 'video/webm;codecs=vp8,opus';
-  if (MediaRecorder.isTypeSupported('video/webm')) return 'video/webm';
-  if (MediaRecorder.isTypeSupported('video/mp4')) return 'video/mp4';
-  if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E,mp4a.40.2')) return 'video/mp4;codecs=avc1.42E01E,mp4a.40.2';
-  return '';
-}
-
-/** Длина обводки SVG (прогресс записи кружка). */
-const VIDEO_RING_R = 118;
-const VIDEO_RING_LEN = 2 * Math.PI * VIDEO_RING_R;
-
-function buildVideoNoteFile(blob, mr) {
-  const rawMime = (mr.mimeType || blob.type || '').trim().toLowerCase();
-  let ext = 'webm';
-  let fileType = 'video/webm';
-  if (rawMime.startsWith('video/')) {
-    fileType = rawMime.split(';')[0];
-    if (rawMime.includes('mp4') || rawMime.includes('quicktime')) ext = 'mp4';
-    else if (rawMime.includes('webm')) ext = 'webm';
-    else ext = 'mp4';
-  } else if (rawMime.startsWith('audio/webm')) {
-    fileType = 'video/webm';
-    ext = 'webm';
-  } else if (rawMime.includes('mp4')) {
-    fileType = 'video/mp4';
-    ext = 'mp4';
-  } else {
-    const fallback = pickVideoMime();
-    if (fallback.includes('mp4')) {
-      fileType = 'video/mp4';
-      ext = 'mp4';
-    }
-  }
-  return new File([blob], `note.${ext}`, { type: fileType });
 }
 
 function formatDur(ms) {
@@ -662,7 +618,6 @@ export default function DirectChatScreen({
   const [err, setErr] = useState(null);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [videoModal, setVideoModal] = useState(false);
-  const [videoRecording, setVideoRecording] = useState(false);
   /** Пустое поле: «кружок» (видео) ↔ микрофон (аудио) */
   const [mediaMode, setMediaMode] = useState('video');
   const [messageMenu, setMessageMenu] = useState(null);
@@ -690,15 +645,7 @@ export default function DirectChatScreen({
   const voiceStreamRef = useRef(null);
   const voiceTimerRef = useRef(null);
   const voiceBusyRef = useRef(false);
-  const videoStreamRef = useRef(null);
-  const videoElRef = useRef(null);
-  const videoRecRef = useRef(null);
-  const videoTimerRef = useRef(null);
-  const videoPointerCleanupRef = useRef(null);
-  const videoRingAccentRef = useRef(null);
   const holdTimerRef = useRef(null);
-  /** Длительность текущей записи кружка (мс), для таймера в UI. */
-  const [videoRecordElapsedMs, setVideoRecordElapsedMs] = useState(0);
   /** Становится true только если сработал таймер удержания (до старта записи). */
   const longPressArmedRef = useRef(false);
   const mediaModeRef = useRef('video');
@@ -708,32 +655,14 @@ export default function DirectChatScreen({
     mediaModeRef.current = mediaMode;
   }, [mediaMode]);
 
-  useEffect(() => {
-    if (!videoModal || !videoRecording) {
-      setVideoRecordElapsedMs(0);
-      return undefined;
-    }
-    const id = window.setInterval(() => {
-      const s = videoRecRef.current?.started;
-      setVideoRecordElapsedMs(s ? Math.min(MAX_MS, Date.now() - s) : 0);
-    }, 100);
-    return () => window.clearInterval(id);
-  }, [videoModal, videoRecording]);
-
-  useEffect(() => {
-    if (!videoModal || !videoRecording) return undefined;
-    let raf = 0;
-    const tick = () => {
-      const ctx = videoRecRef.current;
-      const el = videoRingAccentRef.current;
-      if (!ctx || !el) return;
-      const p = Math.min(1, (Date.now() - ctx.started) / MAX_MS);
-      el.setAttribute('stroke-dashoffset', String(VIDEO_RING_LEN * (1 - p)));
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [videoModal, videoRecording]);
+  useLeftEdgeSwipeBack(onClose, {
+    disabled:
+      videoModal ||
+      voiceRecording ||
+      messageMenu != null ||
+      forwardOpen ||
+      imagePreviewUrl != null,
+  });
 
   const onMentionProfile = useCallback(
     async (nick) => {
@@ -1206,171 +1135,31 @@ export default function DirectChatScreen({
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
-  /** Удержание в режиме «кружок»: открыть камеру и сразу писать кружок */
-  async function startVideoHoldFromComposer() {
+  /** Удержание в режиме «кружок»: полноэкранная запись (см. VideoNoteRecordModal). */
+  function startVideoHoldFromComposer() {
     if (canMessage === false) return;
     setErr(null);
     setVideoModal(true);
-    await new Promise((r) => setTimeout(r, 40));
-    let stream;
-    try {
-      stream = await getOrCreateCameraStream();
-    } catch (e) {
-      setErr(e?.message || 'Нет доступа к камере');
-      setVideoModal(false);
-      longPressArmedRef.current = false;
-      return;
-    }
-    videoStreamRef.current = stream;
-    for (let i = 0; i < 20; i++) {
-      const el = videoElRef.current;
-      if (el) {
-        el.srcObject = stream;
-        el.muted = true;
-        el.playsInline = true;
-        await el.play().catch(() => {});
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 35));
-    }
-    if (!videoElRef.current) {
-      setErr('Камера не готова');
-      releaseCameraStreamNow();
-      videoStreamRef.current = null;
-      setVideoModal(false);
-      longPressArmedRef.current = false;
-      return;
-    }
-    await startVideoRecord();
   }
 
-  function closeVideoModal() {
-    videoPointerCleanupRef.current?.();
-    videoPointerCleanupRef.current = null;
-    if (videoTimerRef.current) {
-      clearTimeout(videoTimerRef.current);
-      videoTimerRef.current = null;
-    }
-    const ctx = videoRecRef.current;
-    if (ctx?.mr) {
-      try {
-        ctx.mr.stop();
-      } catch {
-        /* */
-      }
-    }
-    videoRecRef.current = null;
-    videoStreamRef.current = null;
-    if (videoElRef.current) videoElRef.current.srcObject = null;
-    scheduleReleaseCameraStream();
-    setVideoRecording(false);
-    setVideoModal(false);
-  }
-
-  async function startVideoRecord() {
-    const stream = videoStreamRef.current;
-    if (!stream || videoRecRef.current) return;
-    const mime = pickVideoMime();
-    const videoRecOpts = {
-      videoBitsPerSecond: 2_500_000,
-      audioBitsPerSecond: 128_000,
-    };
-    if (mime) videoRecOpts.mimeType = mime;
-    let mr;
-    try {
-      mr = new MediaRecorder(stream, videoRecOpts);
-    } catch {
-      mr = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
-    }
-    const chunks = [];
-    mr.ondataavailable = (e) => {
-      if (e.data?.size) chunks.push(e.data);
-    };
-    const started = Date.now();
-    mr.start(200);
-    videoRecRef.current = { mr, chunks, started };
-    setVideoRecording(true);
-    videoTimerRef.current = setTimeout(() => void stopVideoRecord(), MAX_MS);
-    const onWinUp = () => void stopVideoRecord();
-    window.addEventListener('pointerup', onWinUp);
-    window.addEventListener('pointercancel', onWinUp);
-    videoPointerCleanupRef.current = () => {
-      window.removeEventListener('pointerup', onWinUp);
-      window.removeEventListener('pointercancel', onWinUp);
-    };
-  }
-
-  async function stopVideoRecord() {
-    videoPointerCleanupRef.current?.();
-    videoPointerCleanupRef.current = null;
-    if (videoTimerRef.current) {
-      clearTimeout(videoTimerRef.current);
-      videoTimerRef.current = null;
-    }
-    const ctx = videoRecRef.current;
-    videoRecRef.current = null;
-    setVideoRecording(false);
-    if (!ctx) return;
-    const { mr, chunks, started } = ctx;
-    try {
-      if (typeof mr.requestData === 'function') mr.requestData();
-    } catch {
-      /* */
-    }
-    await new Promise((r) => {
-      mr.onstop = r;
-      try {
-        mr.stop();
-      } catch {
-        r();
-      }
-    });
-    const elapsed = Math.min(MAX_MS, Date.now() - started);
-    if (elapsed < MIN_MS_VIDEO) {
-      setErr('Слишком коротко');
-      closeVideoModal();
-      return;
-    }
-    const blob = new Blob(chunks, { type: mr.mimeType || 'video/webm' });
-    if (!blob.size) {
-      setErr('Пустая запись — попробуйте ещё раз');
-      closeVideoModal();
-      return;
-    }
-    const file = buildVideoNoteFile(blob, mr);
+  async function sendVideoNoteFromModal(file, durationMs) {
     if (canMessage === false) {
-      closeVideoModal();
+      setVideoModal(false);
       return;
     }
     const { ok, data } = await apiUpload(`/api/chats/${encodeURIComponent(chatId)}/messages/video-note`, {
       file,
       userId,
       fieldName: 'file',
-      extraFields: { durationMs: String(elapsed) },
+      extraFields: { durationMs: String(durationMs) },
     });
     if (!ok) {
-      setErr(data?.error || 'Не отправлено');
-      closeVideoModal();
-      return;
+      throw new Error(data?.error || 'Не отправлено');
     }
     appendMessage(data.message);
     await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
     onAfterChange?.();
-    closeVideoModal();
   }
-
-  useEffect(() => {
-    if (!videoModal) return undefined;
-    const t = setTimeout(() => {
-      const el = videoElRef.current;
-      const s = videoStreamRef.current;
-      if (el && s) {
-        el.srcObject = s;
-        el.play().catch(() => {});
-      }
-    }, 50);
-    return () => clearTimeout(t);
-  }, [videoModal]);
 
   function clearHoldTimer() {
     if (holdTimerRef.current) {
@@ -1400,11 +1189,6 @@ export default function DirectChatScreen({
 
   function onMediaButtonPointerUp() {
     clearHoldTimer();
-    if (videoRecRef.current) {
-      void stopVideoRecord();
-      longPressArmedRef.current = false;
-      return;
-    }
     if (voiceRecording) {
       void stopVoiceAndSend();
       longPressArmedRef.current = false;
@@ -1702,7 +1486,7 @@ export default function DirectChatScreen({
             <button
               type="button"
               className="icon-btn"
-              disabled={canMessage === false || mediaUploading || voiceRecording || videoRecording || videoModal}
+              disabled={canMessage === false || mediaUploading || voiceRecording || videoModal}
               aria-label="Прикрепить фото или файл"
               onClick={() => chatFileInputRef.current?.click()}
               style={{
@@ -1802,14 +1586,9 @@ export default function DirectChatScreen({
               flexShrink: 0,
               borderRadius: '50%',
               border: `2px solid ${
-                voiceRecording || videoRecording
-                  ? 'var(--accent)'
-                  : mediaMode === 'video'
-                    ? 'var(--border)'
-                    : 'var(--border)'
+                voiceRecording ? 'var(--accent)' : mediaMode === 'video' ? 'var(--border)' : 'var(--border)'
               }`,
-              background:
-                voiceRecording || videoRecording ? 'rgba(193, 123, 75, 0.15)' : 'transparent',
+              background: voiceRecording ? 'rgba(193, 123, 75, 0.15)' : 'transparent',
               fontSize: mediaMode === 'video' ? 20 : 19,
               cursor: 'pointer',
               color: 'var(--text)',
@@ -1857,124 +1636,13 @@ export default function DirectChatScreen({
         </div>
       ) : null}
 
-      {videoModal ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 90,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-            paddingTop: 'max(16px, env(safe-area-inset-top))',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 400,
-              display: 'flex',
-              justifyContent: 'flex-end',
-              marginBottom: 8,
-            }}
-          >
-            <button
-              type="button"
-              onClick={closeVideoModal}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 'var(--radius)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                background: 'var(--bg)',
-                cursor: 'pointer',
-                fontSize: 13,
-                WebkitUserSelect: 'none',
-                userSelect: 'none',
-              }}
-            >
-              Отмена
-            </button>
-          </div>
-          <p
-            className="modal-panel"
-            style={{
-              color: 'var(--text)',
-              fontSize: 13,
-              marginBottom: 12,
-              textAlign: 'center',
-              maxWidth: 320,
-            }}
-          >
-            {videoRecording ? (
-              <>
-                {formatDur(videoRecordElapsedMs)} / {formatDur(MAX_MS)}
-                <br />
-                <span className="muted" style={{ fontSize: 11 }}>
-                  Отпустите палец — отправится сразу
-                </span>
-              </>
-            ) : (
-              'Камера…'
-            )}
-          </p>
-          <div
-            style={{
-              position: 'relative',
-              width: 240,
-              height: 240,
-              marginBottom: 12,
-              touchAction: 'none',
-            }}
-          >
-            <div
-              style={{
-                width: '100%',
-                height: '100%',
-                borderRadius: '50%',
-                overflow: 'hidden',
-                background: '#000',
-              }}
-            >
-              <video ref={videoElRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
-            <svg
-              viewBox="0 0 240 240"
-              width={252}
-              height={252}
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                marginLeft: -126,
-                marginTop: -126,
-                pointerEvents: 'none',
-                transform: 'rotate(-90deg)',
-              }}
-              aria-hidden
-            >
-              <circle cx="120" cy="120" r={VIDEO_RING_R} fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="5" />
-              <circle
-                ref={videoRingAccentRef}
-                cx="120"
-                cy="120"
-                r={VIDEO_RING_R}
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="5"
-                strokeLinecap="round"
-                strokeDasharray={VIDEO_RING_LEN}
-                strokeDashoffset={VIDEO_RING_LEN}
-              />
-            </svg>
-          </div>
-        </div>
-      ) : null}
+      <VideoNoteRecordModal
+        open={videoModal}
+        onClose={() => setVideoModal(false)}
+        onSend={async (file, durationMs) => {
+          await sendVideoNoteFromModal(file, durationMs);
+        }}
+      />
 
       {messageMenu ? (
         <>

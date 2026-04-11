@@ -22,6 +22,14 @@ const DEFAULT_CONSTRAINTS = {
   },
 };
 
+/** Квадратный кадр 1:1 для видеокружка — без «лишнего» кропа в круге и с предсказуемым масштабом. */
+const VIDEO_NOTE_BASE = {
+  width: { ideal: 720, min: 360 },
+  height: { ideal: 720, min: 360 },
+  aspectRatio: { ideal: 1 },
+  frameRate: { ideal: 30, max: 30 },
+};
+
 function streamAlive(stream) {
   if (!stream) return false;
   const v = stream.getVideoTracks()[0];
@@ -51,6 +59,36 @@ export async function getOrCreateCameraStream(constraints = DEFAULT_CONSTRAINTS)
     }
     cachedStream = null;
   }
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  cachedStream = stream;
+  return stream;
+}
+
+/**
+ * Поток для видеокружка: квадрат 1:1, без зеркалирования в CSS (запись = то, что с камеры).
+ * При смене камеры сбрасываем кэш и запрашиваем заново.
+ */
+export async function getOrCreateVideoNoteStream(facingMode = 'user') {
+  clearReleaseTimer();
+  if (cachedStream) {
+    try {
+      cachedStream.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* */
+    }
+    cachedStream = null;
+  }
+  const constraints = {
+    video: {
+      ...VIDEO_NOTE_BASE,
+      facingMode,
+    },
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      channelCount: 1,
+    },
+  };
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   cachedStream = stream;
   return stream;
