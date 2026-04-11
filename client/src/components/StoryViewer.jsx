@@ -458,7 +458,19 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
             ☺
           </button>
           {reactionBarOpen ? (
-            <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                flexWrap: 'wrap',
+                gap: 10,
+                width: '100%',
+                maxHeight: 'min(220px, 42vh)',
+                overflowY: 'auto',
+                WebkitOverflowScrolling: 'touch',
+                paddingBottom: 4,
+              }}
+            >
               {REACTION_KEYS.map((k) => (
                 <button
                   key={k}

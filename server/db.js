@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 let db;
 
@@ -493,6 +493,86 @@ function migrate(database) {
     `);
     setSchemaVersion(database, 25);
     ver = 25;
+  }
+
+  if (ver < 26) {
+    database.transaction(() => {
+      database.exec(`
+        CREATE TABLE message_reactions_new (
+          message_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          reaction TEXT NOT NULL CHECK(reaction IN ('like','heart','lol','fire','party','wow','sad','pray','down','hundred')),
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (message_id, user_id, reaction)
+        );
+      `);
+      database.exec(`
+        INSERT INTO message_reactions_new (message_id, user_id, reaction, created_at)
+        SELECT message_id, user_id,
+          CASE reaction
+            WHEN 'up' THEN 'like'
+            WHEN 'down' THEN 'down'
+            WHEN 'fire' THEN 'fire'
+            WHEN 'poop' THEN 'lol'
+          END,
+          created_at
+        FROM message_reactions
+        WHERE reaction IN ('up','down','fire','poop')
+      `);
+      database.exec(`DROP TABLE message_reactions`);
+      database.exec(`ALTER TABLE message_reactions_new RENAME TO message_reactions`);
+      database.exec(`CREATE INDEX IF NOT EXISTS idx_msg_react_msg ON message_reactions(message_id)`);
+
+      database.exec(`
+        CREATE TABLE post_reactions_new (
+          post_id TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          reaction TEXT NOT NULL CHECK(reaction IN ('like','heart','lol','fire','party','wow','sad','pray','down','hundred')),
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (post_id, user_id, reaction)
+        );
+      `);
+      database.exec(`
+        INSERT INTO post_reactions_new (post_id, user_id, reaction, created_at)
+        SELECT post_id, user_id,
+          CASE reaction
+            WHEN 'up' THEN 'like'
+            WHEN 'down' THEN 'down'
+            WHEN 'fire' THEN 'fire'
+            WHEN 'poop' THEN 'lol'
+          END,
+          created_at
+        FROM post_reactions
+        WHERE reaction IN ('up','down','fire','poop')
+      `);
+      database.exec(`DROP TABLE post_reactions`);
+      database.exec(`ALTER TABLE post_reactions_new RENAME TO post_reactions`);
+      database.exec(`CREATE INDEX IF NOT EXISTS idx_post_react_post ON post_reactions(post_id)`);
+
+      database.exec(`
+        UPDATE messages SET story_reaction_key = CASE story_reaction_key
+          WHEN 'up' THEN 'like'
+          WHEN 'poop' THEN 'lol'
+          WHEN 'down' THEN 'down'
+          WHEN 'fire' THEN 'fire'
+          ELSE story_reaction_key
+        END
+        WHERE story_reaction_key IN ('up','down','fire','poop')
+      `);
+      database.exec(`
+        UPDATE room_messages SET story_reaction_key = CASE story_reaction_key
+          WHEN 'up' THEN 'like'
+          WHEN 'poop' THEN 'lol'
+          WHEN 'down' THEN 'down'
+          WHEN 'fire' THEN 'fire'
+          ELSE story_reaction_key
+        END
+        WHERE story_reaction_key IN ('up','down','fire','poop')
+      `);
+
+      setSchemaVersion(database, 26);
+    })();
+    ver = 26;
   }
 }
 

@@ -408,16 +408,46 @@ export function getPeerIdInDirectChat(chatId, userId) {
   return null;
 }
 
-export const MESSAGE_REACTION_KEYS = ['up', 'down', 'fire', 'poop'];
+/** Как в Telegram: 10 быстрых реакций; до MAX_REACTIONS_PER_USER на пользователя на сущность. */
+export const MESSAGE_REACTION_KEYS = [
+  'like',
+  'heart',
+  'lol',
+  'fire',
+  'party',
+  'wow',
+  'sad',
+  'pray',
+  'down',
+  'hundred',
+];
+
+export const MAX_REACTIONS_PER_USER = 3;
+
+function emptyReactionCounts() {
+  return Object.fromEntries(MESSAGE_REACTION_KEYS.map((k) => [k, 0]));
+}
 
 export function reactionEmoji(key) {
-  const m = { up: '👍', down: '👎', fire: '🔥', poop: '💩' };
+  const m = {
+    like: '👍',
+    heart: '❤️',
+    lol: '😂',
+    fire: '🔥',
+    party: '🎉',
+    wow: '😮',
+    sad: '😢',
+    pray: '🙏',
+    down: '👎',
+    hundred: '💯',
+  };
   return m[key] || '·';
 }
 
 function loadReactionSummaryForMessages(messageIds, viewerId) {
+  const z = emptyReactionCounts();
   if (messageIds.length === 0) {
-    return () => ({ counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
+    return () => ({ counts: { ...z }, mine: null });
   }
   const ph = messageIds.map(() => '?').join(',');
   const raw = getDb()
@@ -432,19 +462,20 @@ function loadReactionSummaryForMessages(messageIds, viewerId) {
   }
   return (msgId) => {
     const arr = byMsg.get(msgId) || [];
-    const counts = { up: 0, down: 0, fire: 0, poop: 0 };
-    let mine = null;
+    const counts = { ...z };
+    const mineList = [];
     for (const x of arr) {
-      if (counts[x.reaction] != null) counts[x.reaction]++;
-      if (x.userId === viewerId) mine = x.reaction;
+      if (Object.prototype.hasOwnProperty.call(counts, x.reaction)) counts[x.reaction]++;
+      if (x.userId === viewerId) mineList.push(x.reaction);
     }
-    return { counts, mine };
+    return { counts, mine: mineList.length ? mineList : null };
   };
 }
 
 function loadPostReactionSummaryForPosts(postIds, viewerId) {
+  const z = emptyReactionCounts();
   if (postIds.length === 0) {
-    return () => ({ counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
+    return () => ({ counts: { ...z }, mine: null });
   }
   const ph = postIds.map(() => '?').join(',');
   const raw = getDb()
@@ -459,13 +490,13 @@ function loadPostReactionSummaryForPosts(postIds, viewerId) {
   }
   return (postId) => {
     const arr = byPost.get(postId) || [];
-    const counts = { up: 0, down: 0, fire: 0, poop: 0 };
-    let mine = null;
+    const counts = { ...z };
+    const mineList = [];
     for (const x of arr) {
-      if (counts[x.reaction] != null) counts[x.reaction]++;
-      if (x.userId === viewerId) mine = x.reaction;
+      if (Object.prototype.hasOwnProperty.call(counts, x.reaction)) counts[x.reaction]++;
+      if (x.userId === viewerId) mineList.push(x.reaction);
     }
-    return { counts, mine };
+    return { counts, mine: mineList.length ? mineList : null };
   };
 }
 
@@ -949,7 +980,7 @@ export function insertStoryReactionMessage(viewerId, storyId, reactionKey) {
   };
 }
 
-/** Реакция на сообщение в чате (одна на пользователя; повтор — снять). */
+/** Реакция на сообщение в чате (до MAX_REACTIONS_PER_USER на пользователя; повтор по той же эмодзи — снять). */
 export function toggleMessageReaction(chatId, userId, messageId, reactionKey) {
   if (!MESSAGE_REACTION_KEYS.includes(reactionKey)) {
     return { error: 'Неизвестная реакция' };
@@ -964,26 +995,29 @@ export function toggleMessageReaction(chatId, userId, messageId, reactionKey) {
   if (msg.r === 1) return { error: 'Сообщение удалено' };
 
   const db = getDb();
-  const existing = db
-    .prepare(`SELECT reaction FROM message_reactions WHERE message_id = ? AND user_id = ?`)
-    .get(messageId, userId);
+  const mineRows = db
+    .prepare(
+      `SELECT reaction FROM message_reactions WHERE message_id = ? AND user_id = ? ORDER BY created_at ASC`,
+    )
+    .all(messageId, userId);
+  const has = mineRows.some((r) => r.reaction === reactionKey);
   const now = Date.now();
 
-  if (existing?.reaction === reactionKey) {
-    db.prepare(`DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?`).run(messageId, userId);
-  } else if (existing) {
-    db.prepare(`UPDATE message_reactions SET reaction = ?, created_at = ? WHERE message_id = ? AND user_id = ?`).run(
-      reactionKey,
-      now,
+  if (has) {
+    db.prepare(`DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND reaction = ?`).run(
       messageId,
-      userId
+      userId,
+      reactionKey,
     );
   } else {
+    if (mineRows.length >= MAX_REACTIONS_PER_USER) {
+      return { error: 'Не больше трёх реакций на сообщение' };
+    }
     db.prepare(`INSERT INTO message_reactions (message_id, user_id, reaction, created_at) VALUES (?, ?, ?, ?)`).run(
       messageId,
       userId,
       reactionKey,
-      now
+      now,
     );
   }
 
@@ -1195,7 +1229,8 @@ export function listFeedPostsForViewer(viewerId) {
   const getPostReact = loadPostReactionSummaryForPosts(postIds, viewerId);
   return rows.map((r) => {
     const react = getPostReact(r.id);
-    const cts = react?.counts ?? {};
+    const counts = { ...emptyReactionCounts(), ...(react?.counts || {}) };
+    for (const k of MESSAGE_REACTION_KEYS) counts[k] = Number(counts[k]) || 0;
     return {
       id: r.id,
       authorId: r.authorId,
@@ -1211,12 +1246,7 @@ export function listFeedPostsForViewer(viewerId) {
       authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
       commentCount: Number(r.commentCount) || 0,
       reactions: {
-        counts: {
-          up: Number(cts.up) || 0,
-          down: Number(cts.down) || 0,
-          fire: Number(cts.fire) || 0,
-          poop: Number(cts.poop) || 0,
-        },
+        counts,
         mine: react?.mine ?? null,
       },
     };
@@ -1284,26 +1314,27 @@ export function togglePostReaction(postId, userId, reactionKey) {
   if (gate.error) return { error: gate.error };
 
   const db = getDb();
-  const existing = db
-    .prepare(`SELECT reaction FROM post_reactions WHERE post_id = ? AND user_id = ?`)
-    .get(postId, userId);
+  const mineRows = db
+    .prepare(`SELECT reaction FROM post_reactions WHERE post_id = ? AND user_id = ? ORDER BY created_at ASC`)
+    .all(postId, userId);
+  const has = mineRows.some((r) => r.reaction === reactionKey);
   const now = Date.now();
 
-  if (existing?.reaction === reactionKey) {
-    db.prepare(`DELETE FROM post_reactions WHERE post_id = ? AND user_id = ?`).run(postId, userId);
-  } else if (existing) {
-    db.prepare(`UPDATE post_reactions SET reaction = ?, created_at = ? WHERE post_id = ? AND user_id = ?`).run(
-      reactionKey,
-      now,
+  if (has) {
+    db.prepare(`DELETE FROM post_reactions WHERE post_id = ? AND user_id = ? AND reaction = ?`).run(
       postId,
-      userId
+      userId,
+      reactionKey,
     );
   } else {
+    if (mineRows.length >= MAX_REACTIONS_PER_USER) {
+      return { error: 'Не больше трёх реакций на пост' };
+    }
     db.prepare(`INSERT INTO post_reactions (post_id, user_id, reaction, created_at) VALUES (?, ?, ?, ?)`).run(
       postId,
       userId,
       reactionKey,
-      now
+      now,
     );
   }
 
@@ -1653,7 +1684,7 @@ export function listActiveStoryItems(viewerId, authorId, options = {}) {
        FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0`;
     params = [authorId, now];
   }
-  sql += ` ORDER BY created_at ASC`;
+  sql += profileGridOnly ? ` ORDER BY created_at DESC` : ` ORDER BY created_at ASC`;
   const rows = getDb().prepare(sql).all(...params);
   return rows.map((s) => ({
     id: s.id,
@@ -2253,26 +2284,29 @@ export function toggleRoomMessageReaction(roomId, userId, messageId, reactionKey
   if (msg.r === 1) return { error: 'Сообщение удалено' };
 
   const db = getDb();
-  const existing = db
-    .prepare(`SELECT reaction FROM message_reactions WHERE message_id = ? AND user_id = ?`)
-    .get(messageId, userId);
+  const mineRows = db
+    .prepare(
+      `SELECT reaction FROM message_reactions WHERE message_id = ? AND user_id = ? ORDER BY created_at ASC`,
+    )
+    .all(messageId, userId);
+  const has = mineRows.some((r) => r.reaction === reactionKey);
   const now = Date.now();
 
-  if (existing?.reaction === reactionKey) {
-    db.prepare(`DELETE FROM message_reactions WHERE message_id = ? AND user_id = ?`).run(messageId, userId);
-  } else if (existing) {
-    db.prepare(`UPDATE message_reactions SET reaction = ?, created_at = ? WHERE message_id = ? AND user_id = ?`).run(
-      reactionKey,
-      now,
+  if (has) {
+    db.prepare(`DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND reaction = ?`).run(
       messageId,
-      userId
+      userId,
+      reactionKey,
     );
   } else {
+    if (mineRows.length >= MAX_REACTIONS_PER_USER) {
+      return { error: 'Не больше трёх реакций на сообщение' };
+    }
     db.prepare(`INSERT INTO message_reactions (message_id, user_id, reaction, created_at) VALUES (?, ?, ?, ?)`).run(
       messageId,
       userId,
       reactionKey,
-      now
+      now,
     );
   }
 

@@ -3,7 +3,7 @@ import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
 import { api } from '../api.js';
-import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
+import { REACTION_KEYS, REACTION_ICONS, emptyReactionCounts, normalizeReactionMine } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 
 function formatPostTime(ts) {
@@ -135,7 +135,13 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
   const [saving, setSaving] = useState(false);
   const menuRef = useRef(null);
 
-  const [reactions, setReactions] = useState(post.reactions ?? { counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
+  const [reactions, setReactions] = useState(() => {
+    const raw = post.reactions;
+    if (!raw || typeof raw !== 'object') return { counts: emptyReactionCounts(), mine: null };
+    const counts = { ...emptyReactionCounts(), ...(raw.counts || {}) };
+    for (const k of REACTION_KEYS) counts[k] = Number(counts[k]) || 0;
+    return { counts, mine: raw.mine ?? null };
+  });
   const [reactPickerOpen, setReactPickerOpen] = useState(false);
   const reactPickerRef = useRef(null);
   const [whoOpen, setWhoOpen] = useState(false);
@@ -162,18 +168,11 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
   useEffect(() => {
     const raw = post.reactions;
     if (raw && typeof raw === 'object') {
-      const c = raw.counts || {};
-      setReactions({
-        counts: {
-          up: Number(c.up) || 0,
-          down: Number(c.down) || 0,
-          fire: Number(c.fire) || 0,
-          poop: Number(c.poop) || 0,
-        },
-        mine: raw.mine ?? null,
-      });
+      const counts = { ...emptyReactionCounts(), ...(raw.counts || {}) };
+      for (const k of REACTION_KEYS) counts[k] = Number(counts[k]) || 0;
+      setReactions({ counts, mine: raw.mine ?? null });
     } else {
-      setReactions({ counts: { up: 0, down: 0, fire: 0, poop: 0 }, mine: null });
+      setReactions({ counts: emptyReactionCounts(), mine: null });
     }
   }, [post.id, reactionsFromServerKey]);
 
@@ -259,7 +258,11 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
       body: { reaction: key },
       userId: viewerId,
     });
-    if (ok && data?.reactions) setReactions(data.reactions);
+    if (!ok) {
+      if (data?.error) alert(data.error);
+      return;
+    }
+    if (data?.reactions) setReactions(data.reactions);
     setReactPickerOpen(false);
     setPostMenu(null);
     onChanged?.();
@@ -272,8 +275,9 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
     setWhoOpen(true);
   }
 
-  const counts = reactions?.counts ?? { up: 0, down: 0, fire: 0, poop: 0 };
-  const mine = reactions?.mine ?? null;
+  const counts = { ...emptyReactionCounts(), ...(reactions?.counts || {}) };
+  for (const k of REACTION_KEYS) counts[k] = Number(counts[k]) || 0;
+  const mineList = normalizeReactionMine(reactions?.mine);
   const keysToShow = REACTION_KEYS.filter((k) => (counts[k] ?? 0) > 0);
   const totalReactions = REACTION_KEYS.reduce((a, k) => a + (counts[k] ?? 0), 0);
   const commentCount = post.commentCount ?? 0;
@@ -574,7 +578,7 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 }} ref={reactPickerRef}>
           {keysToShow.map((key) => {
             const n = counts[key] ?? 0;
-            const active = mine === key;
+            const active = mineList.includes(key);
             return (
               <button
                 key={key}

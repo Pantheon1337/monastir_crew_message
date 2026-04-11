@@ -11,7 +11,7 @@ import ChatReadReceipt from './chat/ChatReadReceipt.jsx';
 import AvatarLightbox from './AvatarLightbox.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
-import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
+import { REACTION_KEYS, REACTION_ICONS, emptyReactionCounts, normalizeReactionMine } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 import {
   getOrCreateCameraStream,
@@ -226,8 +226,9 @@ function clampMenuPosition(x, y, w, h) {
 function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, align = 'flex-start' }) {
   const [whoOpen, setWhoOpen] = useState(false);
   const [whoList, setWhoList] = useState([]);
-  const counts = reactions?.counts ?? { up: 0, down: 0, fire: 0, poop: 0 };
-  const mine = reactions?.mine ?? null;
+  const counts = { ...emptyReactionCounts(), ...(reactions?.counts || {}) };
+  for (const k of REACTION_KEYS) counts[k] = Number(counts[k]) || 0;
+  const mineList = normalizeReactionMine(reactions?.mine);
   const keysToShow = REACTION_KEYS.filter((k) => (counts[k] ?? 0) > 0);
   if (keysToShow.length === 0) return null;
   const totalReactions = REACTION_KEYS.reduce((a, k) => a + (counts[k] ?? 0), 0);
@@ -239,7 +240,11 @@ function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, 
       body: { reaction: key },
       userId,
     });
-    if (ok && data?.reactions) onUpdate?.(data.reactions);
+    if (!ok) {
+      if (data?.error) alert(data.error);
+      return;
+    }
+    if (data?.reactions) onUpdate?.(data.reactions);
   }
 
   async function openWho() {
@@ -264,7 +269,7 @@ function ChatMessageReactions({ roomId, messageId, userId, reactions, onUpdate, 
       >
         {keysToShow.map((key) => {
           const n = counts[key] ?? 0;
-          const active = mine === key;
+          const active = mineList.includes(key);
           return (
             <button
               key={key}
@@ -1799,7 +1804,7 @@ export default function RoomChatScreen({
             style={{
               position: 'fixed',
               zIndex: 95,
-              width: 232,
+              width: 260,
               ...(messageMenuPosition || { left: 8, top: 8 }),
               borderRadius: 'var(--radius)',
               border: '1px solid var(--border)',
@@ -1832,7 +1837,9 @@ export default function RoomChatScreen({
                           `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(msg.id)}/reaction`,
                           { method: 'POST', body: { reaction: k }, userId },
                         );
-                        if (ok && data?.reactions) {
+                        if (!ok) {
+                          if (data?.error) alert(data.error);
+                        } else if (data?.reactions) {
                           setMessages((prev) => prev.map((x) => (x.id === msg.id ? { ...x, reactions: data.reactions } : x)));
                         }
                         setMessageMenu(null);
