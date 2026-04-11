@@ -19,6 +19,7 @@ import {
   releaseCameraStreamNow,
 } from '../cameraSession.js';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
+import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
@@ -665,14 +666,17 @@ export default function RoomChatScreen({
   const load = useCallback(async () => {
     setLoading(true);
     loadEndedAtRef.current = 0;
-    setMessages([]);
+    const cached = loadRoomThreadCache(userId, roomId);
+    setMessages(cached?.length ? cached.map(normalizeChatMessage) : []);
     const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, { userId });
     if (!ok) {
       setErr(data?.error || 'Не удалось загрузить чат');
       setLoading(false);
       return;
     }
-    setMessages((data.messages || []).map(normalizeChatMessage));
+    const raw = data.messages || [];
+    setMessages(raw.map(normalizeChatMessage));
+    saveRoomThreadCache(userId, roomId, raw);
     setErr(null);
     loadEndedAtRef.current = Date.now();
     setLoading(false);

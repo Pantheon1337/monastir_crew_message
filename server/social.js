@@ -2284,3 +2284,22 @@ export function toggleRoomMessageReaction(roomId, userId, messageId, reactionKey
     memberIds: listRoomMemberUserIds(roomId),
   };
 }
+
+/** Сообщение о баге от пользователя (для разработчика). */
+export function submitBugReport(userId, body, clientMeta = null) {
+  const text = String(body ?? '').trim();
+  if (text.length < 3) return { error: 'Опишите проблему хотя бы в нескольких словах' };
+  if (text.length > 8000) return { error: 'Не длиннее 8000 символов' };
+  const id = randomUUID();
+  const now = Date.now();
+  let metaStr = null;
+  try {
+    if (clientMeta && typeof clientMeta === 'object') metaStr = JSON.stringify(clientMeta).slice(0, 8000);
+  } catch {
+    metaStr = null;
+  }
+  getDb()
+    .prepare(`INSERT INTO bug_reports (id, user_id, body, created_at, client_meta) VALUES (?, ?, ?, ?, ?)`)
+    .run(id, userId, text, now, metaStr);
+  return { ok: true, id };
+}

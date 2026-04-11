@@ -9,6 +9,7 @@ export default function Header({
   onOpenPrivacy,
   onOpenSecurity,
   onOpenPossibleFriends,
+  onOpenBugReport,
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -147,6 +148,17 @@ export default function Header({
                   }}
                 >
                   Безопасность
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="header-menu-item"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onOpenBugReport?.();
+                  }}
+                >
+                  Баг
                 </button>
               </div>
             ) : null}

@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 let db;
 
@@ -478,6 +478,21 @@ function migrate(database) {
     }
     setSchemaVersion(database, 24);
     ver = 24;
+  }
+
+  if (ver < 25) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS bug_reports (
+        id TEXT PRIMARY KEY NOT NULL,
+        user_id TEXT NOT NULL,
+        body TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        client_meta TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_bug_reports_created ON bug_reports(created_at DESC);
+    `);
+    setSchemaVersion(database, 25);
+    ver = 25;
   }
 }
 

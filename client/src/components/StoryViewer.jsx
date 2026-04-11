@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
@@ -27,9 +27,18 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   const [reactionToast, setReactionToast] = useState(null);
   const [archiving, setArchiving] = useState(false);
   const reactionToastTimerRef = useRef(null);
+  /** Не сбрасывать слайд при каждом новом массиве items (архив, refetch) — только при новом «сеансе» просмотра. */
+  const sessionKeyRef = useRef('');
   const items = story?.items ?? [];
   const total = items.length;
   const stagePtrStart = useRef(null);
+
+  const sessionKey = useMemo(() => {
+    if (!story?.authorId) return '';
+    const p = story.profileReel === true ? 'p' : 'f';
+    const i0 = story.initialSlide ?? 0;
+    return `${story.authorId}|${p}|${i0}`;
+  }, [story?.authorId, story?.initialSlide, story?.profileReel]);
 
   const goNext = useCallback(() => {
     setSlide((s) => {
@@ -44,8 +53,14 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   }, [onAfterLastItem, onClose, total]);
 
   const goPrev = useCallback(() => {
-    setSlide((s) => Math.max(0, s - 1));
-  }, []);
+    setSlide((s) => {
+      if (s <= 0) {
+        queueMicrotask(() => onClose());
+        return 0;
+      }
+      return s - 1;
+    });
+  }, [onClose]);
 
   useEffect(() => {
     if (!story || total === 0) return undefined;
@@ -54,6 +69,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
     return () => window.clearTimeout(t);
   }, [slide, goNext, story, total, isHolding]);
 
+  /** Стартовый слайд только при смене сеанса (автор / режим / стартовый индекс), не при обновлении списка кадров. */
   useEffect(() => {
     if (!story?.items?.length) {
       setSlide(0);
@@ -62,14 +78,30 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
     const n = story.items.length;
     const raw = story.initialSlide;
     const start = typeof raw === 'number' && raw >= 0 && raw < n ? raw : 0;
-    setSlide(start);
-  }, [story?.authorId, story?.items, story?.initialSlide]);
+    if (sessionKeyRef.current !== sessionKey) {
+      sessionKeyRef.current = sessionKey;
+      setSlide(start);
+    }
+  }, [sessionKey, story?.items?.length]);
+
+  /** Сжать индекс, если кадров стало меньше (архив и т.д.). */
+  useEffect(() => {
+    const n = story?.items?.length ?? 0;
+    if (n === 0) return;
+    setSlide((s) => Math.min(Math.max(0, s), n - 1));
+  }, [story?.items?.length]);
 
   useEffect(() => {
     return () => {
       if (reactionToastTimerRef.current != null) {
         window.clearTimeout(reactionToastTimerRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      sessionKeyRef.current = '';
     };
   }, []);
 
@@ -90,6 +122,11 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
         return;
       }
       if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrev();
+        return;
+      }
+      if (e.key === 'Backspace') {
         e.preventDefault();
         goPrev();
         return;
@@ -215,7 +252,11 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
         flexDirection: 'column',
       }}
     >
-      <div className="story-viewer-chrome" style={{ padding: '10px 12px', display: 'flex', gap: 4 }}>
+      <div
+        className="story-viewer-chrome"
+        style={{ padding: '10px 12px', display: 'flex', gap: 4, position: 'relative', zIndex: 30, flexShrink: 0 }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         {items.map((it, i) => (
           <div
             key={`${it.id}-${i}`}
@@ -256,7 +297,11 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           alignItems: 'center',
           gap: 10,
           borderBottom: '1px solid rgba(255,255,255,0.08)',
+          position: 'relative',
+          zIndex: 30,
+          flexShrink: 0,
         }}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <UserAvatar src={story.avatarUrl} size={36} borderless />
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -287,7 +332,11 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           ) : null}
           <button
             type="button"
-            onClick={onClose}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onClose();
+            }}
             style={{
               border: '1px solid rgba(255,255,255,0.2)',
               borderRadius: 'var(--radius)',
@@ -295,6 +344,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
               fontSize: 11,
               background: 'transparent',
               color: 'inherit',
+              cursor: 'pointer',
             }}
           >
             Закрыть
@@ -309,6 +359,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
           minHeight: 0,
           overflow: 'hidden',
           position: 'relative',
+          zIndex: 1,
           touchAction: 'none',
         }}
         onPointerDown={onStagePointerDown}
@@ -436,7 +487,21 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
         </div>
       ) : null}
 
-      <div className="story-viewer-chrome" style={{ display: 'flex', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+      <div
+        className="story-viewer-chrome"
+        role="toolbar"
+        aria-label="Навигация по истории"
+        style={{
+          display: 'flex',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          position: 'relative',
+          zIndex: 30,
+          flexShrink: 0,
+          paddingBottom: 'max(0px, env(safe-area-inset-bottom, 0px))',
+          touchAction: 'manipulation',
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           style={{
@@ -446,17 +511,33 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
             fontSize: 12,
             background: 'transparent',
             color: 'inherit',
+            cursor: 'pointer',
           }}
-          onClick={goPrev}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            goPrev();
+          }}
         >
-          ← Назад
+          {slide <= 0 ? '← Закрыть' : '← Назад'}
         </button>
         <button
           type="button"
-          style={{ flex: 1, padding: 14, fontSize: 12, background: 'transparent', color: 'inherit' }}
-          onClick={goNext}
+          style={{
+            flex: 1,
+            padding: 14,
+            fontSize: 12,
+            background: 'transparent',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            goNext();
+          }}
         >
-          Вперёд →
+          {slide >= total - 1 ? 'Далее →' : 'Вперёд →'}
         </button>
       </div>
 

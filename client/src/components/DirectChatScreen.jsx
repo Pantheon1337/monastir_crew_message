@@ -21,6 +21,7 @@ import {
   releaseCameraStreamNow,
 } from '../cameraSession.js';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
+import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
@@ -744,14 +745,17 @@ export default function DirectChatScreen({
   const load = useCallback(async () => {
     setLoading(true);
     loadEndedAtRef.current = 0;
-    setMessages([]);
+    const cached = loadDirectThreadCache(userId, chatId);
+    setMessages(cached?.length ? cached.map(normalizeChatMessage) : []);
     const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, { userId });
     if (!ok) {
       setErr(data?.error || 'Не удалось загрузить чат');
       setLoading(false);
       return;
     }
-    setMessages((data.messages || []).map(normalizeChatMessage));
+    const raw = data.messages || [];
+    setMessages(raw.map(normalizeChatMessage));
+    saveDirectThreadCache(userId, chatId, raw);
     setErr(null);
     loadEndedAtRef.current = Date.now();
     setLoading(false);

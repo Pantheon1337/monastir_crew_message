@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
 import Header from './components/Header.jsx';
 import StoriesBar from './components/StoriesBar.jsx';
 import Dashboard from './components/Dashboard.jsx';
@@ -20,6 +20,7 @@ import SettingsModal from './components/SettingsModal.jsx';
 import PossibleFriendsModal from './components/PossibleFriendsModal.jsx';
 import CreateRoomModal from './components/CreateRoomModal.jsx';
 import RoomDetailModal from './components/RoomDetailModal.jsx';
+import BugReportModal from './components/BugReportModal.jsx';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { getStoredUser, setStoredUser, clearStoredUser } from './authStorage.js';
 import { api, apiPath } from './api.js';
@@ -35,6 +36,7 @@ import {
   setNotificationsEnabled as saveNotificationsEnabled,
   setTheme as saveTheme,
 } from './appPreferences.js';
+import { loadAppDataCache, saveAppDataCache, clearAppDataCache } from './appDataCache.js';
 
 export default function App() {
   const [session, setSession] = useState('checking');
@@ -65,6 +67,7 @@ export default function App() {
   const [appTheme, setAppTheme] = useState(getTheme);
   const [createRoomOpen, setCreateRoomOpen] = useState(false);
   const [roomDetailId, setRoomDetailId] = useState(null);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   /** userId → в сети (WebSocket-сессия), для друзей в ленте/чатах/историях */
   const [presenceOnline, setPresenceOnline] = useState({});
   /** userId → lastSeenAt (мс), только для офлайн; подпись «был(а) в сети …» в чате */
@@ -259,6 +262,19 @@ export default function App() {
     await refreshStories();
   }, [user?.id, storyViewer?.authorId, storyBuckets, openStoryAuthor, refreshStories]);
 
+  /** Сразу показать последний сохранённый снимок ленты/чатов (без ожидания сети). */
+  useLayoutEffect(() => {
+    if (session !== 'in' || !user?.id) return;
+    const snap = loadAppDataCache(user.id);
+    if (!snap || typeof snap !== 'object') return;
+    if (Array.isArray(snap.feed)) setFeed(snap.feed);
+    if (Array.isArray(snap.chats)) setChats(snap.chats);
+    if (Array.isArray(snap.rooms)) setRooms(snap.rooms);
+    if (Array.isArray(snap.storyBuckets)) setStoryBuckets(snap.storyBuckets);
+    if (typeof snap.pendingFriendCount === 'number') setPendingFriendCount(snap.pendingFriendCount);
+    if (typeof snap.chatUnreadTotal === 'number') setChatUnreadTotal(snap.chatUnreadTotal);
+  }, [session, user?.id]);
+
   useEffect(() => {
     if (session !== 'in' || !user?.id) return undefined;
     let cancelled = false;
@@ -288,6 +304,22 @@ export default function App() {
       cancelled = true;
     };
   }, [session, user?.id]);
+
+  /** Сохранять снимок после изменений (отложенно), чтобы при следующем заходе не ждать пустой экран. */
+  useEffect(() => {
+    if (session !== 'in' || !user?.id) return undefined;
+    const t = window.setTimeout(() => {
+      saveAppDataCache(user.id, {
+        feed,
+        chats,
+        rooms,
+        storyBuckets,
+        pendingFriendCount,
+        chatUnreadTotal,
+      });
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [session, user?.id, feed, chats, rooms, storyBuckets, pendingFriendCount, chatUnreadTotal]);
 
   const presenceIdKey = useMemo(() => {
     const s = new Set();
@@ -489,6 +521,8 @@ export default function App() {
   }, []);
 
   const onLogout = useCallback(() => {
+    const sid = getStoredUser()?.id;
+    if (sid) clearAppDataCache(sid);
     clearStoredUser();
     setUser(null);
     setSession('out');
@@ -499,6 +533,7 @@ export default function App() {
     setStoryCreateOpen(false);
     setArchiveOpen(false);
     setPeerProfileUserId(null);
+    setBugReportOpen(false);
   }, []);
 
   const handleOpenChat = useCallback((chat) => {
@@ -603,6 +638,7 @@ export default function App() {
           onOpenSettings={() => setMenuStub('settings')}
           onOpenPrivacy={() => setMenuStub('privacy')}
           onOpenSecurity={() => setMenuStub('security')}
+          onOpenBugReport={() => setBugReportOpen(true)}
         />
       )}
 
@@ -759,6 +795,9 @@ export default function App() {
           loadError={loadError}
         />
       )}
+      {bugReportOpen ? (
+        <BugReportModal userId={user.id} nav={nav} onClose={() => setBugReportOpen(false)} />
+      ) : null}
       {menuStub === 'settings' ? (
         <SettingsModal
           open

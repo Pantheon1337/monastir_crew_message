@@ -103,6 +103,7 @@ import {
   deletePostComment,
   pinDirectMessage,
   unpinDirectMessage,
+  submitBugReport,
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
@@ -172,6 +173,23 @@ function requireUser(req, res) {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'monastir-crew-message' });
+});
+
+app.post('/api/bugs', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = submitBugReport(userId, req.body?.body, {
+    ua: String(req.headers['user-agent'] || '').slice(0, 500),
+    path: typeof req.body?.path === 'string' ? req.body.path.slice(0, 500) : '',
+    nav: typeof req.body?.nav === 'string' ? req.body.nav.slice(0, 80) : '',
+    w: typeof req.body?.viewportW === 'number' ? req.body.viewportW : undefined,
+    h: typeof req.body?.viewportH === 'number' ? req.body.viewportH : undefined,
+  });
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true, id: out.id });
 });
 
 app.get('/api/auth/user/:id', (req, res) => {
