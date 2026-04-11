@@ -27,7 +27,7 @@ const VIDEO_NOTE_BASE = {
   width: { ideal: 540, min: 360 },
   height: { ideal: 540, min: 360 },
   aspectRatio: { ideal: 1 },
-  frameRate: { ideal: 24, max: 24 },
+  frameRate: { ideal: 30, max: 30 },
 };
 
 function streamAlive(stream) {
@@ -92,6 +92,33 @@ export async function getOrCreateVideoNoteStream(facingMode = 'user') {
   const stream = await navigator.mediaDevices.getUserMedia(constraints);
   cachedStream = stream;
   return stream;
+}
+
+/**
+ * Смена фронт/тыл во время записи: новый видеотрек, те же аудиотреки (без перезапуска MediaRecorder с canvas).
+ */
+export async function replaceVideoNoteFacingMode(prevStream, facingMode) {
+  if (!prevStream) throw new Error('no stream');
+  clearReleaseTimer();
+  const audioTracks = prevStream.getAudioTracks();
+  const newVidOnly = await navigator.mediaDevices.getUserMedia({
+    video: {
+      ...VIDEO_NOTE_BASE,
+      facingMode,
+    },
+    audio: false,
+  });
+  const vTrack = newVidOnly.getVideoTracks()[0];
+  prevStream.getVideoTracks().forEach((t) => {
+    try {
+      t.stop();
+    } catch {
+      /* */
+    }
+  });
+  const combined = new MediaStream([vTrack, ...audioTracks]);
+  cachedStream = combined;
+  return combined;
 }
 
 /** После закрытия модалки записи — отложенная остановка треков (следующая запись успеет переиспользовать). */

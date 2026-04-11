@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { getOrCreateVideoNoteStream, scheduleReleaseCameraStream, releaseCameraStreamNow } from '../../cameraSession.js';
+import {
+  getOrCreateVideoNoteStream,
+  replaceVideoNoteFacingMode,
+  scheduleReleaseCameraStream,
+  releaseCameraStreamNow,
+} from '../../cameraSession.js';
 import {
   pickVideoMime,
   buildVideoNoteFile,
@@ -12,7 +17,7 @@ import {
 
 /** Внутреннее разрешение canvas: ниже — меньше нагрузка на CPU/GPU при rAF + MediaRecorder. */
 const CANVAS_SIZE = 480;
-const CAPTURE_FPS = 24;
+const CAPTURE_FPS = 30;
 
 /**
  * object-fit: cover + горизонтальное отражение для селфи (как в Telegram: превью и запись с одного кадра).
@@ -111,6 +116,8 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
   const maxDurTimerRef = useRef(null);
   const masterRafRef = useRef(null);
   const ringRef = useRef(null);
+  const timerLabelRef = useRef(null);
+  const finalizingRef = useRef(false);
   const phaseRef = useRef('preview');
   const facingModeRef = useRef('user');
   const snapshotElapsedRef = useRef(() => 0);
@@ -162,12 +169,15 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     clock.reset();
   }, [clock]);
 
+  const recordingActive = phase === 'recording' || phase === 'paused';
+
   useEffect(() => {
     if (!open) {
       cleanupStream();
       resetState();
       return;
     }
+    if (recordingActive) return undefined;
 
     let cancelled = false;
     (async () => {
@@ -201,22 +211,26 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     return () => {
       cancelled = true;
     };
-  }, [open, facingMode, cleanupStream, resetState]);
+  }, [open, facingMode, recordingActive, cleanupStream, resetState]);
 
-  /** Один rAF: кадр в canvas + кольцо и таймер при записи (без setInterval + второго rAF). */
+  /**
+   * Превью — нативный video (плавно). Скрытый canvas копирует кадр только пока идёт запись (для MediaRecorder).
+   * Таймер и кольцо обновляются через DOM, без setState в rAF.
+   */
   useEffect(() => {
     if (!open || loadErr) return undefined;
-    let frameIdx = 0;
     const loop = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      if (video && canvas && video.readyState >= 2) {
+      const recording = recRef.current != null;
+      if (recording && video && canvas && video.readyState >= 2) {
         drawVideoNoteFrame(video, canvas, facingModeRef.current === 'user');
       }
       const ph = phaseRef.current;
       if (ph === 'recording' || ph === 'paused') {
         const t = snapshotElapsedRef.current();
-        if (frameIdx++ % 2 === 0) setElapsedMs(t);
+        const label = timerLabelRef.current;
+        if (label) label.textContent = formatVideoNoteTimer(t);
         const el = ringRef.current;
         if (el) {
           const p = Math.min(1, t / MAX_VIDEO_NOTE_MS);
@@ -260,10 +274,12 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     async (blob, mr, elapsed) => {
       if (elapsed < MIN_VIDEO_NOTE_MS) {
         setInlineErr('Слишком коротко');
+        setSending(false);
         return;
       }
       if (!blob?.size) {
         setInlineErr('Пустая запись');
+        setSending(false);
         return;
       }
       const file = buildVideoNoteFile(blob, mr);
@@ -282,16 +298,26 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
   );
 
   const handleSendPress = useCallback(async () => {
-    if (sending) return;
+    if (sending || finalizingRef.current) return;
     if (phase !== 'recording' && phase !== 'paused') return;
     if (maxDurTimerRef.current) {
       clearTimeout(maxDurTimerRef.current);
       maxDurTimerRef.current = null;
     }
-    setPhase('preview');
-    const pack = await stopMediaRecorder();
-    if (!pack) return;
-    await finalizeUpload(pack.blob, pack.mr, pack.elapsed);
+    finalizingRef.current = true;
+    setSending(true);
+    try {
+      const pack = await stopMediaRecorder();
+      if (!pack) {
+        setInlineErr('Не удалось завершить запись');
+        setSending(false);
+        return;
+      }
+      await finalizeUpload(pack.blob, pack.mr, pack.elapsed);
+    } finally {
+      finalizingRef.current = false;
+      setPhase('preview');
+    }
   }, [sending, phase, stopMediaRecorder, finalizeUpload]);
 
   const handleStartRecording = useCallback(() => {
@@ -332,14 +358,15 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
     recRef.current = { mr, chunks };
     clock.beginRecording();
     setElapsedMs(0);
+    if (timerLabelRef.current) timerLabelRef.current.textContent = formatVideoNoteTimer(0);
     setInlineErr(null);
     setPhase('recording');
 
     maxDurTimerRef.current = setTimeout(() => {
       void (async () => {
-        setPhase('preview');
         const pack = await stopMediaRecorder();
         if (pack) await finalizeUpload(pack.blob, pack.mr, pack.elapsed);
+        setPhase('preview');
       })();
     }, MAX_VIDEO_NOTE_MS);
   }, [clock, stopMediaRecorder, finalizeUpload]);
@@ -368,10 +395,30 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
   }, [phase, clock]);
 
   const flipCamera = useCallback(async () => {
-    if (phase !== 'preview' || sending) return;
-    setFacingMode((m) => (m === 'user' ? 'environment' : 'user'));
+    if (sending) return;
+    const next = facingMode === 'user' ? 'environment' : 'user';
+    const rec = phase === 'recording' || phase === 'paused';
+    if (rec) {
+      try {
+        const prev = streamRef.current;
+        if (!prev) return;
+        const combined = await replaceVideoNoteFacingMode(prev, next);
+        streamRef.current = combined;
+        const el = videoRef.current;
+        if (el) {
+          el.srcObject = combined;
+          await el.play().catch(() => {});
+        }
+        setFacingMode(next);
+        setTorchOn(false);
+      } catch {
+        setInlineErr('Не удалось сменить камеру');
+      }
+      return;
+    }
+    setFacingMode(next);
     setTorchOn(false);
-  }, [phase, sending]);
+  }, [phase, sending, facingMode]);
 
   const toggleTorch = useCallback(async () => {
     const stream = streamRef.current;
@@ -469,6 +516,20 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                   position: 'relative',
                 }}
               >
+                <canvas
+                  ref={canvasRef}
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                    zIndex: 0,
+                    opacity: 0,
+                    pointerEvents: 'none',
+                  }}
+                />
                 <video
                   ref={videoRef}
                   autoPlay
@@ -480,20 +541,9 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    opacity: 0,
+                    zIndex: 1,
                     pointerEvents: 'none',
-                  }}
-                />
-                <canvas
-                  ref={canvasRef}
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    display: 'block',
-                    objectFit: 'cover',
+                    transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
                   }}
                 />
               </div>
@@ -538,7 +588,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   type="button"
-                  disabled={phase !== 'preview' || sending}
+                  disabled={sending}
                   onClick={() => void flipCamera()}
                   title="Сменить камеру"
                   style={{
@@ -548,8 +598,8 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     border: '1px solid var(--border)',
                     background: 'var(--panel)',
                     fontSize: 18,
-                    cursor: phase === 'preview' ? 'pointer' : 'default',
-                    opacity: phase === 'preview' ? 1 : 0.45,
+                    cursor: sending ? 'default' : 'pointer',
+                    opacity: sending ? 0.45 : 1,
                     color: 'var(--text)',
                   }}
                 >
@@ -557,7 +607,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                 </button>
                 <button
                   type="button"
-                  disabled={phase !== 'preview' || sending || facingMode !== 'environment'}
+                  disabled={sending || facingMode !== 'environment'}
                   onClick={() => void toggleTorch()}
                   title="Вспышка"
                   style={{
@@ -567,7 +617,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                     border: '1px solid var(--border)',
                     background: 'var(--panel)',
                     fontSize: 18,
-                    cursor: facingMode === 'environment' ? 'pointer' : 'default',
+                    cursor: facingMode === 'environment' && !sending ? 'pointer' : 'default',
                     opacity: facingMode === 'environment' ? 1 : 0.35,
                     color: 'var(--text)',
                   }}
@@ -616,6 +666,7 @@ export default function VideoNoteRecordModal({ open, onClose, onSend, errorBanne
                 <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} aria-hidden />
                   <span
+                    ref={timerLabelRef}
                     style={{
                       fontSize: 14,
                       fontVariantNumeric: 'tabular-nums',
