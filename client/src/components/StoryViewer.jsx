@@ -5,6 +5,10 @@ import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
 
 const SLIDE_MS = 4800;
+const STORY_DISMISS_MS = 320;
+const STORY_DISMISS_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const STORY_VERTICAL_THRESHOLD = 88;
+const STORY_AXIS_LOCK_PX = 14;
 
 function formatStoryArchiveEta(expiresAt) {
   if (expiresAt == null) return null;
@@ -48,6 +52,10 @@ export default function StoryViewer({
   const items = story?.items ?? [];
   const total = items.length;
   const stagePtrStart = useRef(null);
+  /** null | 'vertical' | 'horizontal' — после порога движения */
+  const stageAxisRef = useRef(null);
+  const [sheetY, setSheetY] = useState(0);
+  const [sheetDragging, setSheetDragging] = useState(false);
 
   const sessionKey = useMemo(() => {
     if (!story?.authorId) return '';
@@ -67,6 +75,18 @@ export default function StoryViewer({
       return s;
     });
   }, [onAfterLastItem, onClose, total]);
+
+  const closeAnimated = useCallback(
+    (direction) => {
+      const h = typeof window !== 'undefined' ? window.innerHeight : 800;
+      setSheetDragging(false);
+      setSheetY(direction === 'down' ? h : -h);
+      window.setTimeout(() => {
+        onClose();
+      }, STORY_DISMISS_MS);
+    },
+    [onClose],
+  );
 
   const goPrev = useCallback(() => {
     setSlide((s) => {
@@ -194,12 +214,14 @@ export default function StoryViewer({
     } catch {
       /* ignore */
     }
+    stageAxisRef.current = null;
     stagePtrStart.current = {
       x: e.clientX,
       y: e.clientY,
       pointerId: e.pointerId,
     };
     setIsHolding(true);
+    setSheetDragging(true);
   }
 
   function onStagePointerMove(e) {
@@ -207,13 +229,36 @@ export default function StoryViewer({
     if (!s || e.pointerId !== s.pointerId) return;
     s.lastX = e.clientX;
     s.lastY = e.clientY;
+    const dy = e.clientY - s.y;
+    const dx = e.clientX - s.x;
+    if (stageAxisRef.current == null) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < STORY_AXIS_LOCK_PX) return;
+      if (Math.abs(dy) >= Math.abs(dx) * 1.05) {
+        stageAxisRef.current = 'vertical';
+      } else {
+        stageAxisRef.current = 'horizontal';
+        setSheetY(0);
+      }
+    }
+    if (stageAxisRef.current === 'vertical') {
+      const h = typeof window !== 'undefined' ? window.innerHeight : 600;
+      const rubber = dy * 0.55;
+      const cap = h * 0.42;
+      setSheetY(Math.max(-cap, Math.min(cap, rubber)));
+    }
   }
 
   function onStagePointerUp(e) {
     const start = stagePtrStart.current;
     stagePtrStart.current = null;
     setIsHolding(false);
+    setSheetDragging(false);
     if (start == null || e.pointerId !== start.pointerId) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
     const endX = start.lastX != null ? start.lastX : e.clientX;
     const endY = start.lastY != null ? start.lastY : e.clientY;
     const dx = endX - start.x;
@@ -221,10 +266,19 @@ export default function StoryViewer({
     const move = Math.hypot(dx, dy);
     const swipeTh = 40;
     const tapMax = 22;
+    const axis = stageAxisRef.current;
+    stageAxisRef.current = null;
 
-    const downward = endY > start.y + 36;
-    if (downward && dy > 52 && Math.abs(dx) < 48) {
-      onClose();
+    const verticalIntent =
+      axis === 'vertical' ||
+      (axis == null && Math.abs(dy) >= 52 && Math.abs(dy) >= Math.abs(dx) * 0.82);
+    if (verticalIntent) {
+      const thr = axis === 'vertical' ? Math.max(72, STORY_VERTICAL_THRESHOLD - 16) : STORY_VERTICAL_THRESHOLD;
+      if (Math.abs(dy) >= thr && Math.abs(dy) >= Math.abs(dx) * 0.65) {
+        closeAnimated(dy > 0 ? 'down' : 'up');
+        return;
+      }
+      setSheetY(0);
       return;
     }
 
@@ -244,12 +298,18 @@ export default function StoryViewer({
 
   function onStagePointerCancel() {
     stagePtrStart.current = null;
+    stageAxisRef.current = null;
     setIsHolding(false);
+    setSheetDragging(false);
+    setSheetY(0);
   }
 
   function onStageLostPointerCapture() {
     stagePtrStart.current = null;
+    stageAxisRef.current = null;
     setIsHolding(false);
+    setSheetDragging(false);
+    setSheetY(0);
   }
 
   if (!story || total === 0) return null;
@@ -316,6 +376,11 @@ export default function StoryViewer({
   }
 
   const safeBottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
+  const hWin = typeof window !== 'undefined' ? window.innerHeight : 640;
+  const sheetOpacity = 1 - Math.min(Math.abs(sheetY) / (hWin * 0.52), 0.22);
+  const captionBottomPad = canInteract
+    ? 'max(100px, calc(92px + env(safe-area-inset-bottom, 0px)))'
+    : 'max(28px, env(safe-area-inset-bottom, 0px))';
 
   return (
     <div
@@ -326,142 +391,39 @@ export default function StoryViewer({
         position: 'fixed',
         inset: 0,
         zIndex: 200,
-        background: 'var(--bg)',
-        display: 'flex',
-        flexDirection: 'column',
+        background: '#000',
+        overflow: 'hidden',
+        transform: `translateY(${sheetY}px)`,
+        opacity: sheetOpacity,
+        transition: sheetDragging
+          ? 'none'
+          : `transform ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, opacity ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}`,
       }}
     >
-      <div
-        className="story-viewer-chrome"
-        style={{ flexShrink: 0, zIndex: 30, position: 'relative' }}
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'flex-start',
-            paddingTop: 'max(4px, env(safe-area-inset-top, 0px))',
-            paddingLeft: 12,
-            paddingRight: 12,
-            paddingBottom: 4,
-            minHeight: 44,
-            boxSizing: 'border-box',
-          }}
-        >
-          <button
-            type="button"
-            aria-label="Закрыть"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: '50%',
-              border: '1px solid rgba(255,255,255,0.22)',
-              background: 'rgba(0,0,0,0.35)',
-              color: 'inherit',
-              cursor: 'pointer',
-              fontSize: 22,
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            ×
-          </button>
-        </div>
-        <div style={{ padding: '4px 12px 8px', display: 'flex', gap: 4 }}>
-          {items.map((it, i) => (
-            <div
-              key={`${it.id}-${i}`}
-              style={{
-                flex: 1,
-                height: 3,
-                background: 'rgba(255,255,255,0.15)',
-                borderRadius: 1,
-                overflow: 'hidden',
-              }}
-            >
-              <div
-                style={{
-                  height: '100%',
-                  width: i < slide ? '100%' : i === slide ? '100%' : '0%',
-                  background: 'var(--accent)',
-                  transformOrigin: 'left',
-                  transform: i === slide ? 'scaleX(0)' : i < slide ? 'scaleX(1)' : 'scaleX(0)',
-                  animation: i === slide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
-                  animationPlayState: i === slide && isHolding ? 'paused' : 'running',
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-      <style>{`
-        @keyframes storySeg {
-          from { transform: scaleX(0); }
-          to { transform: scaleX(1); }
-        }
-      `}</style>
-
-      <div
-        className="story-viewer-chrome"
+      <p
         style={{
-          padding: '6px 12px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          borderBottom: '1px solid rgba(255,255,255,0.08)',
-          position: 'relative',
-          zIndex: 30,
-          flexShrink: 0,
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0,0,0,0)',
+          whiteSpace: 'nowrap',
+          border: 0,
         }}
-        onPointerDown={(e) => e.stopPropagation()}
       >
-        <UserAvatar src={story.avatarUrl} size={36} borderless />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{story.label}</div>
-          {archiveEta ? (
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)' }}>{archiveEta}</div>
-          ) : null}
-        </div>
-        {story.isSelf ? (
-          <button
-            type="button"
-            disabled={archiving}
-            onClick={() => void archiveCurrentToFeed()}
-            style={{
-              border: '1px solid rgba(255,255,255,0.2)',
-              borderRadius: 'var(--radius)',
-              padding: '6px 10px',
-              fontSize: 11,
-              background: 'rgba(255,255,255,0.06)',
-              color: 'inherit',
-              opacity: archiving ? 0.6 : 1,
-              flexShrink: 0,
-            }}
-            title="Убрать этот кадр из ленты кружков; останется в архиве до истечения 24 ч"
-          >
-            {archiving ? '…' : 'Архивировать'}
-          </button>
-        ) : null}
-      </div>
+        Закрыть: свайп вверх или вниз по кадру. Клавиши со стрелками — между кадрами, Escape — выход.
+      </p>
 
+      {/* Кадр на весь экран (под шапкой и панелями) */}
       <div
         className="story-viewer-stage"
         style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: 'hidden',
-          position: 'relative',
+          position: 'absolute',
+          inset: 0,
           zIndex: 1,
-          touchAction: 'none',
+          overflow: 'hidden',
         }}
         onPointerDown={onStagePointerDown}
         onPointerMove={onStagePointerMove}
@@ -485,15 +447,12 @@ export default function StoryViewer({
               key={it.id}
               style={{
                 flex: `0 0 ${100 / total}%`,
+                height: '100%',
+                minHeight: 0,
                 boxSizing: 'border-box',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 16,
-                textAlign: 'center',
-                overflow: 'auto',
-                touchAction: 'manipulation',
+                position: 'relative',
+                overflow: 'hidden',
+                background: '#070708',
               }}
             >
               {it.mediaUrl ? (
@@ -502,26 +461,153 @@ export default function StoryViewer({
                   alt=""
                   loading="eager"
                   decoding="async"
-                  style={{ maxWidth: '100%', maxHeight: '58dvh', objectFit: 'contain', borderRadius: 8 }}
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: 'center',
+                    display: 'block',
+                    userSelect: 'none',
+                    WebkitUserDrag: 'none',
+                  }}
                 />
               ) : null}
               {it.body ? (
-                <p
+                <div
                   style={{
-                    margin: it.mediaUrl ? '14px 0 0' : 0,
-                    maxWidth: 420,
-                    fontSize: 15,
-                    whiteSpace: 'pre-line',
-                    lineHeight: 1.5,
-                    wordBreak: 'break-word',
-                    overflowWrap: 'break-word',
+                    ...(it.mediaUrl
+                      ? {
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          padding: `12px 14px ${captionBottomPad}`,
+                          background: 'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 55%, transparent 100%)',
+                          textAlign: 'left',
+                          zIndex: 2,
+                        }
+                      : {
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 24,
+                          textAlign: 'center',
+                        }),
                   }}
                 >
-                  {it.body}
-                </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      maxWidth: it.mediaUrl ? 'none' : 420,
+                      width: '100%',
+                      fontSize: it.mediaUrl ? 15 : 17,
+                      fontWeight: it.mediaUrl ? 500 : 600,
+                      whiteSpace: 'pre-line',
+                      lineHeight: 1.45,
+                      wordBreak: 'break-word',
+                      overflowWrap: 'break-word',
+                      color: '#fff',
+                      textShadow: it.mediaUrl ? '0 1px 8px rgba(0,0,0,0.75)' : undefined,
+                    }}
+                  >
+                    {it.body}
+                  </p>
+                </div>
               ) : null}
             </div>
           ))}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes storySeg {
+          from { transform: scaleX(0); }
+          to { transform: scaleX(1); }
+        }
+      `}</style>
+
+      {/* Шапка поверх кадра: прогресс и автор (касания не блокируют свайп по кадру) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 40,
+          pointerEvents: 'none',
+        }}
+      >
+        <div style={{ paddingTop: 'max(8px, env(safe-area-inset-top, 0px))', paddingLeft: 12, paddingRight: 12, paddingBottom: 6 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {items.map((it, i) => (
+              <div
+                key={`${it.id}-${i}`}
+                style={{
+                  flex: 1,
+                  height: 3,
+                  background: 'rgba(255,255,255,0.2)',
+                  borderRadius: 1,
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: i < slide ? '100%' : i === slide ? '100%' : '0%',
+                    background: 'var(--accent)',
+                    transformOrigin: 'left',
+                    transform: i === slide ? 'scaleX(0)' : i < slide ? 'scaleX(1)' : 'scaleX(0)',
+                    animation: i === slide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
+                    animationPlayState: i === slide && isHolding ? 'paused' : 'running',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div
+          className="story-viewer-chrome"
+          style={{
+            padding: '8px 12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.08) 100%)',
+            pointerEvents: 'auto',
+          }}
+        >
+          <UserAvatar src={story.avatarUrl} size={36} borderless />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{story.label}</div>
+            {archiveEta ? (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>{archiveEta}</div>
+            ) : null}
+          </div>
+          {story.isSelf ? (
+            <button
+              type="button"
+              disabled={archiving}
+              onClick={() => void archiveCurrentToFeed()}
+              style={{
+                border: '1px solid rgba(255,255,255,0.25)',
+                borderRadius: 'var(--radius)',
+                padding: '6px 10px',
+                fontSize: 11,
+                background: 'rgba(0,0,0,0.35)',
+                color: '#fff',
+                opacity: archiving ? 0.6 : 1,
+                flexShrink: 0,
+              }}
+              title="Убрать этот кадр из ленты кружков; останется в архиве до истечения 24 ч"
+            >
+              {archiving ? '…' : 'Архивировать'}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -534,7 +620,7 @@ export default function StoryViewer({
           }}
           onPointerDown={(e) => e.stopPropagation()}
           style={{
-            position: 'fixed',
+            position: 'absolute',
             left: 12,
             bottom: safeBottom,
             zIndex: 55,
@@ -543,8 +629,8 @@ export default function StoryViewer({
             padding: '10px 14px',
             fontSize: 13,
             fontWeight: 600,
-            background: 'rgba(0,0,0,0.42)',
-            color: 'inherit',
+            background: 'rgba(0,0,0,0.55)',
+            color: '#fff',
             cursor: 'pointer',
             boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
             display: 'flex',
@@ -565,12 +651,15 @@ export default function StoryViewer({
           className="story-viewer-chrome"
           onPointerDown={(e) => e.stopPropagation()}
           style={{
-            flexShrink: 0,
-            borderTop: '1px solid rgba(255,255,255,0.08)',
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 45,
+            borderTop: '1px solid rgba(255,255,255,0.12)',
             paddingBottom: safeBottom,
-            position: 'relative',
-            zIndex: 40,
-            background: 'var(--bg)',
+            background: 'linear-gradient(to top, rgba(8,10,14,0.98) 0%, rgba(8,10,14,0.9) 55%, rgba(8,10,14,0.55) 100%)',
+            color: '#fff',
           }}
         >
           {reactionBarOpen ? (

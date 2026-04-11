@@ -846,7 +846,7 @@ video.chat-video-note {
 }
 
 .story-viewer-stage {
-  touch-action: pan-y;
+  touch-action: none;
   cursor: grab;
 }
 
