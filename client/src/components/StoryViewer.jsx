@@ -20,7 +20,15 @@ function formatStoryArchiveEta(expiresAt) {
   return `≈ ${m} мин до архива`;
 }
 
-export default function StoryViewer({ story, userId, onClose, onProgress, onAfterLastItem, onStoryArchived }) {
+export default function StoryViewer({
+  story,
+  userId,
+  onClose,
+  onProgress,
+  onAfterLastItem,
+  onBeforeFirstItem,
+  onStoryArchived,
+}) {
   const [slide, setSlide] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
@@ -54,13 +62,20 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
 
   const goPrev = useCallback(() => {
     setSlide((s) => {
+      if (total === 0) return 0;
       if (s <= 0) {
-        queueMicrotask(() => onClose());
+        queueMicrotask(() => {
+          if (story.profileReel !== true && typeof onBeforeFirstItem === 'function') {
+            onBeforeFirstItem();
+          } else {
+            onClose();
+          }
+        });
         return 0;
       }
       return s - 1;
     });
-  }, [onClose]);
+  }, [onClose, onBeforeFirstItem, story.profileReel, total]);
 
   useEffect(() => {
     if (!story || total === 0) return undefined;
@@ -205,6 +220,12 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
   const archiveEta = cur?.expiresAt != null ? formatStoryArchiveEta(cur.expiresAt) : null;
   const canReact = Boolean(userId) && !story.isSelf;
   const pct = total > 0 ? (slide / total) * 100 : 0;
+  const isProfile = story.profileReel === true;
+  const feedPrev = story.feedHasPrevAuthor === true;
+  const feedNext = story.feedHasNextAuthor === true;
+  const leftNavLabel = slide > 0 ? '← Назад' : isProfile || !feedPrev ? '← Закрыть' : '← Назад';
+  const rightNavLabel =
+    slide < total - 1 ? 'Вперёд →' : isProfile || !feedNext ? 'Закрыть →' : 'Далее →';
 
   async function archiveCurrentToFeed() {
     if (!userId || !cur?.id || !story?.isSelf) return;
@@ -531,7 +552,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
             goPrev();
           }}
         >
-          {slide <= 0 ? '← Закрыть' : '← Назад'}
+          {leftNavLabel}
         </button>
         <button
           type="button"
@@ -549,7 +570,7 @@ export default function StoryViewer({ story, userId, onClose, onProgress, onAfte
             goNext();
           }}
         >
-          {slide >= total - 1 ? 'Далее →' : 'Вперёд →'}
+          {rightNavLabel}
         </button>
       </div>
 

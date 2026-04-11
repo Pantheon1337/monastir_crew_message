@@ -203,12 +203,18 @@ export default function App() {
       const items = r.data.items || [];
       if (items.length === 0) return;
       let initialSlide = 0;
-      if (startItemId != null) {
+      if (opts.startAtLast === true && items.length > 0) {
+        initialSlide = items.length - 1;
+      } else if (startItemId != null) {
         const idx = items.findIndex((i) => String(i.id) === String(startItemId));
         if (idx >= 0) initialSlide = idx;
       }
       const b = storyBuckets.find((x) => String(x.userId) === String(authorId));
       const isSelf = String(authorId) === String(user.id);
+      const order = storyBuckets.map((x) => x.userId);
+      const reelIdx = order.findIndex((id) => String(id) === String(authorId));
+      const feedHasPrevAuthor = !profileReel && reelIdx > 0;
+      const feedHasNextAuthor = !profileReel && reelIdx >= 0 && reelIdx < order.length - 1;
       setStoryViewer({
         authorId,
         isSelf,
@@ -217,6 +223,8 @@ export default function App() {
         avatarUrl: isSelf ? user.avatarUrl : b?.avatarUrl,
         items,
         initialSlide,
+        feedHasPrevAuthor,
+        feedHasNextAuthor,
       });
     },
     [user?.id, user?.avatarUrl, storyBuckets]
@@ -261,6 +269,27 @@ export default function App() {
     await openStoryAuthor(order[idx + 1]);
     await refreshStories();
   }, [user?.id, storyViewer?.authorId, storyBuckets, openStoryAuthor, refreshStories]);
+
+  /** Первый кадр текущего автора → предыдущий кружок (последний кадр того автора). Только для ленты, не для профиля. */
+  const goToPrevStoryAuthor = useCallback(async () => {
+    if (!user?.id) return;
+    const currentId = storyViewer?.authorId;
+    if (!currentId) {
+      setStoryViewer(null);
+      await refreshStories();
+      return;
+    }
+    if (storyViewer?.profileReel) return;
+    const order = storyBuckets.map((b) => b.userId);
+    const idx = order.findIndex((id) => String(id) === String(currentId));
+    if (idx <= 0) {
+      setStoryViewer(null);
+      await refreshStories();
+      return;
+    }
+    await openStoryAuthor(order[idx - 1], null, { startAtLast: true });
+    await refreshStories();
+  }, [user?.id, storyViewer?.authorId, storyViewer?.profileReel, storyBuckets, openStoryAuthor, refreshStories]);
 
   /** Сразу показать последний сохранённый снимок ленты/чатов (без ожидания сети). */
   useLayoutEffect(() => {
@@ -768,7 +797,15 @@ export default function App() {
             setStoryViewer(null);
             refreshStories();
           }}
-          onAfterLastItem={() => void goToNextStoryAuthor()}
+          onBeforeFirstItem={storyViewer.profileReel ? undefined : () => void goToPrevStoryAuthor()}
+          onAfterLastItem={
+            storyViewer.profileReel
+              ? () => {
+                  setStoryViewer(null);
+                  void refreshStories();
+                }
+              : () => void goToNextStoryAuthor()
+          }
           onProgress={onStoryProgress}
           onStoryArchived={onStoryArchivedFromViewer}
         />
