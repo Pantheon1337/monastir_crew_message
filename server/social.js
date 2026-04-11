@@ -627,10 +627,11 @@ export function listMessagesForChat(chatId, userId, limit = 200) {
       LEFT JOIN users ru ON ru.id = rp.sender_id
       WHERE m.chat_id = ?
       AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
-      ORDER BY m.created_at ASC
+      ORDER BY m.created_at DESC
       LIMIT ?`
     )
     .all(chatId, userId, limit);
+  rows.reverse();
   const ids = rows.map((r) => r.id);
   const getReact = loadReactionSummaryForMessages(ids, userId);
   return rows.map((r) => {
@@ -1657,12 +1658,9 @@ export function listActiveStoryItems(viewerId, authorId, options = {}) {
   }));
 }
 
-/** Архив: истёкшие по времени и снятые с ленты — только свои и друзей. */
+/** Архив: истёкшие по времени и снятые с ленты — только кадры самого пользователя (не чужие). */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const now = Date.now();
-  const peers = listPeerUserIds(viewerId);
-  const allowed = [viewerId, ...peers];
-  const ph = allowed.map(() => '?').join(',');
   const rows = getDb()
     .prepare(
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
@@ -1671,12 +1669,12 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
         u.display_role AS authorRole, u.display_role_emoji AS authorEmoji
       FROM stories s
       JOIN users u ON u.id = s.user_id
-      WHERE (s.expires_at <= ? OR COALESCE(s.feed_hidden, 0) = 1)
-      AND s.user_id IN (${ph})
+      WHERE s.user_id = ?
+      AND (s.expires_at <= ? OR COALESCE(s.feed_hidden, 0) = 1)
       ORDER BY COALESCE(s.feed_hidden_at, s.expires_at) DESC
       LIMIT ?`
     )
-    .all(now, ...allowed, limit);
+    .all(viewerId, now, limit);
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
@@ -2008,10 +2006,11 @@ export function listRoomMessages(roomId, userId, limit = 200) {
        LEFT JOIN users ru ON ru.id = rp.sender_id
        WHERE m.room_id = ?
        AND NOT EXISTS (SELECT 1 FROM room_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
-       ORDER BY m.created_at ASC
+       ORDER BY m.created_at DESC
        LIMIT ?`
     )
     .all(roomId, userId, limit);
+  rows.reverse();
   const ids = rows.map((r) => r.id);
   const getReact = loadReactionSummaryForMessages(ids, userId);
   return rows.map((r) => mapMessageRow(r, getReact));
