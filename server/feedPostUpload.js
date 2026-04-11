@@ -40,9 +40,9 @@ function feedFileFilter(_req, file, cb) {
   cb(null, true);
 }
 
+/** Лимит для видео в посте — в обработчике /api/feed/upload (50 МБ); фото без лимита multer. */
 export const feedPostUpload = multer({
   storage,
-  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: feedFileFilter,
 });
 

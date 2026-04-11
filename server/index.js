@@ -110,6 +110,7 @@ import {
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
+import { enforceVideoMaxSize } from './uploadLimits.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -428,6 +429,11 @@ app.post('/api/feed/upload', (req, res) => {
     }
     if (!req.file) {
       res.status(400).json({ error: 'Выберите файл' });
+      return;
+    }
+    const videoErr = enforceVideoMaxSize(req.file);
+    if (videoErr) {
+      res.status(400).json({ error: videoErr });
       return;
     }
     res.json({ mediaPath: feedMediaRelativePath(req.file.filename) });
@@ -898,7 +904,9 @@ app.post('/api/chats/:chatId/messages/voice', (req, res) => {
 app.post('/api/chats/:chatId/messages/video-note', (req, res) => {
   chatVideoNoteUpload.single('file')(req, res, (err) => {
     if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      const msg =
+        err.code === 'LIMIT_FILE_SIZE' ? 'Видео не больше 50 МБ' : err.message || 'Ошибка загрузки';
+      res.status(400).json({ error: msg });
       return;
     }
     const userId = requireUser(req, res);
@@ -938,6 +946,11 @@ app.post('/api/chats/:chatId/messages/media', (req, res) => {
     if (!userId) return;
     if (!req.file) {
       res.status(400).json({ error: 'Нет файла' });
+      return;
+    }
+    const videoErr = enforceVideoMaxSize(req.file);
+    if (videoErr) {
+      res.status(400).json({ error: videoErr });
       return;
     }
     const mime = (req.file.mimetype || '').toLowerCase();
@@ -1246,7 +1259,9 @@ app.post('/api/rooms/:roomId/messages/voice', (req, res) => {
 app.post('/api/rooms/:roomId/messages/video-note', (req, res) => {
   chatVideoNoteUpload.single('file')(req, res, (err) => {
     if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+      const msg =
+        err.code === 'LIMIT_FILE_SIZE' ? 'Видео не больше 50 МБ' : err.message || 'Ошибка загрузки';
+      res.status(400).json({ error: msg });
       return;
     }
     const userId = requireUser(req, res);
@@ -1283,6 +1298,11 @@ app.post('/api/rooms/:roomId/messages/media', (req, res) => {
     if (!userId) return;
     if (!req.file) {
       res.status(400).json({ error: 'Нет файла' });
+      return;
+    }
+    const videoErr = enforceVideoMaxSize(req.file);
+    if (videoErr) {
+      res.status(400).json({ error: videoErr });
       return;
     }
     const mime = (req.file.mimetype || '').toLowerCase();

@@ -60,10 +60,10 @@ export const chatVoiceUpload = multer({
   fileFilter: voiceFilter,
 });
 
-/** Видеокружок (короткое видео) */
+/** Видеокружок — до 50 МБ */
 export const chatVideoNoteUpload = multer({
   storage,
-  limits: { fileSize: 12 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: videoFilter,
 });
 
@@ -93,9 +93,8 @@ function attachmentFilter(_req, file, cb) {
   cb(null, true);
 }
 
-/** Фото и прочие вложения в чат (не голос/кружок). */
+/** Фото и прочие вложения в чат (не голос/кружок). Лимит размера для видео — в обработчике (50 МБ). */
 export const chatAttachmentUpload = multer({
   storage,
-  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: attachmentFilter,
 });

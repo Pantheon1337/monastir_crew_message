@@ -24,7 +24,6 @@ const storage = multer.diskStorage({
 
 export const storyImageUpload = multer({
   storage,
-  limits: { fileSize: 4 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const mt = String(file.mimetype || '').toLowerCase();
     if (mt.startsWith('image/')) {
