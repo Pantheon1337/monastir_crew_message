@@ -1,7 +1,29 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { api, apiUpload } from '../api.js';
 
 const MAX_EDGE = 1920;
+/** Экспорт истории: вертикальный кадр как в Instagram / Telegram */
+const STORY_EXPORT_W = 1080;
+const STORY_EXPORT_H = 1920;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 4;
+
+const closeBtnDark = {
+  border: '1px solid rgba(255,255,255,0.35)',
+  borderRadius: 'var(--radius)',
+  padding: '4px 8px',
+  fontSize: 11,
+  lineHeight: 1.2,
+  background: 'rgba(0,0,0,0.35)',
+  color: '#fff',
+};
+
+const closeBtnLight = {
+  width: 'auto',
+  padding: '4px 8px',
+  fontSize: 11,
+  lineHeight: 1.2,
+};
 
 function HiddenGalleryInput({ inputRef, onPick }) {
   return (
@@ -49,6 +71,64 @@ function captureFrameFromVideo(video) {
   });
 }
 
+/**
+ * Вырезает из исходного изображения видимую область 9:16 (масштаб и сдвиг как в редакторе).
+ * @param {HTMLImageElement} img — загруженное изображение
+ * @param {{ w: number, h: number }} view — размер окна предпросмотра (px)
+ * @param {{ iw: number, ih: number }} nat — naturalWidth/Height
+ * @param {number} zoom — множитель масштаба (>=1)
+ * @param {number} panX — сдвиг по X от центра (px)
+ * @param {number} panY — сдвиг по Y от центра (px)
+ */
+function renderStoryCropToBlob(img, view, nat, zoom, panX, panY) {
+  const { w: vw, h: vh } = view;
+  const { iw, ih } = nat;
+  if (!vw || !vh || !iw || !ih) return Promise.resolve(null);
+
+  const baseScale = Math.max(vw / iw, vh / ih);
+  const k = baseScale * zoom;
+  const left = vw / 2 + panX - (iw * k) / 2;
+  const top = vh / 2 + panY - (ih * k) / 2;
+  const srcX = (0 - left) / k;
+  const srcY = (0 - top) / k;
+  const srcW = vw / k;
+  const srcH = vh / k;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = STORY_EXPORT_W;
+  canvas.height = STORY_EXPORT_H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return Promise.resolve(null);
+
+  ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, STORY_EXPORT_W, STORY_EXPORT_H);
+
+  return new Promise((resolve) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          resolve(null);
+          return;
+        }
+        resolve(new File([blob], `story-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+      },
+      'image/jpeg',
+      0.92
+    );
+  });
+}
+
+function clampPan(panX, panY, iw, ih, vw, vh, baseScale, zoom) {
+  const k = baseScale * zoom;
+  const W = iw * k;
+  const H = ih * k;
+  const maxX = Math.max(0, (W - vw) / 2);
+  const maxY = Math.max(0, (H - vh) / 2);
+  return {
+    x: Math.min(maxX, Math.max(-maxX, panX)),
+    y: Math.min(maxY, Math.max(-maxY, panY)),
+  };
+}
+
 /** live = камера сразу; preview = фото + подпись; textOnly = только текст */
 export default function StoryCreateModal({ userId, onClose, onCreated }) {
   const [mode, setMode] = useState('live');
@@ -63,9 +143,19 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
   const [showInProfile, setShowInProfile] = useState(true);
   const [confirmPublishOpen, setConfirmPublishOpen] = useState(false);
 
+  /** Редактор кадра 9:16 в режиме preview */
+  const [storyZoom, setStoryZoom] = useState(1);
+  const [storyPan, setStoryPan] = useState({ x: 0, y: 0 });
+  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
+  const [imgNat, setImgNat] = useState({ iw: 0, ih: 0 });
+
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const galleryRef = useRef(null);
+  const cropViewportRef = useRef(null);
+  const previewImgRef = useRef(null);
+  const panStartRef = useRef(null);
+  const touchPinchRef = useRef(null);
 
   const stopStream = useCallback(() => {
     const s = streamRef.current;
@@ -128,8 +218,59 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
     };
   }, [previewUrl, stopStream]);
 
+  useLayoutEffect(() => {
+    if (mode !== 'preview' || !previewUrl) return undefined;
+    const el = cropViewportRef.current;
+    if (!el) return undefined;
+    const apply = () => {
+      const r = el.getBoundingClientRect();
+      setViewSize({ w: r.width, h: r.height });
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mode, previewUrl]);
+
+  useEffect(() => {
+    const { iw, ih } = imgNat;
+    const { w: vw, h: vh } = viewSize;
+    if (!iw || !ih || !vw || !vh) return;
+    const baseScale = Math.max(vw / iw, vh / ih);
+    setStoryPan((p) => clampPan(p.x, p.y, iw, ih, vw, vh, baseScale, storyZoom));
+  }, [imgNat.iw, imgNat.ih, viewSize.w, viewSize.h, storyZoom]);
+
+  useEffect(() => {
+    const el = cropViewportRef.current;
+    if (mode !== 'preview' || !el) return undefined;
+    const onTouchMove = (e) => {
+      if (e.touches.length === 2) e.preventDefault();
+    };
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, [mode, previewUrl]);
+
+  useEffect(() => {
+    const el = cropViewportRef.current;
+    if (mode !== 'preview' || !el) return undefined;
+    const wheel = (ev) => {
+      if (!ev.ctrlKey && !ev.metaKey) return;
+      ev.preventDefault();
+      const delta = -ev.deltaY * 0.008;
+      setStoryZoom((z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * (1 + delta))));
+    };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => el.removeEventListener('wheel', wheel);
+  }, [mode, previewUrl]);
+
+  const storyZoomRef = useRef(1);
+  storyZoomRef.current = storyZoom;
+
   function goPreviewWithFile(f) {
     setErr(null);
+    setStoryZoom(1);
+    setStoryPan({ x: 0, y: 0 });
+    setImgNat({ iw: 0, ih: 0 });
     setPickedFile(f);
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
@@ -147,6 +288,9 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
     });
     setText('');
     setErr(null);
+    setStoryZoom(1);
+    setStoryPan({ x: 0, y: 0 });
+    setImgNat({ iw: 0, ih: 0 });
     setMode('live');
   }
 
@@ -193,8 +337,14 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
     if (pickedFile) {
       setSaving(true);
       setErr(null);
+      let fileToUpload = pickedFile;
+      const img = previewImgRef.current;
+      if (img?.complete && viewSize.w > 0 && imgNat.iw > 0) {
+        const cropped = await renderStoryCropToBlob(img, viewSize, imgNat, storyZoom, storyPan.x, storyPan.y);
+        if (cropped) fileToUpload = cropped;
+      }
       const { ok, data } = await apiUpload('/api/stories/upload', {
-        file: pickedFile,
+        file: fileToUpload,
         userId,
         fieldName: 'media',
         extraFields: { body: t, showInProfile: showInProfile ? '1' : '0' },
@@ -232,6 +382,61 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
   const canUseCamera =
     typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia) && window.isSecureContext;
 
+  const { iw, ih } = imgNat;
+  const { w: vw, h: vh } = viewSize;
+  const baseScalePreview = iw && ih && vw && vh ? Math.max(vw / iw, vh / ih) : 0;
+  const innerW = baseScalePreview && iw ? iw * baseScalePreview * storyZoom : 0;
+  const innerH = baseScalePreview && ih ? ih * baseScalePreview * storyZoom : 0;
+
+  function onCropPointerDown(e) {
+    if (e.button !== 0) return;
+    panStartRef.current = { x: e.clientX, y: e.clientY, pan: { ...storyPan } };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function onCropPointerMove(e) {
+    if (!panStartRef.current) return;
+    const { iw: iiw, ih: iih } = imgNat;
+    const { w: rvw, h: rvh } = viewSize;
+    if (!iiw || !iih || !rvw || !rvh) return;
+    const bs = Math.max(rvw / iiw, rvh / iih);
+    const dx = e.clientX - panStartRef.current.x;
+    const dy = e.clientY - panStartRef.current.y;
+    const p0 = panStartRef.current.pan;
+    setStoryPan(clampPan(p0.x + dx, p0.y + dy, iiw, iih, rvw, rvh, bs, storyZoomRef.current));
+  }
+
+  function onCropPointerUp() {
+    panStartRef.current = null;
+  }
+
+  function onCropTouchStart(e) {
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const d = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      touchPinchRef.current = { d0: d, z0: storyZoomRef.current };
+      panStartRef.current = null;
+    }
+  }
+
+  function onCropTouchMove(e) {
+    if (e.touches.length === 2 && touchPinchRef.current && touchPinchRef.current.d0 > 0) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const d = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      const z = Math.min(
+        MAX_ZOOM,
+        Math.max(MIN_ZOOM, touchPinchRef.current.z0 * (d / touchPinchRef.current.d0)),
+      );
+      setStoryZoom(z);
+    }
+  }
+
+  function onCropTouchEnd(e) {
+    if (e.touches.length < 2) touchPinchRef.current = null;
+  }
+
   return (
     <div
       role="dialog"
@@ -268,18 +473,7 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
             <span id="story-create-title" style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
               История
             </span>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                border: '1px solid rgba(255,255,255,0.35)',
-                borderRadius: 'var(--radius)',
-                padding: '8px 12px',
-                fontSize: 12,
-                background: 'rgba(0,0,0,0.35)',
-                color: '#fff',
-              }}
-            >
+            <button type="button" onClick={onClose} style={closeBtnDark}>
               Закрыть
             </button>
           </div>
@@ -454,7 +648,7 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <span style={{ fontSize: 15, fontWeight: 600 }}>Текстовая история</span>
-            <button type="button" className="btn-outline" style={{ width: 'auto', padding: '8px 12px' }} onClick={onClose}>
+            <button type="button" className="btn-outline" style={closeBtnLight} onClick={onClose}>
               Закрыть
             </button>
           </div>
@@ -498,36 +692,109 @@ export default function StoryCreateModal({ userId, onClose, onCreated }) {
         >
           <div
             style={{
-              padding: '10px 12px',
-              paddingTop: 'max(10px, env(safe-area-inset-top))',
+              padding: '8px 12px',
+              paddingTop: 'max(8px, env(safe-area-inset-top))',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               borderBottom: '1px solid var(--border)',
             }}
           >
-            <span style={{ fontSize: 14, fontWeight: 600 }}>Публикация</span>
-            <button type="button" className="btn-outline" style={{ width: 'auto', padding: '8px 12px' }} onClick={onClose}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>Кадр</span>
+            <button type="button" className="btn-outline" style={closeBtnLight} onClick={onClose}>
               Закрыть
             </button>
           </div>
+          <p
+            className="muted"
+            style={{
+              margin: '8px 12px 0',
+              fontSize: 11,
+              lineHeight: 1.35,
+              textAlign: 'center',
+            }}
+          >
+            Сдвиг — перетаскивание · масштаб — ползунок, щипок двумя пальцами или Ctrl + колёсико
+          </p>
           <div
+            ref={cropViewportRef}
+            onPointerDown={onCropPointerDown}
+            onPointerMove={onCropPointerMove}
+            onPointerUp={onCropPointerUp}
+            onPointerCancel={onCropPointerUp}
+            onTouchStart={onCropTouchStart}
+            onTouchMove={onCropTouchMove}
+            onTouchEnd={onCropTouchEnd}
             style={{
               flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 12,
+              minHeight: 140,
+              width: '100%',
+              maxWidth: 440,
+              margin: '10px auto 6px',
+              aspectRatio: '9 / 16',
+              maxHeight: 'min(52dvh, 520px)',
+              position: 'relative',
+              overflow: 'hidden',
+              borderRadius: 12,
+              background: '#111',
+              touchAction: 'none',
             }}
           >
             {previewUrl ? (
-              <img src={previewUrl} alt="" style={{ maxWidth: '100%', maxHeight: '48dvh', objectFit: 'contain', borderRadius: 8 }} />
+              <img
+                ref={previewImgRef}
+                src={previewUrl}
+                alt=""
+                draggable={false}
+                onLoad={(e) => {
+                  const im = e.currentTarget;
+                  setImgNat({ iw: im.naturalWidth, ih: im.naturalHeight });
+                }}
+                style={
+                  imgNat.iw > 0 && vw > 0 && vh > 0 && innerW > 0
+                    ? {
+                        position: 'absolute',
+                        left: '50%',
+                        top: '50%',
+                        width: innerW,
+                        height: innerH,
+                        transform: `translate(calc(-50% + ${storyPan.x}px), calc(-50% + ${storyPan.y}px))`,
+                        objectFit: 'fill',
+                        display: 'block',
+                        userSelect: 'none',
+                        pointerEvents: 'none',
+                        willChange: 'transform',
+                      }
+                    : {
+                        position: 'absolute',
+                        inset: 0,
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain',
+                        opacity: 0.4,
+                        pointerEvents: 'none',
+                      }
+                }
+              />
             ) : null}
+          </div>
+          <div style={{ padding: '0 16px 8px', maxWidth: 440, margin: '0 auto', width: '100%' }}>
+            <label className="muted" style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>
+              Масштаб
+            </label>
+            <input
+              type="range"
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
+              step={0.02}
+              value={storyZoom}
+              onChange={(e) => setStoryZoom(Number(e.target.value))}
+              style={{ width: '100%', accentColor: 'var(--accent)' }}
+            />
           </div>
           <form
             className="block"
-            style={{ margin: 12, padding: 12 }}
+            style={{ margin: '0 12px 12px', padding: 12 }}
             onSubmit={(e) => {
               e.preventDefault();
               requestPublish();
