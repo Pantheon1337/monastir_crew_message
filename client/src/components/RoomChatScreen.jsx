@@ -58,6 +58,13 @@ function formatDur(ms) {
   return m > 0 ? `${m}:${String(rs).padStart(2, '0')}` : `0:${String(rs).padStart(2, '0')}`;
 }
 
+function newClientMessageId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 /** Единый формат для API и WS (mediaUrl, kind, durationMs). */
 function normalizeChatMessage(m) {
   if (!m || typeof m !== 'object') return m;
@@ -94,6 +101,7 @@ function normalizeChatMessage(m) {
     storyReactionKey: m.storyReactionKey ?? null,
     reactions: m.reactions ?? null,
     readByPeer: m.readByPeer === true,
+    deliveredToPeer: m.readByPeer === true || m.deliveredToPeer !== false,
     pending: m.pending === true,
     senderAffiliationEmoji: m.senderAffiliationEmoji ?? null,
     revokedForAll: m.revokedForAll === true,
@@ -521,7 +529,9 @@ function MessageBubble({
               </span>
             ) : null}
           </span>
-          {mine ? <ChatReadReceipt readByPeer={m.readByPeer} pending={m.pending} /> : null}
+          {mine ? (
+            <ChatReadReceipt readByPeer={m.readByPeer} deliveredToPeer={m.deliveredToPeer} pending={m.pending} />
+          ) : null}
         </div>
         </div>
       </SwipeToReplyRow>
@@ -556,6 +566,8 @@ export default function RoomChatScreen({
   const [roomMembers, setRoomMembers] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
   /** Не скроллить ленту сразу после отправки — иначе iOS снимает фокус с поля и закрывает клавиатуру. */
@@ -600,9 +612,10 @@ export default function RoomChatScreen({
   const load = useCallback(async () => {
     setLoading(true);
     loadEndedAtRef.current = 0;
+    setHasMoreOlder(false);
     const cached = loadRoomThreadCache(userId, roomId);
     setMessages(cached?.length ? cached.map(normalizeChatMessage) : []);
-    const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, { userId });
+    const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages?limit=200`, { userId });
     if (!ok) {
       setErr(data?.error || 'Не удалось загрузить чат');
       setLoading(false);
@@ -610,11 +623,47 @@ export default function RoomChatScreen({
     }
     const raw = data.messages || [];
     setMessages(raw.map(normalizeChatMessage));
+    setHasMoreOlder(data.hasMore === true);
     saveRoomThreadCache(userId, roomId, raw);
     setErr(null);
     loadEndedAtRef.current = Date.now();
     setLoading(false);
   }, [roomId, userId]);
+
+  const loadOlder = useCallback(async () => {
+    if (!roomId || !userId || loadingOlder || !hasMoreOlder) return;
+    const oldest = messages[0];
+    if (!oldest?.id || oldest.createdAt == null) return;
+    const el = scrollRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    const prevScrollTop = el?.scrollTop ?? 0;
+    setLoadingOlder(true);
+    try {
+      const q = new URLSearchParams({
+        limit: '100',
+        beforeCreatedAt: String(oldest.createdAt),
+        beforeId: String(oldest.id),
+      });
+      const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages?${q.toString()}`, {
+        userId,
+      });
+      if (!ok) return;
+      const raw = data.messages || [];
+      const batch = raw.map(normalizeChatMessage);
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        return [...batch.filter((m) => m.id && !seen.has(m.id)), ...prev];
+      });
+      setHasMoreOlder(data.hasMore === true);
+      requestAnimationFrame(() => {
+        const root = scrollRef.current;
+        if (!root) return;
+        root.scrollTop = prevScrollTop + (root.scrollHeight - prevScrollHeight);
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [roomId, userId, loadingOlder, hasMoreOlder, messages]);
 
   useEffect(() => {
     load();
@@ -798,16 +847,22 @@ export default function RoomChatScreen({
     const el = scrollRef.current;
     if (!el) return undefined;
     syncScrollDownFab();
-    el.addEventListener('scroll', syncScrollDownFab, { passive: true });
+    const onScroll = () => {
+      syncScrollDownFab();
+      if (el.scrollTop < 120 && hasMoreOlder && !loadingOlder) {
+        void loadOlder();
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
     const ro = new ResizeObserver(() => {
       requestAnimationFrame(syncScrollDownFab);
     });
     ro.observe(el);
     return () => {
-      el.removeEventListener('scroll', syncScrollDownFab);
+      el.removeEventListener('scroll', onScroll);
       ro.disconnect();
     };
-  }, [syncScrollDownFab, messages.length]);
+  }, [syncScrollDownFab, messages.length, hasMoreOlder, loadingOlder, loadOlder]);
 
   useEffect(() => {
     syncScrollDownFab();
@@ -832,7 +887,10 @@ export default function RoomChatScreen({
           file,
           userId,
           fieldName: 'file',
-          extraFields: isImg ? { caption: text.trim() } : {},
+          extraFields: {
+            ...(isImg ? { caption: text.trim() } : {}),
+            clientMessageId: newClientMessageId(),
+          },
         });
         if (!ok) {
           setErr(data?.error || 'Не отправлено');
@@ -936,7 +994,7 @@ export default function RoomChatScreen({
           file,
           userId,
           fieldName: 'file',
-          extraFields: { durationMs: String(elapsed) },
+          extraFields: { durationMs: String(elapsed), clientMessageId: newClientMessageId() },
         });
         if (!ok) {
           setErr(data?.error || 'Не отправлено');
@@ -1018,7 +1076,7 @@ export default function RoomChatScreen({
     }
     const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages`, {
       method: 'POST',
-      body: { body: t, replyToId: replyDraft?.id },
+      body: { body: t, replyToId: replyDraft?.id, clientMessageId: newClientMessageId() },
       userId,
     });
     if (!ok) {
@@ -1063,7 +1121,7 @@ export default function RoomChatScreen({
       file,
       userId,
       fieldName: 'file',
-      extraFields: { durationMs: String(durationMs) },
+      extraFields: { durationMs: String(durationMs), clientMessageId: newClientMessageId() },
     });
     if (!ok) {
       throw new Error(data?.error || 'Не отправлено');
@@ -1203,7 +1261,13 @@ export default function RoomChatScreen({
                 Нет сообщений. Тап по кружку/микрофону справа переключает режим, удержание — запись (до 15 с).
               </p>
             ) : (
-              messages.map((m, i) => {
+              <>
+                {hasMoreOlder || loadingOlder ? (
+                  <div className="muted" style={{ fontSize: 11, marginBottom: 8, textAlign: 'center' }}>
+                    {loadingOlder ? 'Загрузка более ранних сообщений…' : 'Прокрутите вверх, чтобы подгрузить историю'}
+                  </div>
+                ) : null}
+                {messages.map((m, i) => {
                 const g = messageGroupFlags(messages, i);
                 return (
                 <MessageBubble
@@ -1227,7 +1291,8 @@ export default function RoomChatScreen({
                   onOpenImagePreview={(url) => setImagePreviewUrl(url)}
                 />
                 );
-              })
+              })}
+              </>
             )}
             <div
               ref={messagesEndRef}

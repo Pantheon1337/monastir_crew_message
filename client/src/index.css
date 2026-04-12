@@ -736,6 +736,12 @@ video.chat-video-note {
   color: var(--chat-check-delivered);
 }
 
+/* Одна галочка: принято сервером, ещё не доставлено на устройство собеседника */
+.chat-read-receipt--sent .chat-read-receipt__tick {
+  color: var(--chat-check-delivered);
+  opacity: 0.75;
+}
+
 .chat-read-receipt--read .chat-read-receipt__tick {
   color: var(--chat-check-read);
 }

@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 const DOC_EXT = new Set(['.pdf', '.doc', '.docx', '.txt', '.zip', '.rar', '.7z', '.csv']);
 import multer from 'multer';
 import { uploadsRoot } from './avatarUpload.js';
+import { VIDEO_MAX_BYTES } from './uploadLimits.js';
 
 const chatDir = path.join(uploadsRoot, 'chat_media');
 
@@ -93,8 +94,9 @@ function attachmentFilter(_req, file, cb) {
   cb(null, true);
 }
 
-/** Фото и прочие вложения в чат (не голос/кружок). Лимит размера для видео — в обработчике (50 МБ). */
+/** Фото и прочие вложения в чат (не голос/кружок). Верхняя граница файла — как у видео; точная проверка видео в обработчике. */
 export const chatAttachmentUpload = multer({
   storage,
+  limits: { fileSize: VIDEO_MAX_BYTES },
   fileFilter: attachmentFilter,
 });

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
 import { randomUUID } from 'crypto';
 
@@ -16,6 +17,8 @@ import {
   findUserByNickname,
   findUserById,
   findUserWithSecretByNickname,
+  getUserPasswordHash,
+  setUserPasswordHash,
   createUser,
   mapPublicUser,
   setUserAvatarPath,
@@ -107,6 +110,8 @@ import {
   pinDirectMessage,
   unpinDirectMessage,
   submitBugReport,
+  ackDirectMessagesDelivered,
+  tryMarkDirectMessageDeliveredByWs,
 } from './social.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
@@ -128,15 +133,66 @@ app.use(
 app.use(express.json());
 app.use('/uploads', express.static(uploadsRoot));
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const messageWriteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.headers['x-user-id'] || req.ip || ''),
+});
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 45,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => String(req.headers['x-user-id'] || req.ip || ''),
+});
+
 /** userId -> Set<WebSocket> */
 const socketsByUser = new Map();
 
+/** @returns {number} число сокетов, которым ушла доставка */
 function sendToUser(userId, obj) {
   const set = socketsByUser.get(userId);
-  if (!set) return;
+  if (!set) return 0;
   const raw = JSON.stringify(obj);
+  let n = 0;
   for (const ws of set) {
-    if (ws.readyState === 1) ws.send(raw);
+    if (ws.readyState === 1) {
+      ws.send(raw);
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/** Push нового ЛС-сообщения собеседнику и при успешной доставке по WS — отметить «доставлено» и уведомить отправителя. */
+function pushDirectChatNewMessage(chatId, peerId, msgOut) {
+  if (!msgOut?.id) return;
+  const n = sendToUser(peerId, {
+    type: 'chat:message:new',
+    payload: { chatId, message: msgOut },
+  });
+  if (n > 0) {
+    const d = tryMarkDirectMessageDeliveredByWs(chatId, msgOut.id);
+    if (d.updated && d.senderId) {
+      sendToUser(d.senderId, {
+        type: 'chat:message:delivered',
+        payload: { chatId, messageId: msgOut.id, deliveredAt: d.deliveredAt },
+      });
+    }
   }
 }
 
@@ -205,7 +261,7 @@ app.get('/api/auth/user/:id', (req, res) => {
   res.json({ user });
 });
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (typeof username !== 'string' || !username.trim()) {
     res.status(400).json({ error: 'Укажите никнейм' });
@@ -232,7 +288,7 @@ app.post('/api/auth/login', (req, res) => {
   res.json({ user });
 });
 
-app.post('/api/auth/register', (req, res) => {
+app.post('/api/auth/register', registerLimiter, (req, res) => {
   const { phone: rawPhone, firstName, lastName, nickname: rawNick, password } = req.body || {};
 
   if (typeof rawPhone !== 'string' || !rawPhone.trim()) {
@@ -301,6 +357,34 @@ app.post('/api/auth/register', (req, res) => {
     }
     throw e;
   }
+});
+
+app.post('/api/auth/change-password', loginLimiter, (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { currentPassword, newPassword } = req.body || {};
+  if (typeof newPassword !== 'string' || !newPassword) {
+    res.status(400).json({ error: 'Укажите новый пароль' });
+    return;
+  }
+  const pwdErr = validatePasswordStrength(newPassword);
+  if (pwdErr) {
+    res.status(400).json({ error: pwdErr });
+    return;
+  }
+  const stored = getUserPasswordHash(userId);
+  if (stored) {
+    if (typeof currentPassword !== 'string' || !currentPassword) {
+      res.status(400).json({ error: 'Введите текущий пароль' });
+      return;
+    }
+    if (!verifyPassword(currentPassword, stored)) {
+      res.status(401).json({ error: 'Неверный текущий пароль' });
+      return;
+    }
+  }
+  setUserPasswordHash(userId, hashPassword(newPassword));
+  res.json({ ok: true });
 });
 
 /** Заявка в друзья по нику или телефону. */
@@ -778,12 +862,50 @@ app.post('/api/users/me/avatar', (req, res) => {
 app.get('/api/chats/:chatId/messages', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const msgs = listMessagesForChat(req.params.chatId, userId);
-  if (msgs === null) {
+  const { limit, beforeCreatedAt, beforeId } = req.query || {};
+  const out = listMessagesForChat(req.params.chatId, userId, {
+    limit: limit != null ? Number(limit) : undefined,
+    beforeCreatedAt: beforeCreatedAt != null ? Number(beforeCreatedAt) : undefined,
+    beforeId: typeof beforeId === 'string' ? beforeId : undefined,
+  });
+  if (out === null) {
     res.status(404).json({ error: 'Чат не найден или нет доступа' });
     return;
   }
-  res.json({ messages: msgs });
+  const { messages, hasMore, inboundDelivered } = out;
+  if (inboundDelivered?.markedIds?.length && inboundDelivered.notifySenderId) {
+    sendToUser(inboundDelivered.notifySenderId, {
+      type: 'chat:messages:delivered',
+      payload: {
+        chatId: req.params.chatId,
+        messageIds: inboundDelivered.markedIds,
+        deliveredAt: inboundDelivered.deliveredAt,
+      },
+    });
+  }
+  res.json({ messages, hasMore });
+});
+
+app.post('/api/chats/:chatId/messages/ack-delivered', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const ids = req.body?.messageIds;
+  const out = ackDirectMessagesDelivered(req.params.chatId, userId, ids);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  if (out.markedIds?.length && out.notifySenderId) {
+    sendToUser(out.notifySenderId, {
+      type: 'chat:messages:delivered',
+      payload: {
+        chatId: req.params.chatId,
+        messageIds: out.markedIds,
+        deliveredAt: out.deliveredAt,
+      },
+    });
+  }
+  res.json({ ok: true, markedIds: out.markedIds || [] });
 });
 
 app.post('/api/chats/:chatId/messages/:messageId/pin', (req, res) => {
@@ -819,10 +941,13 @@ app.post('/api/chats/:chatId/messages/:messageId/unpin', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/chats/:chatId/messages', (req, res) => {
+app.post('/api/chats/:chatId/messages', messageWriteLimiter, (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const result = insertDirectMessage(req.params.chatId, userId, req.body?.body, { replyToId: req.body?.replyToId });
+  const result = insertDirectMessage(req.params.chatId, userId, req.body?.body, {
+    replyToId: req.body?.replyToId,
+    clientMessageId: req.body?.clientMessageId,
+  });
   if (result.error) {
     const code = result.error.includes('доступ') ? 403 : 400;
     res.status(code).json({ error: result.error });
@@ -831,13 +956,11 @@ app.post('/api/chats/:chatId/messages', (req, res) => {
   const chatId = req.params.chatId;
   const msgOut =
     getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-  sendToUser(result.peerId, {
-    type: 'chat:message:new',
-    payload: {
-      chatId,
-      message: msgOut,
-    },
-  });
+  if (result.duplicate) {
+    res.status(200).json({ duplicate: true, message: msgOut });
+    return;
+  }
+  pushDirectChatNewMessage(chatId, result.peerId, msgOut);
   res.status(201).json({ message: msgOut });
 });
 
@@ -868,7 +991,7 @@ app.patch('/api/chats/:chatId/messages/:messageId', (req, res) => {
   res.json({ message: msgSelf || msgPeer });
 });
 
-app.post('/api/chats/:chatId/messages/voice', (req, res) => {
+app.post('/api/chats/:chatId/messages/voice', uploadLimiter, (req, res) => {
   chatVoiceUpload.single('file')(req, res, (err) => {
     if (err) {
       res.status(400).json({ error: err.message || 'Ошибка загрузки' });
@@ -882,7 +1005,9 @@ app.post('/api/chats/:chatId/messages/voice', (req, res) => {
     }
     const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
     const rel = chatMediaRelativePath(req.file.filename);
-    const result = insertChatMediaMessage(req.params.chatId, userId, 'voice', rel, durationMs);
+    const result = insertChatMediaMessage(req.params.chatId, userId, 'voice', rel, durationMs, {
+      clientMessageId: req.body?.clientMessageId,
+    });
     if (result.error) {
       const code = result.error.includes('доступ') ? 403 : 400;
       res.status(code).json({ error: result.error });
@@ -890,18 +1015,16 @@ app.post('/api/chats/:chatId/messages/voice', (req, res) => {
     }
     const chatId = req.params.chatId;
     const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-    sendToUser(result.peerId, {
-      type: 'chat:message:new',
-      payload: {
-        chatId,
-        message: msgOut,
-      },
-    });
+    if (result.duplicate) {
+      res.status(200).json({ duplicate: true, message: msgOut });
+      return;
+    }
+    pushDirectChatNewMessage(chatId, result.peerId, msgOut);
     res.status(201).json({ message: msgOut });
   });
 });
 
-app.post('/api/chats/:chatId/messages/video-note', (req, res) => {
+app.post('/api/chats/:chatId/messages/video-note', uploadLimiter, (req, res) => {
   chatVideoNoteUpload.single('file')(req, res, (err) => {
     if (err) {
       const msg =
@@ -917,7 +1040,9 @@ app.post('/api/chats/:chatId/messages/video-note', (req, res) => {
     }
     const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
     const rel = chatMediaRelativePath(req.file.filename);
-    const result = insertChatMediaMessage(req.params.chatId, userId, 'video_note', rel, durationMs);
+    const result = insertChatMediaMessage(req.params.chatId, userId, 'video_note', rel, durationMs, {
+      clientMessageId: req.body?.clientMessageId,
+    });
     if (result.error) {
       const code = result.error.includes('доступ') ? 403 : 400;
       res.status(code).json({ error: result.error });
@@ -925,18 +1050,16 @@ app.post('/api/chats/:chatId/messages/video-note', (req, res) => {
     }
     const chatId = req.params.chatId;
     const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-    sendToUser(result.peerId, {
-      type: 'chat:message:new',
-      payload: {
-        chatId,
-        message: msgOut,
-      },
-    });
+    if (result.duplicate) {
+      res.status(200).json({ duplicate: true, message: msgOut });
+      return;
+    }
+    pushDirectChatNewMessage(chatId, result.peerId, msgOut);
     res.status(201).json({ message: msgOut });
   });
 });
 
-app.post('/api/chats/:chatId/messages/media', (req, res) => {
+app.post('/api/chats/:chatId/messages/media', uploadLimiter, (req, res) => {
   chatAttachmentUpload.single('file')(req, res, (err) => {
     if (err) {
       res.status(400).json({ error: err.message || 'Ошибка загрузки' });
@@ -959,7 +1082,9 @@ app.post('/api/chats/:chatId/messages/media', (req, res) => {
     const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
     const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
     const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
-    const result = insertChatAttachmentMessage(req.params.chatId, userId, kind, rel, bodyField);
+    const result = insertChatAttachmentMessage(req.params.chatId, userId, kind, rel, bodyField, {
+      clientMessageId: req.body?.clientMessageId,
+    });
     if (result.error) {
       const code = result.error.includes('доступ') ? 403 : 400;
       res.status(code).json({ error: result.error });
@@ -967,13 +1092,11 @@ app.post('/api/chats/:chatId/messages/media', (req, res) => {
     }
     const chatId = req.params.chatId;
     const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-    sendToUser(result.peerId, {
-      type: 'chat:message:new',
-      payload: {
-        chatId,
-        message: msgOut,
-      },
-    });
+    if (result.duplicate) {
+      res.status(200).json({ duplicate: true, message: msgOut });
+      return;
+    }
+    pushDirectChatNewMessage(chatId, result.peerId, msgOut);
     res.status(201).json({ message: msgOut });
   });
 });
@@ -1045,10 +1168,7 @@ app.post('/api/chats/:chatId/forward', (req, res) => {
   }
   const chatId = req.params.chatId;
   const msgOut = getMessageByIdForChat(chatId, out.messageId, userId);
-  sendToUser(out.peerId, {
-    type: 'chat:message:new',
-    payload: { chatId, message: msgOut },
-  });
+  pushDirectChatNewMessage(chatId, out.peerId, msgOut);
   res.status(201).json({ message: msgOut });
 });
 
@@ -1089,13 +1209,7 @@ app.post('/api/stories/react', (req, res) => {
   }
   const chatId = result.message.chatId;
   const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-  sendToUser(result.peerId, {
-    type: 'chat:message:new',
-    payload: {
-      chatId,
-      message: msgOut,
-    },
-  });
+  pushDirectChatNewMessage(chatId, result.peerId, msgOut);
   res.status(201).json({ message: msgOut });
 });
 
@@ -1120,13 +1234,7 @@ app.post('/api/stories/reply', (req, res) => {
   }
   const chatId = result.message.chatId;
   const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-  sendToUser(result.peerId, {
-    type: 'chat:message:new',
-    payload: {
-      chatId,
-      message: msgOut,
-    },
-  });
+  pushDirectChatNewMessage(chatId, result.peerId, msgOut);
   res.status(201).json({ message: msgOut });
 });
 
@@ -1166,18 +1274,27 @@ app.post('/api/rooms', (req, res) => {
 app.get('/api/rooms/:roomId/messages', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const msgs = listRoomMessages(req.params.roomId, userId);
-  if (msgs === null) {
+  const { limit, beforeCreatedAt, beforeId } = req.query || {};
+  const out = listRoomMessages(req.params.roomId, userId, {
+    limit: limit != null ? Number(limit) : undefined,
+    beforeCreatedAt: beforeCreatedAt != null ? Number(beforeCreatedAt) : undefined,
+    beforeId: typeof beforeId === 'string' ? beforeId : undefined,
+  });
+  if (out === null) {
     res.status(404).json({ error: 'Комната не найдена или нет доступа' });
     return;
   }
-  res.json({ messages: msgs });
+  const { messages, hasMore } = out;
+  res.json({ messages, hasMore });
 });
 
-app.post('/api/rooms/:roomId/messages', (req, res) => {
+app.post('/api/rooms/:roomId/messages', messageWriteLimiter, (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  const result = insertRoomMessage(req.params.roomId, userId, req.body?.body, { replyToId: req.body?.replyToId });
+  const result = insertRoomMessage(req.params.roomId, userId, req.body?.body, {
+    replyToId: req.body?.replyToId,
+    clientMessageId: req.body?.clientMessageId,
+  });
   if (result.error) {
     const code = result.error.includes('доступ') ? 403 : 400;
     res.status(code).json({ error: result.error });
@@ -1185,6 +1302,10 @@ app.post('/api/rooms/:roomId/messages', (req, res) => {
   }
   const roomId = req.params.roomId;
   const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+  if (result.duplicate) {
+    res.status(200).json({ duplicate: true, message: msgOut });
+    return;
+  }
   broadcastRoom(roomId, {
     type: 'room:message:new',
     payload: { roomId, message: msgOut },
@@ -1226,7 +1347,7 @@ app.post('/api/rooms/:roomId/read', (req, res) => {
   res.json({ ok: true, readAt: out.readAt });
 });
 
-app.post('/api/rooms/:roomId/messages/voice', (req, res) => {
+app.post('/api/rooms/:roomId/messages/voice', uploadLimiter, (req, res) => {
   chatVoiceUpload.single('file')(req, res, (err) => {
     if (err) {
       res.status(400).json({ error: err.message || 'Ошибка загрузки' });
@@ -1240,7 +1361,9 @@ app.post('/api/rooms/:roomId/messages/voice', (req, res) => {
     }
     const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
     const rel = chatMediaRelativePath(req.file.filename);
-    const result = insertRoomMediaMessage(req.params.roomId, userId, 'voice', rel, durationMs);
+    const result = insertRoomMediaMessage(req.params.roomId, userId, 'voice', rel, durationMs, {
+      clientMessageId: req.body?.clientMessageId,
+    });
     if (result.error) {
       const code = result.error.includes('доступ') ? 403 : 400;
       res.status(code).json({ error: result.error });
@@ -1248,6 +1371,10 @@ app.post('/api/rooms/:roomId/messages/voice', (req, res) => {
     }
     const roomId = req.params.roomId;
     const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+    if (result.duplicate) {
+      res.status(200).json({ duplicate: true, message: msgOut });
+      return;
+    }
     broadcastRoom(roomId, {
       type: 'room:message:new',
       payload: { roomId, message: msgOut },
@@ -1256,7 +1383,7 @@ app.post('/api/rooms/:roomId/messages/voice', (req, res) => {
   });
 });
 
-app.post('/api/rooms/:roomId/messages/video-note', (req, res) => {
+app.post('/api/rooms/:roomId/messages/video-note', uploadLimiter, (req, res) => {
   chatVideoNoteUpload.single('file')(req, res, (err) => {
     if (err) {
       const msg =
@@ -1272,7 +1399,9 @@ app.post('/api/rooms/:roomId/messages/video-note', (req, res) => {
     }
     const durationMs = parseInt(String(req.body?.durationMs ?? ''), 10);
     const rel = chatMediaRelativePath(req.file.filename);
-    const result = insertRoomMediaMessage(req.params.roomId, userId, 'video_note', rel, durationMs);
+    const result = insertRoomMediaMessage(req.params.roomId, userId, 'video_note', rel, durationMs, {
+      clientMessageId: req.body?.clientMessageId,
+    });
     if (result.error) {
       const code = result.error.includes('доступ') ? 403 : 400;
       res.status(code).json({ error: result.error });
@@ -1280,6 +1409,10 @@ app.post('/api/rooms/:roomId/messages/video-note', (req, res) => {
     }
     const roomId = req.params.roomId;
     const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+    if (result.duplicate) {
+      res.status(200).json({ duplicate: true, message: msgOut });
+      return;
+    }
     broadcastRoom(roomId, {
       type: 'room:message:new',
       payload: { roomId, message: msgOut },
@@ -1288,7 +1421,7 @@ app.post('/api/rooms/:roomId/messages/video-note', (req, res) => {
   });
 });
 
-app.post('/api/rooms/:roomId/messages/media', (req, res) => {
+app.post('/api/rooms/:roomId/messages/media', uploadLimiter, (req, res) => {
   chatAttachmentUpload.single('file')(req, res, (err) => {
     if (err) {
       res.status(400).json({ error: err.message || 'Ошибка загрузки' });
@@ -1311,7 +1444,9 @@ app.post('/api/rooms/:roomId/messages/media', (req, res) => {
     const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
     const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
     const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
-    const result = insertRoomAttachmentMessage(req.params.roomId, userId, kind, rel, bodyField);
+    const result = insertRoomAttachmentMessage(req.params.roomId, userId, kind, rel, bodyField, {
+      clientMessageId: req.body?.clientMessageId,
+    });
     if (result.error) {
       const code = result.error.includes('доступ') ? 403 : 400;
       res.status(code).json({ error: result.error });
@@ -1319,6 +1454,10 @@ app.post('/api/rooms/:roomId/messages/media', (req, res) => {
     }
     const roomId = req.params.roomId;
     const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+    if (result.duplicate) {
+      res.status(200).json({ duplicate: true, message: msgOut });
+      return;
+    }
     broadcastRoom(roomId, {
       type: 'room:message:new',
       payload: { roomId, message: msgOut },

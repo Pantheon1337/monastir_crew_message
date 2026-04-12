@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
 import { api, apiUpload } from '../api.js';
 import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
@@ -27,7 +27,7 @@ const MAX_MS = 15000;
 const MIN_MS = 400;
 
 /** После загрузки истории не доверяем gap и держим низ, пока не уляжется вёрстка и медиа. */
-const POST_LOAD_STICK_MS = 1200;
+const POST_LOAD_STICK_MS = 650;
 
 /** Надёжный скролл к последним сообщениям (scrollHeight без clientHeight даёт лишнее в некоторых браузерах). */
 function scrollTimelineToBottom(el) {
@@ -95,6 +95,19 @@ function formatDur(ms) {
   return m > 0 ? `${m}:${String(rs).padStart(2, '0')}` : `0:${String(rs).padStart(2, '0')}`;
 }
 
+function formatChatMessageTime(ts) {
+  if (ts == null) return '';
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function newClientMessageId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 /** Единый формат для API и WS (mediaUrl, kind, durationMs). */
 function normalizeChatMessage(m) {
   if (!m || typeof m !== 'object') return m;
@@ -131,6 +144,8 @@ function normalizeChatMessage(m) {
     storyReactionKey: m.storyReactionKey ?? null,
     reactions: m.reactions ?? null,
     readByPeer: m.readByPeer === true,
+    /** Для исходящих: две серые галочки, если не явно false (совместимость со старым кэшем). */
+    deliveredToPeer: m.readByPeer === true || m.deliveredToPeer !== false,
     pending: m.pending === true,
     senderAffiliationEmoji: m.senderAffiliationEmoji ?? null,
     revokedForAll: m.revokedForAll === true,
@@ -223,7 +238,15 @@ function clampMenuPosition(x, y, w, h, opts = {}) {
   return { left, top: Math.max(oy + 8, Math.min(top, oy + vh - h - 8)) };
 }
 
-function ChatMessageReactions({ chatId, roomId, messageId, userId, reactions, onUpdate, align = 'flex-start' }) {
+const ChatMessageReactions = memo(function ChatMessageReactions({
+  chatId,
+  roomId,
+  messageId,
+  userId,
+  reactions,
+  onUpdate,
+  align = 'flex-start',
+}) {
   const [whoOpen, setWhoOpen] = useState(false);
   const [whoList, setWhoList] = useState([]);
   const counts = { ...emptyReactionCounts(), ...(reactions?.counts || {}) };
@@ -309,7 +332,7 @@ function ChatMessageReactions({ chatId, roomId, messageId, userId, reactions, on
       <ReactionUsersModal open={whoOpen} users={whoList} onClose={() => setWhoOpen(false)} />
     </>
   );
-}
+});
 
 function pinChipPreview(m) {
   const k = m.kind || 'text';
@@ -321,7 +344,7 @@ function pinChipPreview(m) {
   return (m.body || '').trim().slice(0, 36) || '…';
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   m,
   userId,
   chatId,
@@ -588,14 +611,18 @@ function MessageBubble({
             ) : null}
           </span>
           {mine && !roomId && !savedChat ? (
-            <ChatReadReceipt readByPeer={m.readByPeer} pending={m.pending} />
+            <ChatReadReceipt
+              readByPeer={m.readByPeer}
+              deliveredToPeer={m.deliveredToPeer}
+              pending={m.pending}
+            />
           ) : null}
         </div>
         </div>
       </SwipeToReplyRow>
     </div>
   );
-}
+});
 
 export default function DirectChatScreen({
   userId,
@@ -635,6 +662,8 @@ export default function DirectChatScreen({
   const [caretPos, setCaretPos] = useState(0);
   const [mediaUploading, setMediaUploading] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
   /** Не скроллить ленту сразу после отправки — иначе iOS снимает фокус с поля и закрывает клавиатуру. */
@@ -657,6 +686,13 @@ export default function DirectChatScreen({
   const longPressArmedRef = useRef(false);
   const mediaModeRef = useRef('video');
   const HOLD_START_MS = 300;
+
+  /** Скролл к низу только при смене длины/последнего id — не при каждой реакции/прочтении. */
+  const scrollLayoutKey = useMemo(() => {
+    const n = messages.length;
+    if (n === 0) return '0';
+    return `${n}:${messages[n - 1]?.id ?? ''}`;
+  }, [messages]);
 
   useEffect(() => {
     mediaModeRef.current = mediaMode;
@@ -686,9 +722,13 @@ export default function DirectChatScreen({
   const load = useCallback(async () => {
     setLoading(true);
     loadEndedAtRef.current = 0;
+    setHasMoreOlder(false);
     const cached = loadDirectThreadCache(userId, chatId);
     setMessages(cached?.length ? cached.map(normalizeChatMessage) : []);
-    const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, { userId });
+    const { ok, data } = await api(
+      `/api/chats/${encodeURIComponent(chatId)}/messages?limit=200`,
+      { userId },
+    );
     if (!ok) {
       setErr(data?.error || 'Не удалось загрузить чат');
       setLoading(false);
@@ -696,11 +736,50 @@ export default function DirectChatScreen({
     }
     const raw = data.messages || [];
     setMessages(raw.map(normalizeChatMessage));
+    setHasMoreOlder(data.hasMore === true);
     saveDirectThreadCache(userId, chatId, raw);
     setErr(null);
     loadEndedAtRef.current = Date.now();
     setLoading(false);
   }, [chatId, userId]);
+
+  const loadOlder = useCallback(async () => {
+    if (!chatId || !userId || loadingOlder || !hasMoreOlder) return;
+    const oldest = messages[0];
+    if (!oldest?.id || oldest.createdAt == null) return;
+    const el = scrollRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    const prevScrollTop = el?.scrollTop ?? 0;
+    setLoadingOlder(true);
+    try {
+      const q = new URLSearchParams({
+        limit: '100',
+        beforeCreatedAt: String(oldest.createdAt),
+        beforeId: String(oldest.id),
+      });
+      const { ok, data } = await api(
+        `/api/chats/${encodeURIComponent(chatId)}/messages?${q.toString()}`,
+        { userId },
+      );
+      if (!ok) return;
+      const raw = data.messages || [];
+      const batch = raw.map(normalizeChatMessage);
+      setMessages((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        const merged = [...batch.filter((m) => m.id && !seen.has(m.id)), ...prev];
+        return merged;
+      });
+      setHasMoreOlder(data.hasMore === true);
+      requestAnimationFrame(() => {
+        const root = scrollRef.current;
+        if (!root) return;
+        const h = root.scrollHeight - prevScrollHeight;
+        root.scrollTop = prevScrollTop + h;
+      });
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [chatId, userId, loadingOlder, hasMoreOlder, messages]);
 
   useEffect(() => {
     load();
@@ -758,7 +837,34 @@ export default function DirectChatScreen({
     if (readAt == null) return;
     setMessages((prev) =>
       prev.map((msg) =>
-        msg.senderId === userId && (msg.createdAt ?? 0) <= readAt ? { ...msg, readByPeer: true } : msg,
+        msg.senderId === userId && (msg.createdAt ?? 0) <= readAt
+          ? { ...msg, readByPeer: true, deliveredToPeer: true }
+          : msg,
+      ),
+    );
+  }, [lastEvent, chatId, userId]);
+
+  useEffect(() => {
+    if (lastEvent?.type !== 'chat:message:delivered') return;
+    if (lastEvent.payload?.chatId !== chatId) return;
+    const messageId = lastEvent.payload?.messageId;
+    if (!messageId) return;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId && m.senderId === userId ? { ...m, deliveredToPeer: true } : m,
+      ),
+    );
+  }, [lastEvent, chatId, userId]);
+
+  useEffect(() => {
+    if (lastEvent?.type !== 'chat:messages:delivered') return;
+    if (lastEvent.payload?.chatId !== chatId) return;
+    const ids = lastEvent.payload?.messageIds;
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    const idSet = new Set(ids);
+    setMessages((prev) =>
+      prev.map((m) =>
+        idSet.has(m.id) && m.senderId === userId ? { ...m, deliveredToPeer: true } : m,
       ),
     );
   }, [lastEvent, chatId, userId]);
@@ -825,7 +931,7 @@ export default function DirectChatScreen({
     if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
     requestAnimationFrame(scrollMessagesToBottomImmediate);
-  }, [messages, loading, scrollMessagesToBottomImmediate]);
+  }, [scrollLayoutKey, loading, scrollMessagesToBottomImmediate]);
 
   /** Клавиатура / vv / смена высоты — не чаще одного выравнивания за кадр. */
   useEffect(() => {
@@ -909,20 +1015,26 @@ export default function DirectChatScreen({
     const el = scrollRef.current;
     if (!el) return undefined;
     syncScrollDownFab();
-    el.addEventListener('scroll', syncScrollDownFab, { passive: true });
+    const onScroll = () => {
+      syncScrollDownFab();
+      if (el.scrollTop < 120 && hasMoreOlder && !loadingOlder) {
+        void loadOlder();
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
     const ro = new ResizeObserver(() => {
       requestAnimationFrame(syncScrollDownFab);
     });
     ro.observe(el);
     return () => {
-      el.removeEventListener('scroll', syncScrollDownFab);
+      el.removeEventListener('scroll', onScroll);
       ro.disconnect();
     };
-  }, [syncScrollDownFab, messages.length]);
+  }, [syncScrollDownFab, messages.length, hasMoreOlder, loadingOlder, loadOlder]);
 
   useEffect(() => {
     syncScrollDownFab();
-  }, [messages, loading, syncScrollDownFab]);
+  }, [scrollLayoutKey, loading, syncScrollDownFab]);
 
   const appendMessage = useCallback((m) => {
     const row = normalizeChatMessage(m);
@@ -944,7 +1056,10 @@ export default function DirectChatScreen({
           file,
           userId,
           fieldName: 'file',
-          extraFields: isImg ? { caption: text.trim() } : {},
+          extraFields: {
+            ...(isImg ? { caption: text.trim() } : {}),
+            clientMessageId: newClientMessageId(),
+          },
         });
         if (!ok) {
           setErr(data?.error || 'Не отправлено');
@@ -1049,7 +1164,7 @@ export default function DirectChatScreen({
           file,
           userId,
           fieldName: 'file',
-          extraFields: { durationMs: String(elapsed) },
+          extraFields: { durationMs: String(elapsed), clientMessageId: newClientMessageId() },
         });
         if (!ok) {
           setErr(data?.error || 'Не отправлено');
@@ -1076,7 +1191,7 @@ export default function DirectChatScreen({
     };
   }, [stopVoiceAndSend]);
 
-  function refocusComposer() {
+  const refocusComposer = useCallback(() => {
     const el = composerInputRef.current;
     if (!el) return;
     try {
@@ -1089,7 +1204,25 @@ export default function DirectChatScreen({
     } catch {
       el?.focus();
     }
-  }
+  }, []);
+
+  const handleReactionLocalUpdate = useCallback((id, reactions) => {
+    setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)));
+  }, []);
+
+  const handleOpenActionMenu = useCallback((msg, x, y) => {
+    setMessageMenu({ m: msg, x, y, submenu: 'quick' });
+  }, []);
+
+  const handleSwipeReply = useCallback(
+    (draft) => {
+      setReplyDraft(draft);
+      queueMicrotask(() => refocusComposer());
+    },
+    [refocusComposer],
+  );
+
+  const handleOpenImagePreview = useCallback((url) => setImagePreviewUrl(url), []);
 
   /** Без <form>: на iOS submit формы часто закрывает клавиатуру. */
   async function sendTextMessage() {
@@ -1132,7 +1265,7 @@ export default function DirectChatScreen({
     }
     const { ok, data } = await api(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
       method: 'POST',
-      body: { body: t, replyToId: replyDraft?.id },
+      body: { body: t, replyToId: replyDraft?.id, clientMessageId: newClientMessageId() },
       userId,
     });
     if (!ok) {
@@ -1160,12 +1293,6 @@ export default function DirectChatScreen({
     }, 450);
   }
 
-  function formatTime(ts) {
-    if (ts == null) return '';
-    const d = new Date(ts);
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  }
-
   /** Удержание в режиме «кружок»: полноэкранная запись (см. VideoNoteRecordModal). */
   function startVideoHoldFromComposer() {
     if (canMessage === false) return;
@@ -1182,7 +1309,7 @@ export default function DirectChatScreen({
       file,
       userId,
       fieldName: 'file',
-      extraFields: { durationMs: String(durationMs) },
+      extraFields: { durationMs: String(durationMs), clientMessageId: newClientMessageId() },
     });
     if (!ok) {
       throw new Error(data?.error || 'Не отправлено');
@@ -1390,6 +1517,11 @@ export default function DirectChatScreen({
               </p>
             ) : (
               <>
+                {hasMoreOlder || loadingOlder ? (
+                  <div className="muted" style={{ fontSize: 11, marginBottom: 8, textAlign: 'center' }}>
+                    {loadingOlder ? 'Загрузка более ранних сообщений…' : 'Прокрутите вверх, чтобы подгрузить историю'}
+                  </div>
+                ) : null}
                 {pinnedChips.length > 0 ? (
                   <div style={{ width: '100%', flexShrink: 0, marginBottom: 8 }}>
                     <div className="muted" style={{ fontSize: 10, marginBottom: 6 }}>
@@ -1419,21 +1551,16 @@ export default function DirectChatScreen({
                     m={m}
                     userId={userId}
                     chatId={chatId}
-                    formatTime={formatTime}
+                    formatTime={formatChatMessageTime}
                     savedChat={isSavedMessages}
                     isFirstInGroup={g.isFirstInGroup}
                     isLastInGroup={g.isLastInGroup}
                     allowSwipeReply={canMessage}
-                    onSwipeReply={(draft) => {
-                      setReplyDraft(draft);
-                      queueMicrotask(() => refocusComposer());
-                    }}
-                    onReactionsLocalUpdate={(id, reactions) =>
-                      setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
-                    }
-                    onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, submenu: 'quick' })}
+                    onSwipeReply={handleSwipeReply}
+                    onReactionsLocalUpdate={handleReactionLocalUpdate}
+                    onOpenActionMenu={handleOpenActionMenu}
                     onMentionProfile={onMentionProfile}
-                    onOpenImagePreview={(url) => setImagePreviewUrl(url)}
+                    onOpenImagePreview={handleOpenImagePreview}
                   />
                   );
                 })}

@@ -5,8 +5,9 @@ import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
 
 const SLIDE_MS = 4800;
-const STORY_DISMISS_MS = 320;
-const STORY_DISMISS_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)';
+/** Короче и с transitionend — без лишней задержки после свайпа. */
+const STORY_DISMISS_MS = 200;
+const STORY_DISMISS_EASE = 'cubic-bezier(0.33, 1, 0.32, 1)';
 const STORY_VERTICAL_THRESHOLD = 88;
 const STORY_AXIS_LOCK_PX = 14;
 
@@ -56,6 +57,8 @@ export default function StoryViewer({
   const stageAxisRef = useRef(null);
   const [sheetY, setSheetY] = useState(0);
   const [sheetDragging, setSheetDragging] = useState(false);
+  const closingRef = useRef(false);
+  const closeFallbackTimerRef = useRef(null);
 
   const sessionKey = useMemo(() => {
     if (!story?.authorId) return '';
@@ -76,17 +79,35 @@ export default function StoryViewer({
     });
   }, [onAfterLastItem, onClose, total]);
 
+  const finishClose = useCallback(() => {
+    if (closeFallbackTimerRef.current != null) {
+      window.clearTimeout(closeFallbackTimerRef.current);
+      closeFallbackTimerRef.current = null;
+    }
+    if (!closingRef.current) return;
+    closingRef.current = false;
+    onClose();
+  }, [onClose]);
+
   const closeAnimated = useCallback(
     (direction) => {
       const h = typeof window !== 'undefined' ? window.innerHeight : 800;
+      closingRef.current = true;
       setSheetDragging(false);
       setSheetY(direction === 'down' ? h : -h);
-      window.setTimeout(() => {
-        onClose();
-      }, STORY_DISMISS_MS);
+      if (closeFallbackTimerRef.current != null) window.clearTimeout(closeFallbackTimerRef.current);
+      closeFallbackTimerRef.current = window.setTimeout(() => {
+        closeFallbackTimerRef.current = null;
+        if (closingRef.current) finishClose();
+      }, STORY_DISMISS_MS + 80);
     },
-    [onClose],
+    [finishClose],
   );
+
+  function onDismissTransitionEnd(e) {
+    if (e.propertyName !== 'transform') return;
+    finishClose();
+  }
 
   const goPrev = useCallback(() => {
     setSlide((s) => {
@@ -142,6 +163,10 @@ export default function StoryViewer({
       if (replyToastTimerRef.current != null) {
         window.clearTimeout(replyToastTimerRef.current);
       }
+      if (closeFallbackTimerRef.current != null) {
+        window.clearTimeout(closeFallbackTimerRef.current);
+      }
+      closingRef.current = false;
     };
   }, []);
 
@@ -387,13 +412,14 @@ export default function StoryViewer({
       role="dialog"
       aria-modal="true"
       className="story-viewer-root"
+      onTransitionEnd={onDismissTransitionEnd}
       style={{
         position: 'fixed',
         inset: 0,
         zIndex: 200,
         background: '#000',
         overflow: 'hidden',
-        transform: `translateY(${sheetY}px)`,
+        transform: `translateY(${sheetY}px) translateZ(0)`,
         opacity: sheetOpacity,
         transition: sheetDragging
           ? 'none'

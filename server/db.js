@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'data', 'app.db');
 
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 
 let db;
 
@@ -574,6 +574,30 @@ function migrate(database) {
     })();
     ver = 26;
   }
+
+  if (ver < 27) {
+    const m27 = database.prepare('PRAGMA table_info(messages)').all();
+    const m27n = new Set(m27.map((row) => row.name));
+    if (!m27n.has('client_message_id')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN client_message_id TEXT;`);
+    }
+    if (!m27n.has('delivered_to_peer_at')) {
+      database.exec(`ALTER TABLE messages ADD COLUMN delivered_to_peer_at INTEGER;`);
+    }
+    database.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_chat_client_nonce ON messages(chat_id, client_message_id) WHERE client_message_id IS NOT NULL`,
+    );
+    const rm27 = database.prepare('PRAGMA table_info(room_messages)').all();
+    const rm27n = new Set(rm27.map((row) => row.name));
+    if (!rm27n.has('client_message_id')) {
+      database.exec(`ALTER TABLE room_messages ADD COLUMN client_message_id TEXT;`);
+    }
+    database.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_room_client_nonce ON room_messages(room_id, client_message_id) WHERE client_message_id IS NOT NULL`,
+    );
+    setSchemaVersion(database, 27);
+    ver = 27;
+  }
 }
 
 export function getDb() {
@@ -733,6 +757,16 @@ export function findUserById(id) {
     .prepare(`SELECT ${USER_PUBLIC_SELECT} FROM users WHERE id = ?`)
     .get(id);
   return mapPublicUser(row);
+}
+
+/** Хэш пароля для проверки смены (не отдавать клиенту). */
+export function getUserPasswordHash(userId) {
+  const row = getDb().prepare(`SELECT password_hash AS passwordHash FROM users WHERE id = ?`).get(userId);
+  return row?.passwordHash ?? null;
+}
+
+export function setUserPasswordHash(userId, passwordHash) {
+  getDb().prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(passwordHash, userId);
 }
 
 /** Для входа: включает password_hash (не отдавать клиенту). */

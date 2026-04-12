@@ -525,6 +525,20 @@ function previewLineForMessage(kind, body) {
   return 'Сообщение';
 }
 
+export const CHAT_PAGE_DEFAULT = 200;
+export const CHAT_PAGE_MAX = 200;
+
+/**
+ * Идемпотентность отправки: непустая строка 8–80 символов [a-zA-Z0-9_-] (клиент обычно шлёт UUID).
+ */
+export function normalizeClientMessageId(raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim();
+  if (s.length < 8 || s.length > 80) return null;
+  if (!/^[a-zA-Z0-9_-]+$/.test(s)) return null;
+  return s;
+}
+
 function attachReplyForward(out, r, revoked) {
   let forwardFrom = null;
   if (!revoked && r.forwardJson) {
@@ -584,6 +598,7 @@ export function getMessageByIdForChat(chatId, messageId, viewerId = null) {
         rs.media_path AS refStoryMediaPath,
         rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
         ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw
+      , m.delivered_to_peer_at AS deliveredToPeerAt
       FROM messages m
       JOIN users u ON u.id = m.sender_id
       LEFT JOIN stories rs ON rs.id = m.ref_story_id
@@ -607,6 +622,7 @@ export function getMessageByIdForChat(chatId, messageId, viewerId = null) {
         .get(peerId, chatId);
       const peerReadAt = peerReadRow?.t ?? 0;
       out.readByPeer = peerReadAt >= (row.createdAt ?? 0);
+      out.deliveredToPeer = row.deliveredToPeerAt != null || out.readByPeer;
     }
   }
   return out;
@@ -631,8 +647,83 @@ function directPinLookup(chatId, viewerId) {
   });
 }
 
-export function listMessagesForChat(chatId, userId, limit = 200) {
+/**
+ * Помечает входящие от собеседника сообщения как доставленные на устройство получателя (при открытии истории).
+ * Уведомляет отправителя по WS — см. index.js.
+ */
+export function batchMarkInboundDirectDelivered(chatId, viewerId, rawRows) {
+  const peerId = getPeerIdInDirectChat(chatId, viewerId);
+  if (!peerId || peerId === viewerId || !rawRows?.length) {
+    return { markedIds: [], deliveredAt: null, notifySenderId: null };
+  }
+  const ids = rawRows
+    .filter((r) => r.senderId === peerId && r.deliveredToPeerAt == null)
+    .map((r) => r.id);
+  if (ids.length === 0) {
+    return { markedIds: [], deliveredAt: null, notifySenderId: null };
+  }
+  const now = Date.now();
+  const ph = ids.map(() => '?').join(',');
+  getDb()
+    .prepare(
+      `UPDATE messages SET delivered_to_peer_at = ? WHERE chat_id = ? AND id IN (${ph}) AND delivered_to_peer_at IS NULL`,
+    )
+    .run(now, chatId, ...ids);
+  return { markedIds: ids, deliveredAt: now, notifySenderId: peerId };
+}
+
+/** Доставка на устройство получателя при успешной доставке по WebSocket. */
+export function tryMarkDirectMessageDeliveredByWs(chatId, messageId) {
+  const row = getDb()
+    .prepare(
+      `SELECT sender_id AS senderId, delivered_to_peer_at AS d FROM messages WHERE id = ? AND chat_id = ?`,
+    )
+    .get(messageId, chatId);
+  if (!row || row.d != null) return { updated: false, senderId: null, deliveredAt: null };
+  const now = Date.now();
+  getDb().prepare(`UPDATE messages SET delivered_to_peer_at = ? WHERE id = ? AND delivered_to_peer_at IS NULL`).run(now, messageId);
+  return { updated: true, senderId: row.senderId, deliveredAt: now };
+}
+
+/**
+ * Явное подтверждение доставки от получателя (например, только по WS без перезагрузки списка).
+ */
+export function ackDirectMessagesDelivered(chatId, recipientId, messageIds) {
+  if (!userInDirectChat(chatId, recipientId)) return { error: 'Нет доступа к чату' };
+  const peerId = getPeerIdInDirectChat(chatId, recipientId);
+  if (!peerId || peerId === recipientId) return { ok: true, markedIds: [], deliveredAt: null, notifySenderId: null };
+  const ids = Array.isArray(messageIds) ? [...new Set(messageIds.map(String).filter(Boolean))] : [];
+  if (ids.length === 0) return { ok: true, markedIds: [], deliveredAt: null, notifySenderId: null };
+  const now = Date.now();
+  const marked = [];
+  const stmt = getDb().prepare(
+    `UPDATE messages SET delivered_to_peer_at = ? WHERE id = ? AND chat_id = ? AND sender_id = ? AND delivered_to_peer_at IS NULL`,
+  );
+  for (const id of ids) {
+    const info = stmt.run(now, id, chatId, peerId);
+    if (info.changes > 0) marked.push(id);
+  }
+  return {
+    ok: true,
+    markedIds: marked,
+    deliveredAt: marked.length ? now : null,
+    notifySenderId: marked.length ? peerId : null,
+  };
+}
+
+export function listMessagesForChat(chatId, userId, options = {}) {
   if (!userInDirectChat(chatId, userId)) return null;
+  let limit = Number(options.limit);
+  if (!Number.isFinite(limit) || limit < 1) limit = CHAT_PAGE_DEFAULT;
+  if (limit > CHAT_PAGE_MAX) limit = CHAT_PAGE_MAX;
+
+  const beforeCreatedAt = options.beforeCreatedAt;
+  const beforeId = options.beforeId != null ? String(options.beforeId).trim() : '';
+  const useCursor =
+    beforeCreatedAt != null &&
+    Number.isFinite(Number(beforeCreatedAt)) &&
+    beforeId.length > 0;
+
   const peerId = getPeerIdInDirectChat(chatId, userId);
   const peerReadRow =
     peerId && peerId !== userId
@@ -643,40 +734,60 @@ export function listMessagesForChat(chatId, userId, limit = 200) {
   const peerReadAt = peerReadRow?.t ?? 0;
   const pinOf = directPinLookup(chatId, userId);
 
-  const rows = getDb()
-    .prepare(
-      `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+  let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
         m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
         m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
         u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
         m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
         rs.media_path AS refStoryMediaPath,
         rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
-        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw
+        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw,
+        m.delivered_to_peer_at AS deliveredToPeerAt
       FROM messages m
       JOIN users u ON u.id = m.sender_id
       LEFT JOIN stories rs ON rs.id = m.ref_story_id
       LEFT JOIN messages rp ON rp.id = m.reply_to_id AND rp.chat_id = m.chat_id
       LEFT JOIN users ru ON ru.id = rp.sender_id
       WHERE m.chat_id = ?
-      AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
-      ORDER BY m.created_at DESC
-      LIMIT ?`
-    )
-    .all(chatId, userId, limit);
+      AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`;
+  const params = [chatId, userId];
+  if (useCursor) {
+    sql += ` AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))`;
+    params.push(Number(beforeCreatedAt), Number(beforeCreatedAt), beforeId);
+  }
+  sql += ` ORDER BY m.created_at DESC, m.id DESC LIMIT ?`;
+  params.push(limit);
+
+  const rows = getDb().prepare(sql).all(...params);
   rows.reverse();
+
+  const inboundMeta = batchMarkInboundDirectDelivered(chatId, userId, rows);
+
   const ids = rows.map((r) => r.id);
   const getReact = loadReactionSummaryForMessages(ids, userId);
-  return rows.map((r) => {
+  const messages = rows.map((r) => {
     const base = mapMessageRow(r, getReact);
     const p = pinOf(r.id);
     base.pinnedForMe = p.pinPrivate || p.pinShared;
     base.pinnedShared = p.pinShared;
     if (r.senderId === userId && peerId && peerId !== userId) {
       base.readByPeer = peerReadAt >= (r.createdAt ?? 0);
+      base.deliveredToPeer = r.deliveredToPeerAt != null || base.readByPeer;
     }
     return base;
   });
+
+  const hasMore = rows.length >= limit;
+  const inboundDelivered =
+    inboundMeta.markedIds?.length > 0 && inboundMeta.notifySenderId
+      ? {
+          notifySenderId: inboundMeta.notifySenderId,
+          markedIds: inboundMeta.markedIds,
+          deliveredAt: inboundMeta.deliveredAt,
+        }
+      : null;
+
+  return { messages, hasMore, inboundDelivered };
 }
 
 export function pinDirectMessage(chatId, userId, messageId, scopeRaw) {
@@ -769,6 +880,19 @@ export function insertDirectMessage(chatId, userId, body, options = {}) {
   if (gate.error) return gate;
   const peerId = gate.peerId;
 
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM messages WHERE chat_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(chatId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForChat(chatId, dup.id, userId);
+      return { duplicate: true, message: existing, peerId };
+    }
+  }
+
   let replyToId = null;
   if (options.replyToId != null && String(options.replyToId).trim()) {
     replyToId = String(options.replyToId).trim();
@@ -782,9 +906,9 @@ export function insertDirectMessage(chatId, userId, body, options = {}) {
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, reply_to_id) VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, reply_to_id, client_message_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, chatId, userId, trimmed, createdAt, replyToId);
+    .run(id, chatId, userId, trimmed, createdAt, replyToId, nonce);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
 
@@ -807,13 +931,26 @@ export function insertDirectMessage(chatId, userId, body, options = {}) {
 const MAX_MEDIA_MS = 15000;
 const MIN_MEDIA_MS = 400;
 
-export function insertChatMediaMessage(chatId, userId, kind, mediaRelativePath, durationMs) {
+export function insertChatMediaMessage(chatId, userId, kind, mediaRelativePath, durationMs, options = {}) {
   if (kind !== 'voice' && kind !== 'video_note') {
     return { error: 'Некорректный тип вложения' };
   }
   const gate = assertCanSendDirectMessage(chatId, userId);
   if (gate.error) return gate;
   const peerId = gate.peerId;
+
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM messages WHERE chat_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(chatId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForChat(chatId, dup.id, userId);
+      return { duplicate: true, message: existing, peerId };
+    }
+  }
 
   const d = Math.round(Number(durationMs));
   if (!Number.isFinite(d) || d < MIN_MEDIA_MS || d > MAX_MEDIA_MS) {
@@ -826,9 +963,9 @@ export function insertChatMediaMessage(chatId, userId, kind, mediaRelativePath, 
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, media_path, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, media_path, duration_ms, client_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, chatId, userId, '', createdAt, kind, media, d);
+    .run(id, chatId, userId, '', createdAt, kind, media, d, nonce);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
 
@@ -852,13 +989,26 @@ const MAX_IMAGE_CAPTION = 2000;
 const MAX_FILE_LABEL = 400;
 
 /** Фото или файл в личном чате (body — подпись к фото или имя файла). */
-export function insertChatAttachmentMessage(chatId, userId, kind, mediaRelativePath, body) {
+export function insertChatAttachmentMessage(chatId, userId, kind, mediaRelativePath, body, options = {}) {
   if (kind !== 'image' && kind !== 'file') {
     return { error: 'Некорректный тип вложения' };
   }
   const gate = assertCanSendDirectMessage(chatId, userId);
   if (gate.error) return gate;
   const peerId = gate.peerId;
+
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM messages WHERE chat_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(chatId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForChat(chatId, dup.id, userId);
+      return { duplicate: true, message: existing, peerId };
+    }
+  }
 
   const media = String(mediaRelativePath ?? '').trim();
   if (!media) return { error: 'Нет файла' };
@@ -878,9 +1028,9 @@ export function insertChatAttachmentMessage(chatId, userId, kind, mediaRelativeP
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, media_path, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, media_path, duration_ms, client_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     )
-    .run(id, chatId, userId, bodyText, createdAt, kind, media);
+    .run(id, chatId, userId, bodyText, createdAt, kind, media, nonce);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
 
@@ -2154,11 +2304,20 @@ export function addRoomMembers(roomId, inviterId, memberIds) {
   return { ok: true, room: getRoomByIdForUser(roomId, inviterId), addedCount: unique.length };
 }
 
-export function listRoomMessages(roomId, userId, limit = 200) {
+export function listRoomMessages(roomId, userId, options = {}) {
   if (!userInRoom(roomId, userId)) return null;
-  const rows = getDb()
-    .prepare(
-      `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+  let limit = Number(options.limit);
+  if (!Number.isFinite(limit) || limit < 1) limit = CHAT_PAGE_DEFAULT;
+  if (limit > CHAT_PAGE_MAX) limit = CHAT_PAGE_MAX;
+
+  const beforeCreatedAt = options.beforeCreatedAt;
+  const beforeId = options.beforeId != null ? String(options.beforeId).trim() : '';
+  const useCursor =
+    beforeCreatedAt != null &&
+    Number.isFinite(Number(beforeCreatedAt)) &&
+    beforeId.length > 0;
+
+  let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
         m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
         m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
         u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
@@ -2172,15 +2331,22 @@ export function listRoomMessages(roomId, userId, limit = 200) {
        LEFT JOIN room_messages rp ON rp.id = m.reply_to_id AND rp.room_id = m.room_id
        LEFT JOIN users ru ON ru.id = rp.sender_id
        WHERE m.room_id = ?
-       AND NOT EXISTS (SELECT 1 FROM room_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
-       ORDER BY m.created_at DESC
-       LIMIT ?`
-    )
-    .all(roomId, userId, limit);
+       AND NOT EXISTS (SELECT 1 FROM room_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)`;
+  const params = [roomId, userId];
+  if (useCursor) {
+    sql += ` AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))`;
+    params.push(Number(beforeCreatedAt), Number(beforeCreatedAt), beforeId);
+  }
+  sql += ` ORDER BY m.created_at DESC, m.id DESC LIMIT ?`;
+  params.push(limit);
+
+  const rows = getDb().prepare(sql).all(...params);
   rows.reverse();
   const ids = rows.map((r) => r.id);
   const getReact = loadReactionSummaryForMessages(ids, userId);
-  return rows.map((r) => mapMessageRow(r, getReact));
+  const messages = rows.map((r) => mapMessageRow(r, getReact));
+  const hasMore = rows.length >= limit;
+  return { messages, hasMore };
 }
 
 export function getMessageByIdForRoom(roomId, messageId, viewerId = null) {
@@ -2215,6 +2381,19 @@ export function insertRoomMessage(roomId, userId, body, options = {}) {
   if (trimmed.length > 4000) return { error: 'Сообщение не длиннее 4000 символов' };
   if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
 
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM room_messages WHERE room_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(roomId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForRoom(roomId, dup.id, userId);
+      return { duplicate: true, message: existing, memberIds: listRoomMemberUserIds(roomId) };
+    }
+  }
+
   let replyToId = null;
   if (options.replyToId != null && String(options.replyToId).trim()) {
     replyToId = String(options.replyToId).trim();
@@ -2228,9 +2407,9 @@ export function insertRoomMessage(roomId, userId, body, options = {}) {
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, reply_to_id) VALUES (?, ?, ?, ?, ?, 'text', ?)`
+      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, reply_to_id, client_message_id) VALUES (?, ?, ?, ?, ?, 'text', ?, ?)`,
     )
-    .run(id, roomId, userId, trimmed, createdAt, replyToId);
+    .run(id, roomId, userId, trimmed, createdAt, replyToId, nonce);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
   return {
@@ -2270,11 +2449,24 @@ export function updateRoomMessage(roomId, userId, messageId, body) {
   return { ok: true, memberIds: listRoomMemberUserIds(roomId) };
 }
 
-export function insertRoomMediaMessage(roomId, userId, kind, mediaRelativePath, durationMs) {
+export function insertRoomMediaMessage(roomId, userId, kind, mediaRelativePath, durationMs, options = {}) {
   if (kind !== 'voice' && kind !== 'video_note') {
     return { error: 'Некорректный тип вложения' };
   }
   if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
+
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM room_messages WHERE room_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(roomId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForRoom(roomId, dup.id, userId);
+      return { duplicate: true, message: existing, memberIds: listRoomMemberUserIds(roomId) };
+    }
+  }
 
   const d = Math.round(Number(durationMs));
   if (!Number.isFinite(d) || d < MIN_MEDIA_MS || d > MAX_MEDIA_MS) {
@@ -2287,9 +2479,9 @@ export function insertRoomMediaMessage(roomId, userId, kind, mediaRelativePath, 
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, media_path, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, media_path, duration_ms, client_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, roomId, userId, '', createdAt, kind, media, d);
+    .run(id, roomId, userId, '', createdAt, kind, media, d, nonce);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
 
@@ -2310,11 +2502,24 @@ export function insertRoomMediaMessage(roomId, userId, kind, mediaRelativePath, 
 }
 
 /** Фото или файл в комнате. */
-export function insertRoomAttachmentMessage(roomId, userId, kind, mediaRelativePath, body) {
+export function insertRoomAttachmentMessage(roomId, userId, kind, mediaRelativePath, body, options = {}) {
   if (kind !== 'image' && kind !== 'file') {
     return { error: 'Некорректный тип вложения' };
   }
   if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
+
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM room_messages WHERE room_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(roomId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForRoom(roomId, dup.id, userId);
+      return { duplicate: true, message: existing, memberIds: listRoomMemberUserIds(roomId) };
+    }
+  }
 
   const media = String(mediaRelativePath ?? '').trim();
   if (!media) return { error: 'Нет файла' };
@@ -2334,9 +2539,9 @@ export function insertRoomAttachmentMessage(roomId, userId, kind, mediaRelativeP
   const createdAt = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, media_path, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, media_path, duration_ms, client_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     )
-    .run(id, roomId, userId, bodyText, createdAt, kind, media);
+    .run(id, roomId, userId, bodyText, createdAt, kind, media, nonce);
 
   const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
 

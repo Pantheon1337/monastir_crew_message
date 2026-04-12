@@ -16,6 +16,7 @@ import PeerProfileFullScreen from './components/PeerProfileFullScreen.jsx';
 import AvatarLightbox from './components/AvatarLightbox.jsx';
 import AppStatusModal from './components/AppStatusModal.jsx';
 import StubMenuModal from './components/StubMenuModal.jsx';
+import SecuritySettingsPanel from './components/SecuritySettingsPanel.jsx';
 import SettingsModal from './components/SettingsModal.jsx';
 import PossibleFriendsModal from './components/PossibleFriendsModal.jsx';
 import CreateRoomModal from './components/CreateRoomModal.jsx';
@@ -894,13 +895,9 @@ export default function App() {
             </label>
           </div>
         </StubMenuModal>
-      ) : menuStub ? (
-        <StubMenuModal
-          open
-          onClose={() => setMenuStub(null)}
-          title="Безопасность"
-        >
-          Здесь будут параметры безопасности: сессии, пароль и двухфакторная аутентификация.
+      ) : menuStub === 'security' && user?.id ? (
+        <StubMenuModal open onClose={() => setMenuStub(null)} title="Безопасность">
+          <SecuritySettingsPanel userId={user.id} />
         </StubMenuModal>
       ) : null}
       {possibleFriendsOpen && user?.id ? (
