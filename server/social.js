@@ -139,6 +139,43 @@ export function getFriendshipMetaForProfile(viewerId, targetId) {
   };
 }
 
+function getDirectChatUserState(userId, chatId) {
+  const row = getDb()
+    .prepare(`SELECT archived, hidden FROM direct_chat_user_state WHERE user_id = ? AND chat_id = ?`)
+    .get(userId, chatId);
+  return { archived: row?.archived === 1, hidden: row?.hidden === 1 };
+}
+
+export function setDirectChatArchivedForUser(userId, chatId, archived) {
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const peerId = getPeerIdInDirectChat(chatId, userId);
+  if (String(peerId) === String(userId)) return { error: 'Избранное нельзя архивировать' };
+  getDb()
+    .prepare(
+      `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden) VALUES (?, ?, ?, 0)
+       ON CONFLICT(user_id, chat_id) DO UPDATE SET archived = excluded.archived, hidden = 0`,
+    )
+    .run(userId, chatId, archived ? 1 : 0);
+  return { ok: true };
+}
+
+export function setDirectChatHiddenForUser(userId, chatId, hidden) {
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const peerId = getPeerIdInDirectChat(chatId, userId);
+  if (String(peerId) === String(userId)) return { error: 'Этот диалог нельзя скрыть' };
+  if (hidden) {
+    getDb()
+      .prepare(
+        `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden) VALUES (?, ?, 0, 1)
+         ON CONFLICT(user_id, chat_id) DO UPDATE SET hidden = 1, archived = 0`,
+      )
+      .run(userId, chatId);
+  } else {
+    getDb().prepare(`DELETE FROM direct_chat_user_state WHERE user_id = ? AND chat_id = ?`).run(userId, chatId);
+  }
+  return { ok: true };
+}
+
 export function getPendingRequestBetween(fromId, toId) {
   return getDb()
     .prepare(
@@ -268,7 +305,8 @@ function formatChatTime(ts) {
   return `${hh}:${mm}`;
 }
 
-export function listDirectChatsForUser(userId) {
+export function listDirectChatsForUser(userId, options = {}) {
+  const scope = options.scope === 'archive' ? 'archive' : 'main';
   ensureSavedMessagesChat(userId);
   const rows = getDb()
     .prepare(
@@ -309,6 +347,15 @@ export function listDirectChatsForUser(userId) {
     const canMessage = friendsActive && !theyBlockedYou;
     const peerAff = effectiveAffiliationEmoji(peer.nickname, peer.displayRole, peer.displayRoleEmoji);
     const isSavedMessages = String(peer.id) === String(userId);
+    const st = getDirectChatUserState(userId, row.chatId);
+    if (isSavedMessages) {
+      if (scope === 'archive') continue;
+      if (st.hidden) continue;
+    } else {
+      if (st.hidden) continue;
+      if (scope === 'main' && st.archived) continue;
+      if (scope === 'archive' && !st.archived) continue;
+    }
     out.push({
       id: row.chatId,
       kind: 'direct',
@@ -335,6 +382,18 @@ export function listDirectChatsForUser(userId) {
     return (b._sortAt ?? 0) - (a._sortAt ?? 0);
   });
   return out.map(({ _sortAt: _s, ...rest }) => rest);
+}
+
+/** Убрать скрытие/архив с диалога и вернуть объект как в списке чатов (для «Написать» из профиля). */
+export function resumeDirectChatWithPeer(userId, peerUserId) {
+  if (!userId || !peerUserId || String(userId) === String(peerUserId)) return { error: 'Некорректно' };
+  const chat = findDirectChatByPair(userId, peerUserId);
+  if (!chat) return { error: 'Чат не найден' };
+  getDb().prepare(`DELETE FROM direct_chat_user_state WHERE user_id = ? AND chat_id = ?`).run(userId, chat.id);
+  const list = listDirectChatsForUser(userId, { scope: 'main' });
+  const item = list.find((c) => String(c.id) === String(chat.id));
+  if (!item) return { error: 'Не удалось загрузить чат' };
+  return { ok: true, chat: item };
 }
 
 export function acceptFriendRequest(requestId, actingUserId) {
@@ -844,6 +903,8 @@ export function countTotalUnreadMessages(userId) {
   let total = 0;
   for (const ch of chats) {
     const chatId = ch.id;
+    const st = getDirectChatUserState(userId, chatId);
+    if (st.hidden || st.archived) continue;
     const lr = db.prepare(`SELECT last_read_at FROM chat_last_read WHERE user_id = ? AND chat_id = ?`).get(userId, chatId);
     const since = lr?.last_read_at ?? 0;
     const r = db

@@ -1,7 +1,12 @@
+import { useRef, useState, useCallback, useEffect } from 'react';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
-function ChatRow({ chat, onOpen, peerOnline }) {
+const SWIPE_MAX = 152;
+const LONG_PRESS_MS = 480;
+const MOVE_CANCEL_PX = 14;
+
+function ChatRowInner({ chat, peerOnline, onActivate, style }) {
   const unread = (chat.unreadCount ?? 0) > 0;
   const saved = chat.isSavedMessages === true;
   const rowBg = saved
@@ -10,9 +15,17 @@ function ChatRow({ chat, onOpen, peerOnline }) {
       ? 'rgba(193, 123, 75, 0.06)'
       : 'transparent';
   return (
-    <button
-      type="button"
-      onClick={() => onOpen?.(chat)}
+    <div
+      ref={innerRef}
+      role="button"
+      tabIndex={0}
+      onClick={onActivate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate?.();
+        }
+      }}
       style={{
         display: 'grid',
         gridTemplateColumns: '52px 1fr auto',
@@ -23,9 +36,11 @@ function ChatRow({ chat, onOpen, peerOnline }) {
         textAlign: 'left',
         background: rowBg,
         border: 'none',
-        borderBottom: '1px solid var(--border)',
+        borderBottom: 'none',
         color: 'inherit',
         cursor: 'pointer',
+        font: 'inherit',
+        ...style,
       }}
     >
       <UserAvatar
@@ -94,7 +109,271 @@ function ChatRow({ chat, onOpen, peerOnline }) {
           </span>
         ) : null}
       </div>
-    </button>
+    </div>
+  );
+}
+
+function useLongPress(onLongPress, { ms = LONG_PRESS_MS } = {}) {
+  const timerRef = useRef(null);
+  const startRef = useRef(null);
+  const clearTimer = useCallback(() => {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+  return {
+    onPointerDown(e) {
+      if (e.button !== 0) return;
+      startRef.current = { x: e.clientX, y: e.clientY };
+      clearTimer();
+      timerRef.current = window.setTimeout(() => {
+        timerRef.current = null;
+        startRef.current = null;
+        onLongPress();
+      }, ms);
+    },
+    onPointerMove(e) {
+      const s = startRef.current;
+      if (!s || timerRef.current == null) return;
+      const dx = e.clientX - s.x;
+      const dy = e.clientY - s.y;
+      if (dx * dx + dy * dy > MOVE_CANCEL_PX * MOVE_CANCEL_PX) {
+        clearTimer();
+        startRef.current = null;
+      }
+    },
+    onPointerUp() {
+      clearTimer();
+      startRef.current = null;
+    },
+    onPointerCancel() {
+      clearTimer();
+      startRef.current = null;
+    },
+  };
+}
+
+function ChatSwipeRow({
+  chat,
+  peerOnline,
+  onOpen,
+  archiveScope,
+  onArchive,
+  onUnarchive,
+  onDeleteForMe,
+}) {
+  const [offset, setOffset] = useState(0);
+  const offsetRef = useRef(0);
+  useEffect(() => {
+    offsetRef.current = offset;
+  }, [offset]);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startOff = useRef(0);
+
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const skipNextOpenChat = useRef(false);
+  const openActionSheet = useCallback(() => {
+    setOffset(0);
+    setSheetOpen(true);
+    skipNextOpenChat.current = true;
+  }, []);
+
+  const lp = useLongPress(openActionSheet);
+
+  const snap = useCallback((o) => {
+    const t = o < -SWIPE_MAX / 2 ? -SWIPE_MAX : 0;
+    setOffset(t);
+  }, []);
+
+  const onPointerDown = (e) => {
+    if (e.button !== 0) return;
+    lp.onPointerDown(e);
+    dragging.current = true;
+    setIsDragging(true);
+    startX.current = e.clientX;
+    startOff.current = offsetRef.current;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e) => {
+    lp.onPointerMove(e);
+    if (!dragging.current) return;
+    const dx = e.clientX - startX.current;
+    let next = startOff.current + dx;
+    if (next > 0) next = 0;
+    if (next < -SWIPE_MAX) next = -SWIPE_MAX;
+    setOffset(next);
+  };
+
+  const onPointerUp = (e) => {
+    lp.onPointerUp();
+    if (dragging.current) {
+      dragging.current = false;
+      setIsDragging(false);
+      snap(offsetRef.current);
+    }
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const onPointerCancel = (e) => {
+    lp.onPointerCancel();
+    dragging.current = false;
+    setIsDragging(false);
+    snap(offsetRef.current);
+    try {
+      e.currentTarget.releasePointerCapture?.(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const openChat = () => {
+    if (skipNextOpenChat.current) {
+      skipNextOpenChat.current = false;
+      return;
+    }
+    if (offsetRef.current < -24) {
+      setOffset(0);
+      return;
+    }
+    onOpen?.(chat);
+  };
+
+  return (
+    <>
+      <div className="chat-swipe-wrap">
+        <div className="chat-swipe-under" aria-hidden="true">
+          {archiveScope ? (
+            <>
+              <button type="button" className="chat-swipe-btn chat-swipe-btn--restore" onClick={() => onUnarchive?.(chat)}>
+                Вернуть
+              </button>
+              <button type="button" className="chat-swipe-btn chat-swipe-btn--delete" onClick={() => onDeleteForMe?.(chat)}>
+                Удалить
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="chat-swipe-btn chat-swipe-btn--archive" onClick={() => onArchive?.(chat)}>
+                В архив
+              </button>
+              <button type="button" className="chat-swipe-btn chat-swipe-btn--delete" onClick={() => onDeleteForMe?.(chat)}>
+                Удалить
+              </button>
+            </>
+          )}
+        </div>
+        <div
+          className="chat-swipe-front"
+          style={{
+            transform: `translate3d(${offset}px,0,0)`,
+            transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)',
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+        >
+          <ChatRowInner
+            chat={chat}
+            peerOnline={peerOnline}
+            onActivate={openChat}
+            style={{ touchAction: 'pan-y' }}
+          />
+        </div>
+      </div>
+
+      {sheetOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Действия с чатом"
+          className="modal-overlay chat-actions-sheet-overlay"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 140,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            padding: 12,
+            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+            background: 'rgba(0,0,0,0.45)',
+          }}
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            className="block chat-actions-sheet-panel"
+            style={{
+              width: '100%',
+              maxWidth: 400,
+              borderRadius: 16,
+              padding: 8,
+              marginBottom: 4,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {archiveScope ? (
+              <>
+                <button
+                  type="button"
+                  className="chat-actions-sheet-item"
+                  onClick={() => {
+                    setSheetOpen(false);
+                    onUnarchive?.(chat);
+                  }}
+                >
+                  Вернуть из архива
+                </button>
+                <button
+                  type="button"
+                  className="chat-actions-sheet-item chat-actions-sheet-item--danger"
+                  onClick={() => {
+                    setSheetOpen(false);
+                    onDeleteForMe?.(chat);
+                  }}
+                >
+                  Удалить из списка…
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="chat-actions-sheet-item"
+                  onClick={() => {
+                    setSheetOpen(false);
+                    onArchive?.(chat);
+                  }}
+                >
+                  В архив
+                </button>
+                <button
+                  type="button"
+                  className="chat-actions-sheet-item chat-actions-sheet-item--danger"
+                  onClick={() => {
+                    setSheetOpen(false);
+                    onDeleteForMe?.(chat);
+                  }}
+                >
+                  Удалить из списка…
+                </button>
+              </>
+            )}
+            <button type="button" className="chat-actions-sheet-cancel" onClick={() => setSheetOpen(false)}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -222,28 +501,96 @@ export default function Dashboard({
   onOpenRoom,
   presenceOnline = {},
   chatsBare = false,
+  chatScope = 'main',
+  archivedCount = 0,
+  onChatScopeChange,
+  onArchiveChat,
+  onUnarchiveChat,
+  onDeleteChatForMe,
 }) {
+  const archiveScope = chatScope === 'archive';
+
   const chatsInner =
     chats.length === 0 ? (
       <p className="muted" style={{ fontSize: 12, margin: '0 12px 12px' }}>
-        Нет диалогов
+        {archiveScope ? 'В архиве пусто' : 'Нет диалогов'}
       </p>
     ) : (
-      chats.map((c) => (
-        <ChatRow
-          key={c.id}
-          chat={c}
-          onOpen={onOpenChat}
-          peerOnline={c.peerUserId != null ? Boolean(presenceOnline[String(c.peerUserId)]) : undefined}
-        />
-      ))
+      chats.map((c) => {
+        const peerOnline = c.peerUserId != null ? Boolean(presenceOnline[String(c.peerUserId)]) : undefined;
+        const saved = c.isSavedMessages === true;
+        if (saved) {
+          return (
+            <div key={c.id} className="chat-swipe-wrap chat-swipe-wrap--plain">
+              <ChatRowInner chat={c} peerOnline={peerOnline} onActivate={() => onOpenChat?.(c)} />
+            </div>
+          );
+        }
+        return (
+          <ChatSwipeRow
+            key={c.id}
+            chat={c}
+            peerOnline={peerOnline}
+            onOpen={onOpenChat}
+            archiveScope={archiveScope}
+            onArchive={onArchiveChat}
+            onUnarchive={onUnarchiveChat}
+            onDeleteForMe={onDeleteChatForMe}
+          />
+        );
+      })
     );
 
-  const chatsBlock = chatsBare ? (
-    <div className="dashboard-chat-card">{chatsInner}</div>
-  ) : (
-    <Panel title="Чаты">
+  const archiveEntryRow =
+    !archiveScope && typeof onChatScopeChange === 'function' ? (
+      <button
+        type="button"
+        className="chat-archive-entry-row"
+        onClick={() => onChatScopeChange('archive')}
+      >
+        <span className="chat-archive-entry-row__icon" aria-hidden>
+          📦
+        </span>
+        <span className="chat-archive-entry-row__label">Архив</span>
+        {archivedCount > 0 ? (
+          <span className="chat-archive-entry-row__badge">{archivedCount > 99 ? '99+' : archivedCount}</span>
+        ) : null}
+        <span className="chat-archive-entry-row__chev" aria-hidden>
+          ›
+        </span>
+      </button>
+    ) : null;
+
+  const headerBack =
+    archiveScope && typeof onChatScopeChange === 'function' ? (
+      <button
+        type="button"
+        className="btn-outline"
+        style={{ fontSize: 12, padding: '6px 10px', fontWeight: 600 }}
+        onClick={() => onChatScopeChange('main')}
+      >
+        ← Чаты
+      </button>
+    ) : null;
+
+  const panelTitle = archiveScope ? 'Архив' : 'Чаты';
+
+  const scrollArea = (
+    <div className="dashboard-chat-scroll" style={{ overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: 'min(72dvh, 560px)' }}>
+      {archiveEntryRow}
       {chatsInner}
+    </div>
+  );
+
+  const chatsBlock = chatsBare ? (
+    <div className="dashboard-chat-card">
+      <Panel title={panelTitle} headerAction={headerBack}>
+        {scrollArea}
+      </Panel>
+    </div>
+  ) : (
+    <Panel title={panelTitle} headerAction={headerBack}>
+      {scrollArea}
     </Panel>
   );
 

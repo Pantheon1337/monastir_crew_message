@@ -62,7 +62,7 @@ function PostMedia({ url, onImageClick }) {
         <button
           type="button"
           className="feed-post-media-img-btn"
-          aria-label="Открыть профиль автора"
+          aria-label="Открыть фото"
           onClick={(e) => {
             e.stopPropagation();
             onImageClick();
@@ -148,7 +148,15 @@ function useLongPress(onLongPress, { ms = 480, moveTol = 12 } = {}) {
   };
 }
 
-export default function PostCard({ post, viewerId, onChanged, authorOnline, onViewAuthorAvatar, onOpenAuthorProfile }) {
+export default function PostCard({
+  post,
+  viewerId,
+  onChanged,
+  authorOnline,
+  onViewAuthorAvatar,
+  onOpenAuthorProfile,
+  onOpenPostImage,
+}) {
   const vvRect = useVisualViewportRect();
   const nick = post.authorNickname ? `@${post.authorNickname}` : post.authorName || '—';
   const affiliationEmoji = post.authorAffiliationEmoji || null;
@@ -553,7 +561,9 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
           <div className="feed-post-card__media-wrap">
             <PostMedia
               url={post.mediaUrl}
-              onImageClick={canOpenAuthorProfile ? () => onOpenAuthorProfile(post.authorId) : undefined}
+              onImageClick={
+                typeof onOpenPostImage === 'function' ? () => onOpenPostImage(post.mediaUrl) : undefined
+              }
             />
           </div>
         ) : null}

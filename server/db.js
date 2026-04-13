@@ -608,6 +608,21 @@ function migrate(database) {
     setSchemaVersion(database, 28);
     ver = 28;
   }
+
+  if (ver < 29) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS direct_chat_user_state (
+        user_id TEXT NOT NULL,
+        chat_id TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0,
+        hidden INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (user_id, chat_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dcus_user_hidden ON direct_chat_user_state(user_id, hidden);
+    `);
+    setSchemaVersion(database, 29);
+    ver = 29;
+  }
 }
 
 export function getDb() {

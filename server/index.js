@@ -46,6 +46,9 @@ import {
   acceptFriendRequest,
   rejectFriendRequest,
   listDirectChatsForUser,
+  setDirectChatArchivedForUser,
+  setDirectChatHiddenForUser,
+  resumeDirectChatWithPeer,
   listMessagesForChat,
   insertDirectMessage,
   updateDirectMessage,
@@ -721,7 +724,52 @@ app.get('/api/users/:targetId/profile', (req, res) => {
 app.get('/api/chats', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  res.json({ chats: listDirectChatsForUser(userId) });
+  const scope = req.query?.scope === 'archive' ? 'archive' : 'main';
+  res.json({ chats: listDirectChatsForUser(userId, { scope }) });
+});
+
+app.post('/api/chats/:chatId/archive', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = setDirectChatArchivedForUser(userId, req.params.chatId, true);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/chats/:chatId/unarchive', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = setDirectChatArchivedForUser(userId, req.params.chatId, false);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/chats/:chatId/delete-for-me', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = setDirectChatHiddenForUser(userId, req.params.chatId, true);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/chats/with-peer/:peerUserId/open', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = resumeDirectChatWithPeer(userId, req.params.peerUserId);
+  if (out.error) {
+    res.status(400).json({ error: out.error });
+    return;
+  }
+  res.json({ chat: out.chat });
 });
 
 app.get('/api/chats/unread-total', (req, res) => {

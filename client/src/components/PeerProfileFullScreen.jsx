@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
-import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
+import { profileHeroTintBg } from '../profileHeroTints.js';
+import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 
 function formatJoined(ts) {
   if (ts == null) return '—';
@@ -14,6 +15,16 @@ function profileRoleCaption(displayRole) {
   if (displayRole === 'developer') return 'Разработчик';
   if (displayRole === 'beta') return 'Бета-тестер';
   return 'Пользователь';
+}
+
+function presenceLineForPeer(peerId, presenceOnline, presenceLastSeen, presenceLastSeenHidden) {
+  if (peerId == null) return null;
+  const id = String(peerId);
+  const hasO = Object.prototype.hasOwnProperty.call(presenceOnline, id);
+  const online = hasO ? Boolean(presenceOnline[id]) : undefined;
+  const lastAt = presenceLastSeen[id];
+  const hidden = presenceLastSeenHidden[id] === true;
+  return peerPresenceSubtitle(online, lastAt, hidden);
 }
 
 /**
@@ -28,6 +39,10 @@ export default function PeerProfileFullScreen({
   onOpenStory,
   onStoriesUpdated,
   viewerPreview = false,
+  presenceOnline = {},
+  presenceLastSeen = {},
+  presenceLastSeenHidden = {},
+  onOpenDirectChat,
 }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -84,6 +99,20 @@ export default function PeerProfileFullScreen({
   }, [isSelf, viewerPreview, manageItems, storyItems]);
 
   const hasStoriesGrid = gridStories.length > 0;
+
+  const heroBg = useMemo(() => profileHeroTintBg(profile?.profileHeroTint ?? 0), [profile?.profileHeroTint]);
+
+  const displayName = profile
+    ? [profile.firstName, profile.lastName].filter((x) => x && String(x).trim()).join(' ').trim() || '—'
+    : '';
+
+  const presenceText = useMemo(
+    () =>
+      !isSelf && profile
+        ? presenceLineForPeer(targetUserId, presenceOnline, presenceLastSeen, presenceLastSeenHidden)
+        : null,
+    [isSelf, profile, targetUserId, presenceOnline, presenceLastSeen, presenceLastSeenHidden],
+  );
 
   async function doRemoveFriend() {
     if (!viewerId || !targetUserId) return;
@@ -191,7 +220,7 @@ export default function PeerProfileFullScreen({
       role="dialog"
       aria-modal="true"
       aria-label="Профиль"
-      className="modal-overlay"
+      className="modal-overlay peer-profile-full-root"
       style={{
         position: 'fixed',
         inset: 0,
@@ -204,35 +233,18 @@ export default function PeerProfileFullScreen({
     >
       <div
         style={{
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 12px',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
-          ←
-        </button>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>Профиль</span>
-      </div>
-
-      <div
-        style={{
           flex: 1,
           minHeight: 0,
           overflow: 'auto',
-          padding: '16px 14px 32px',
           WebkitOverflowScrolling: 'touch',
         }}
       >
         {loading ? (
-          <p className="muted" style={{ fontSize: 12 }}>
+          <p className="muted" style={{ fontSize: 12, padding: 16 }}>
             Загрузка…
           </p>
         ) : err ? (
-          <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
+          <p style={{ fontSize: 12, color: '#c45c5c', padding: 16 }}>{err}</p>
         ) : profile ? (
           <>
             {viewerPreview && isSelf ? (
@@ -241,7 +253,7 @@ export default function PeerProfileFullScreen({
                 style={{
                   fontSize: 11,
                   textAlign: 'center',
-                  margin: '0 0 14px',
+                  margin: '12px 14px 0',
                   padding: '10px 12px',
                   borderRadius: 'var(--radius)',
                   border: '1px solid var(--border)',
@@ -251,35 +263,77 @@ export default function PeerProfileFullScreen({
                 Предпросмотр: так ваш профиль видят другие (без телефона и служебных данных).
               </p>
             ) : null}
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
-              <UserAvatar
-                src={profile.avatarUrl}
-                size={112}
-                onOpen={profile.avatarUrl && onViewAvatar ? () => onViewAvatar(profile.avatarUrl) : undefined}
-              />
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 600 }}>
-                  {profile.firstName} {profile.lastName}
-                </div>
-                <div style={{ fontSize: 14, color: 'var(--accent)', marginTop: 6, display: 'flex', justifyContent: 'center' }}>
-                  {profile.nickname ? (
-                    <NicknameWithBadge nickname={profile.nickname} affiliationEmoji={profile.affiliationEmoji} />
-                  ) : (
-                    '—'
-                  )}
-                </div>
-                <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--muted)' }}>{profileRoleCaption(profile.displayRole)}</p>
+
+            <header className="friend-mini-hero peer-profile-full-hero" style={{ background: heroBg }}>
+              <div className="friend-mini-hero-pattern" aria-hidden />
+              <div className="friend-mini-hero-top">
+                <button type="button" className="friend-mini-circle-btn" onClick={onClose} aria-label="Назад">
+                  ‹
+                </button>
+                <div style={{ flex: 1 }} />
               </div>
-              {isSelf && profile.phone && !viewerPreview && (
-                <div className="muted" style={{ fontSize: 11 }}>
-                  тел. {formatPhoneRu(profile.phone)}
+              <div className="friend-mini-hero-main">
+                <UserAvatar
+                  src={profile.avatarUrl}
+                  size={104}
+                  onOpen={profile.avatarUrl && onViewAvatar ? () => onViewAvatar(profile.avatarUrl) : undefined}
+                />
+                <h1 className="friend-mini-name" style={{ fontSize: 22 }}>
+                  <span className="friend-mini-name__text">{displayName}</span>
+                  {profile.affiliationEmoji ? (
+                    <span className="friend-mini-name__emoji" aria-hidden>
+                      {profile.affiliationEmoji}
+                    </span>
+                  ) : null}
+                </h1>
+                {!isSelf && presenceText ? <p className="friend-mini-presence">{presenceText}</p> : null}
+
+                <div className="friend-mini-actions">
+                  {!isSelf &&
+                  friendship?.hasDirectChat &&
+                  typeof onOpenDirectChat === 'function' &&
+                  friendship.canMessage !== false &&
+                  !friendship.theyBlockedYou ? (
+                    <button type="button" className="friend-mini-action-btn" onClick={() => void onOpenDirectChat()} title="Написать">
+                      <span className="friend-mini-action-btn__icon" aria-hidden>
+                        💬
+                      </span>
+                      <span className="friend-mini-action-btn__label">Написать</span>
+                    </button>
+                  ) : null}
                 </div>
-              )}
+              </div>
+            </header>
+
+            <div className="friend-mini-card peer-profile-full-card">
+              {isSelf && profile.phone && !viewerPreview ? (
+                <div className="friend-mini-row">
+                  <span className="friend-mini-row__label">мобильный</span>
+                  <span className="friend-mini-row__value friend-mini-row__value--accent">{formatPhoneRu(profile.phone)}</span>
+                </div>
+              ) : null}
+              {profile.nickname ? (
+                <div className="friend-mini-row">
+                  <span className="friend-mini-row__label">имя пользователя</span>
+                  <span className="friend-mini-row__value friend-mini-row__value--accent">@{profile.nickname}</span>
+                </div>
+              ) : null}
+              <div className="friend-mini-row">
+                <span className="friend-mini-row__label">роль</span>
+                <span className="friend-mini-row__value">{profileRoleCaption(profile.displayRole)}</span>
+              </div>
+              {profile.about ? (
+                <div className="friend-mini-about">
+                  <span className="friend-mini-row__label">о себе</span>
+                  <p className="friend-mini-about__text">{profile.about}</p>
+                </div>
+              ) : null}
+              <p className="friend-mini-meta-muted">в сервисе с {formatJoined(profile.createdAt)}</p>
             </div>
 
-            <div style={{ marginTop: 22, width: '100%' }}>
+            <div style={{ marginTop: 8, width: '100%', padding: '0 14px 24px' }}>
               <p className="muted" style={{ fontSize: 10, margin: '0 0 10px', fontWeight: 600 }}>
-                Истории
+                Публикации
               </p>
               {hasStoriesGrid ? (
                 <div
@@ -434,28 +488,21 @@ export default function PeerProfileFullScreen({
                 </div>
               ) : (
                 <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.4 }}>
-                  Нет историй в профиле.
+                  Нет публикаций в профиле.
                 </p>
               )}
             </div>
 
-            {profile.about ? (
-              <div style={{ width: '100%', textAlign: 'left', marginTop: 18 }}>
-                <p className="muted" style={{ fontSize: 10, margin: '0 0 6px' }}>
-                  О себе
-                </p>
-                <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {profile.about}
-                </p>
-              </div>
-            ) : null}
-
-            <div className="muted" style={{ fontSize: 11, marginTop: 16, textAlign: 'center' }}>
-              в сервисе с {formatJoined(profile.createdAt)}
-            </div>
-
             {!isSelf && friendship?.hasDirectChat ? (
-              <div style={{ width: '100%', marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', textAlign: 'left' }}>
+              <div
+                style={{
+                  width: '100%',
+                  marginTop: 0,
+                  padding: '12px 14px 28px',
+                  borderTop: '1px solid var(--border)',
+                  textAlign: 'left',
+                }}
+              >
                 {friendship.theyBlockedYou ? (
                   <p className="muted" style={{ fontSize: 10, margin: '0 0 10px', lineHeight: 1.4 }}>
                     Этот пользователь ограничил вам сообщения.

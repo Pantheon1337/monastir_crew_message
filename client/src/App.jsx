@@ -83,6 +83,8 @@ export default function App() {
   const [nav, setNav] = useState('home');
   const [feed, setFeed] = useState([]);
   const [chats, setChats] = useState([]);
+  const [archivedChats, setArchivedChats] = useState([]);
+  const [chatListScope, setChatListScope] = useState('main');
   const [rooms, setRooms] = useState([]);
   const [storyBuckets, setStoryBuckets] = useState([]);
   const [loadError, setLoadError] = useState(null);
@@ -154,13 +156,15 @@ export default function App() {
 
   const refreshSocial = useCallback(async () => {
     if (!user?.id) return;
-    const [c, inc, un, rm] = await Promise.all([
+    const [c, ca, inc, un, rm] = await Promise.all([
       api('/api/chats', { userId: user.id }),
+      api('/api/chats?scope=archive', { userId: user.id }),
       api('/api/friends/requests/incoming', { userId: user.id }),
       api('/api/chats/unread-total', { userId: user.id }),
       api('/api/rooms', { userId: user.id }),
     ]);
     if (c.ok) setChats(c.data.chats || []);
+    if (ca.ok) setArchivedChats(ca.data.chats || []);
     if (inc.ok) setPendingFriendCount((inc.data.requests || []).length);
     if (un.ok) setChatUnreadTotal(un.data.total ?? 0);
     if (rm.ok) setRooms(rm.data.rooms || []);
@@ -209,10 +213,17 @@ export default function App() {
     [user?.id],
   );
 
-  /** Открытый чат + актуальные peerNickname / peerAffiliationEmoji из списка `/api/chats` после refreshSocial. */
+  const chatListsUnion = useMemo(() => {
+    const m = new Map();
+    for (const x of chats) m.set(String(x.id), x);
+    for (const x of archivedChats) m.set(String(x.id), x);
+    return m;
+  }, [chats, archivedChats]);
+
+  /** Открытый чат + актуальные поля из списков чатов (основной и архив) после refreshSocial. */
   const openChatResolved = useMemo(() => {
     if (!openChat) return null;
-    const c = chats.find((x) => String(x.id) === String(openChat.id));
+    const c = chatListsUnion.get(String(openChat.id));
     if (!c) return openChat;
     return {
       ...openChat,
@@ -227,7 +238,7 @@ export default function App() {
       canMessage: c.canMessage !== false,
       isSavedMessages: c.isSavedMessages === true,
     };
-  }, [openChat, chats]);
+  }, [openChat, chatListsUnion]);
 
   /** После принятия заявки обновляем и ленту/истории (новый друг видит ваши посты и наоборот). */
   const onFriendsChanged = useCallback(async () => {
@@ -351,17 +362,19 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const [f, roomsRes, s, c, inc, un] = await Promise.all([
+        const [f, roomsRes, s, c, ca, inc, un] = await Promise.all([
           api('/api/feed', { userId: user.id }),
           api('/api/rooms', { userId: user.id }),
           api('/api/stories', { userId: user.id }),
           api('/api/chats', { userId: user.id }),
+          api('/api/chats?scope=archive', { userId: user.id }),
           api('/api/friends/requests/incoming', { userId: user.id }),
           api('/api/chats/unread-total', { userId: user.id }),
         ]);
         if (cancelled) return;
         setFeed(f.ok ? f.data.posts || [] : []);
         setChats(c.ok ? c.data.chats || [] : []);
+        setArchivedChats(ca.ok ? ca.data.chats || [] : []);
         setPendingFriendCount(inc.ok ? (inc.data.requests || []).length : 0);
         setChatUnreadTotal(un.ok ? un.data.total ?? 0 : 0);
         setRooms(roomsRes.ok ? roomsRes.data.rooms || [] : []);
@@ -395,11 +408,12 @@ export default function App() {
   const presenceIdKey = useMemo(() => {
     const s = new Set();
     for (const c of chats) if (c.peerUserId) s.add(String(c.peerUserId));
+    for (const c of archivedChats) if (c.peerUserId) s.add(String(c.peerUserId));
     for (const b of storyBuckets) if (b.userId) s.add(String(b.userId));
     for (const p of feed) if (p.authorId) s.add(String(p.authorId));
     if (openChat?.peerUserId) s.add(String(openChat.peerUserId));
     return [...s].sort().join(',');
-  }, [chats, storyBuckets, feed, openChat?.peerUserId]);
+  }, [chats, archivedChats, storyBuckets, feed, openChat?.peerUserId]);
 
   useEffect(() => {
     if (session !== 'in' || !user?.id || !presenceIdKey) return undefined;
@@ -605,6 +619,8 @@ export default function App() {
     setArchiveOpen(false);
     setPeerProfileUserId(null);
     setBugReportOpen(false);
+    setChatListScope('main');
+    setArchivedChats([]);
   }, []);
 
   const handleOpenChat = useCallback((chat) => {
@@ -629,16 +645,21 @@ export default function App() {
       const r = await api('/api/chats', { userId: user.id });
       if (!r.ok) return;
       const list = r.data.chats || [];
-      const chat = list.find((c) => !c.isSavedMessages && String(c.peerUserId) === String(friend.id));
+      let chat = list.find((c) => !c.isSavedMessages && String(c.peerUserId) === String(friend.id));
+      if (!chat) {
+        const res = await api(`/api/chats/with-peer/${encodeURIComponent(friend.id)}/open`, { method: 'POST', userId: user.id });
+        if (res.ok && res.data?.chat) chat = res.data.chat;
+      }
       if (chat) {
         setOpenRoomChat(null);
         setNav('chats');
         handleOpenChat(chat);
+        await refreshSocial();
       } else {
         window.alert('Чат с этим пользователем не найден. Откройте раздел «Чаты» и обновите список.');
       }
     },
-    [user?.id, handleOpenChat],
+    [user?.id, handleOpenChat, refreshSocial],
   );
 
   /** Мини-профиль: открыть ЛС с пользователем по id. */
@@ -648,17 +669,82 @@ export default function App() {
       const r = await api('/api/chats', { userId: user.id });
       if (!r.ok) return;
       const list = r.data.chats || [];
-      const chat = list.find((c) => !c.isSavedMessages && String(c.peerUserId) === String(peerUserId));
+      let chat = list.find((c) => !c.isSavedMessages && String(c.peerUserId) === String(peerUserId));
+      if (!chat) {
+        const res = await api(`/api/chats/with-peer/${encodeURIComponent(peerUserId)}/open`, { method: 'POST', userId: user.id });
+        if (res.ok && res.data?.chat) chat = res.data.chat;
+      }
       if (chat) {
         setPeerProfileUserId(null);
         setOpenRoomChat(null);
         setNav('chats');
         handleOpenChat(chat);
+        await refreshSocial();
       } else {
         window.alert('Чат с этим пользователем не найден. Откройте раздел «Чаты» и обновите список.');
       }
     },
-    [user?.id, handleOpenChat],
+    [user?.id, handleOpenChat, refreshSocial],
+  );
+
+  const openPeerChatFromProfile = useCallback(
+    async (peerUserId) => {
+      if (!user?.id || !peerUserId) return;
+      const res = await api(`/api/chats/with-peer/${encodeURIComponent(peerUserId)}/open`, { method: 'POST', userId: user.id });
+      if (!res.ok || !res.data?.chat) {
+        alert(res.data?.error || 'Не удалось открыть чат');
+        return;
+      }
+      setPeerFullProfileUserId(null);
+      setPeerFullProfileViewerPreview(false);
+      setChatListScope('main');
+      setNav('chats');
+      handleOpenChat(res.data.chat);
+      await refreshSocial();
+    },
+    [user?.id, handleOpenChat, refreshSocial],
+  );
+
+  const handleArchiveChat = useCallback(
+    async (chat) => {
+      if (!user?.id || !chat?.id || chat.isSavedMessages) return;
+      const { ok, data } = await api(`/api/chats/${encodeURIComponent(chat.id)}/archive`, { method: 'POST', userId: user.id });
+      if (!ok) {
+        alert(data?.error || 'Не удалось');
+        return;
+      }
+      if (openChat && String(openChat.id) === String(chat.id)) setOpenChat(null);
+      await refreshSocial();
+    },
+    [user?.id, openChat, refreshSocial],
+  );
+
+  const handleUnarchiveChat = useCallback(
+    async (chat) => {
+      if (!user?.id || !chat?.id) return;
+      const { ok, data } = await api(`/api/chats/${encodeURIComponent(chat.id)}/unarchive`, { method: 'POST', userId: user.id });
+      if (!ok) {
+        alert(data?.error || 'Не удалось');
+        return;
+      }
+      await refreshSocial();
+    },
+    [user?.id, refreshSocial],
+  );
+
+  const handleDeleteChatForMe = useCallback(
+    async (chat) => {
+      if (!user?.id || !chat?.id || chat.isSavedMessages) return;
+      if (!window.confirm('Удалить диалог из списка? Переписка сохранится. Чтобы снова написать, откройте профиль контакта и нажмите «Написать».')) return;
+      const { ok, data } = await api(`/api/chats/${encodeURIComponent(chat.id)}/delete-for-me`, { method: 'POST', userId: user.id });
+      if (!ok) {
+        alert(data?.error || 'Не удалось');
+        return;
+      }
+      if (openChat && String(openChat.id) === String(chat.id)) setOpenChat(null);
+      await refreshSocial();
+    },
+    [user?.id, openChat, refreshSocial],
   );
 
   const openFeedAuthorProfile = useCallback(
@@ -672,11 +758,12 @@ export default function App() {
 
   const syncOpenChatFromServer = useCallback(async () => {
     if (!user?.id) return;
-    const r = await api('/api/chats', { userId: user.id });
+    const [r, ra] = await Promise.all([api('/api/chats', { userId: user.id }), api('/api/chats?scope=archive', { userId: user.id })]);
     if (!r.ok) return;
+    const merged = [...(r.data.chats || []), ...(ra.ok ? ra.data.chats || [] : [])];
     setOpenChat((prev) => {
       if (!prev) return prev;
-      const c = (r.data.chats || []).find((x) => String(x.id) === String(prev.id));
+      const c = merged.find((x) => String(x.id) === String(prev.id));
       if (!c) return prev;
       return {
         ...prev,
@@ -796,7 +883,13 @@ export default function App() {
           />
           <div style={{ padding: '8px 12px 16px' }}>
             <Dashboard
-              chats={chats}
+              chats={chatListScope === 'archive' ? archivedChats : chats}
+              chatScope={chatListScope}
+              archivedCount={archivedChats.length}
+              onChatScopeChange={setChatListScope}
+              onArchiveChat={handleArchiveChat}
+              onUnarchiveChat={handleUnarchiveChat}
+              onDeleteChatForMe={handleDeleteChatForMe}
               rooms={[]}
               singleColumn="chats"
               presenceOnline={presenceOnline}
@@ -1125,6 +1218,10 @@ export default function App() {
             }}
             onStoriesUpdated={() => void refreshStories()}
             viewerPreview={peerFullProfileViewerPreview}
+            presenceOnline={presenceOnline}
+            presenceLastSeen={presenceLastSeen}
+            presenceLastSeenHidden={presenceLastSeenHidden}
+            onOpenDirectChat={() => void openPeerChatFromProfile(peerFullProfileUserId)}
           />
         </Suspense>
       ) : null}

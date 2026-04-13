@@ -22,6 +22,7 @@ export default function Feed({
   onSwipeOpenStory,
   onOpenAuthorProfile,
 }) {
+  const [feedImageLightbox, setFeedImageLightbox] = useState(null);
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState(null);
   const [sending, setSending] = useState(false);
@@ -246,9 +247,50 @@ export default function Feed({
             authorOnline={p.authorId != null ? Boolean(presenceOnline[String(p.authorId)]) : undefined}
             onViewAuthorAvatar={onViewAuthorAvatar}
             onOpenAuthorProfile={onOpenAuthorProfile}
+            onOpenPostImage={(url) => setFeedImageLightbox(url)}
           />
         ))
       )}
+      {feedImageLightbox ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Просмотр фото"
+          className="feed-image-lightbox"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 200,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 12,
+            background: 'rgba(0,0,0,0.88)',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+          onClick={() => setFeedImageLightbox(null)}
+          onKeyDown={(e) => e.key === 'Escape' && setFeedImageLightbox(null)}
+        >
+          <button
+            type="button"
+            className="feed-image-lightbox__close icon-btn"
+            aria-label="Закрыть"
+            style={{ position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', right: 12, zIndex: 2 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFeedImageLightbox(null);
+            }}
+          >
+            ✕
+          </button>
+          <img
+            src={feedImageLightbox}
+            alt=""
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
