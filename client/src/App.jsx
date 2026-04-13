@@ -1,28 +1,29 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import Header from './components/Header.jsx';
-import StoriesBar from './components/StoriesBar.jsx';
 import Dashboard from './components/Dashboard.jsx';
-import Feed from './components/Feed.jsx';
 import BottomNav from './components/BottomNav.jsx';
-import ProfileScreen from './components/ProfileScreen.jsx';
-import AuthScreen from './components/AuthScreen.jsx';
-import DirectChatScreen from './components/DirectChatScreen.jsx';
-import RoomChatScreen from './components/RoomChatScreen.jsx';
-import StoryViewer from './components/StoryViewer.jsx';
-import StoryCreateModal from './components/StoryCreateModal.jsx';
-import StoriesArchiveModal from './components/StoriesArchiveModal.jsx';
-import FriendProfileSheet from './components/FriendProfileSheet.jsx';
-import PeerProfileFullScreen from './components/PeerProfileFullScreen.jsx';
-import AvatarLightbox from './components/AvatarLightbox.jsx';
-import AppStatusModal from './components/AppStatusModal.jsx';
 import StubMenuModal from './components/StubMenuModal.jsx';
 import SecuritySettingsPanel from './components/SecuritySettingsPanel.jsx';
-import SettingsModal from './components/SettingsModal.jsx';
-import PossibleFriendsModal from './components/PossibleFriendsModal.jsx';
-import CreateRoomModal from './components/CreateRoomModal.jsx';
-import RoomDetailModal from './components/RoomDetailModal.jsx';
-import BugReportModal from './components/BugReportModal.jsx';
-import SearchModal from './components/SearchModal.jsx';
+
+const StoriesBar = lazy(() => import('./components/StoriesBar.jsx'));
+const Feed = lazy(() => import('./components/Feed.jsx'));
+const ProfileScreen = lazy(() => import('./components/ProfileScreen.jsx'));
+const AuthScreen = lazy(() => import('./components/AuthScreen.jsx'));
+const DirectChatScreen = lazy(() => import('./components/DirectChatScreen.jsx'));
+const RoomChatScreen = lazy(() => import('./components/RoomChatScreen.jsx'));
+const StoryViewer = lazy(() => import('./components/StoryViewer.jsx'));
+const StoryCreateModal = lazy(() => import('./components/StoryCreateModal.jsx'));
+const StoriesArchiveModal = lazy(() => import('./components/StoriesArchiveModal.jsx'));
+const FriendProfileSheet = lazy(() => import('./components/FriendProfileSheet.jsx'));
+const PeerProfileFullScreen = lazy(() => import('./components/PeerProfileFullScreen.jsx'));
+const AvatarLightbox = lazy(() => import('./components/AvatarLightbox.jsx'));
+const AppStatusModal = lazy(() => import('./components/AppStatusModal.jsx'));
+const SettingsModal = lazy(() => import('./components/SettingsModal.jsx'));
+const PossibleFriendsModal = lazy(() => import('./components/PossibleFriendsModal.jsx'));
+const CreateRoomModal = lazy(() => import('./components/CreateRoomModal.jsx'));
+const RoomDetailModal = lazy(() => import('./components/RoomDetailModal.jsx'));
+const BugReportModal = lazy(() => import('./components/BugReportModal.jsx'));
+const SearchModal = lazy(() => import('./components/SearchModal.jsx'));
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { getStoredUser, setStoredUser, clearStoredUser } from './authStorage.js';
 import { api, apiPath } from './api.js';
@@ -39,6 +40,42 @@ import {
   setTheme as saveTheme,
 } from './appPreferences.js';
 import { loadAppDataCache, saveAppDataCache, clearAppDataCache } from './appDataCache.js';
+
+function AppChunkFallback({ label = 'Загрузка…' }) {
+  return (
+    <div
+      style={{
+        minHeight: 72,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 16,
+      }}
+    >
+      <p className="muted" style={{ fontSize: 12 }}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function FullScreenFallback({ label }) {
+  return (
+    <div
+      className="app-shell"
+      style={{
+        minHeight: '100dvh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <p className="muted" style={{ fontSize: 12 }}>
+        {label}
+      </p>
+    </div>
+  );
+}
 
 export default function App() {
   const [session, setSession] = useState('checking');
@@ -656,7 +693,11 @@ export default function App() {
   }
 
   if (session === 'out') {
-    return <AuthScreen onAuthSuccess={onAuthSuccess} />;
+    return (
+      <Suspense fallback={<FullScreenFallback label="Загрузка…" />}>
+        <AuthScreen onAuthSuccess={onAuthSuccess} />
+      </Suspense>
+    );
   }
 
   const showMainChrome = !openChat && !openRoomChat;
@@ -686,7 +727,7 @@ export default function App() {
       ) : null}
 
       {nav === 'home' && showMainChrome && (
-        <>
+        <Suspense fallback={<AppChunkFallback label="Загрузка ленты…" />}>
           <StoriesBar
             user={user}
             buckets={storyBuckets}
@@ -702,7 +743,7 @@ export default function App() {
             onViewAuthorAvatar={(url) => setAvatarLightboxUrl(url)}
             onSwipeOpenStory={() => setStoryCreateOpen(true)}
           />
-        </>
+        </Suspense>
       )}
 
       {nav === 'chats' && showMainChrome && (
@@ -730,137 +771,155 @@ export default function App() {
       )}
 
       {nav === 'profile' && showMainChrome && (
-        <ProfileScreen
-          user={user}
-          onLogout={onLogout}
-          socialTick={socialTick}
-          onFriendsChanged={onFriendsChanged}
-          onUserUpdated={handleUserUpdated}
-          onOpenArchive={() => setArchiveOpen(true)}
-          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
-          onPreviewOwnProfile={() => {
-            if (user?.id) {
-              setPeerFullProfileViewerPreview(true);
-              setPeerFullProfileUserId(user.id);
-            }
-          }}
-        />
+        <Suspense fallback={<AppChunkFallback label="Загрузка профиля…" />}>
+          <ProfileScreen
+            user={user}
+            onLogout={onLogout}
+            socialTick={socialTick}
+            onFriendsChanged={onFriendsChanged}
+            onUserUpdated={handleUserUpdated}
+            onOpenArchive={() => setArchiveOpen(true)}
+            onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+            onPreviewOwnProfile={() => {
+              if (user?.id) {
+                setPeerFullProfileViewerPreview(true);
+                setPeerFullProfileUserId(user.id);
+              }
+            }}
+          />
+        </Suspense>
       )}
 
       {openChatResolved && (
-        <DirectChatScreen
-          userId={user.id}
-          chatId={openChatResolved.id}
-          peerLabel={openChatResolved.name}
-          peerNickname={openChatResolved.peerNickname}
-          peerFirstName={openChatResolved.peerFirstName}
-          peerLastName={openChatResolved.peerLastName}
-          peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
-          peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
-          peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
-          isSavedMessages={openChatResolved.isSavedMessages === true}
-          peerOnline={
-            openChatResolved.peerUserId != null &&
-            Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
-              ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
-              : undefined
-          }
-          peerLastSeenAt={
-            openChatResolved.peerUserId != null
-              ? presenceLastSeen[String(openChatResolved.peerUserId)]
-              : undefined
-          }
-          peerLastSeenHidden={
-            openChatResolved.peerUserId != null
-              ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
-              : false
-          }
-          canMessage={openChatResolved.canMessage !== false}
-          friendsActive={openChatResolved.friendsActive !== false}
-          onClose={() => setOpenChat(null)}
-          lastEvent={lastEvent}
-          onAfterChange={refreshSocial}
-          onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
-          onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-        />
+        <Suspense fallback={<FullScreenFallback label="Загрузка чата…" />}>
+          <DirectChatScreen
+            userId={user.id}
+            chatId={openChatResolved.id}
+            peerLabel={openChatResolved.name}
+            peerNickname={openChatResolved.peerNickname}
+            peerFirstName={openChatResolved.peerFirstName}
+            peerLastName={openChatResolved.peerLastName}
+            peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
+            peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
+            peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
+            isSavedMessages={openChatResolved.isSavedMessages === true}
+            peerOnline={
+              openChatResolved.peerUserId != null &&
+              Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
+                ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
+                : undefined
+            }
+            peerLastSeenAt={
+              openChatResolved.peerUserId != null
+                ? presenceLastSeen[String(openChatResolved.peerUserId)]
+                : undefined
+            }
+            peerLastSeenHidden={
+              openChatResolved.peerUserId != null
+                ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
+                : false
+            }
+            canMessage={openChatResolved.canMessage !== false}
+            friendsActive={openChatResolved.friendsActive !== false}
+            onClose={() => setOpenChat(null)}
+            lastEvent={lastEvent}
+            onAfterChange={refreshSocial}
+            onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
+            onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+          />
+        </Suspense>
       )}
 
       {openRoomChat && (
-        <RoomChatScreen
-          userId={user.id}
-          roomId={openRoomChat.id}
-          roomTitle={openRoomChat.title}
-          onClose={() => setOpenRoomChat(null)}
-          lastEvent={lastEvent}
-          onAfterChange={refreshSocial}
-          onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
-          onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-        />
+        <Suspense fallback={<FullScreenFallback label="Загрузка комнаты…" />}>
+          <RoomChatScreen
+            userId={user.id}
+            roomId={openRoomChat.id}
+            roomTitle={openRoomChat.title}
+            onClose={() => setOpenRoomChat(null)}
+            lastEvent={lastEvent}
+            onAfterChange={refreshSocial}
+            onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
+            onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+          />
+        </Suspense>
       )}
 
       {storyViewer && (
-        <StoryViewer
-          story={storyViewer}
-          userId={user?.id}
-          onClose={() => {
-            setStoryViewer(null);
-            refreshStories();
-          }}
-          onBeforeFirstItem={storyViewer.profileReel ? undefined : () => void goToPrevStoryAuthor()}
-          onAfterLastItem={
-            storyViewer.profileReel
-              ? () => {
-                  setStoryViewer(null);
-                  void refreshStories();
-                }
-              : () => void goToNextStoryAuthor()
-          }
-          onProgress={onStoryProgress}
-          onStoryArchived={onStoryArchivedFromViewer}
-        />
+        <Suspense fallback={<FullScreenFallback label="Загрузка историй…" />}>
+          <StoryViewer
+            story={storyViewer}
+            userId={user?.id}
+            onClose={() => {
+              setStoryViewer(null);
+              refreshStories();
+            }}
+            onBeforeFirstItem={storyViewer.profileReel ? undefined : () => void goToPrevStoryAuthor()}
+            onAfterLastItem={
+              storyViewer.profileReel
+                ? () => {
+                    setStoryViewer(null);
+                    void refreshStories();
+                  }
+                : () => void goToNextStoryAuthor()
+            }
+            onProgress={onStoryProgress}
+            onStoryArchived={onStoryArchivedFromViewer}
+          />
+        </Suspense>
       )}
       {storyCreateOpen && (
-        <StoryCreateModal
-          userId={user.id}
-          onClose={() => setStoryCreateOpen(false)}
-          onCreated={refreshStories}
-        />
+        <Suspense fallback={null}>
+          <StoryCreateModal
+            userId={user.id}
+            onClose={() => setStoryCreateOpen(false)}
+            onCreated={refreshStories}
+          />
+        </Suspense>
       )}
       {archiveOpen && (
-        <StoriesArchiveModal
-          userId={user.id}
-          onClose={() => setArchiveOpen(false)}
-          onChanged={() => void refreshStories()}
-        />
+        <Suspense fallback={null}>
+          <StoriesArchiveModal
+            userId={user.id}
+            onClose={() => setArchiveOpen(false)}
+            onChanged={() => void refreshStories()}
+          />
+        </Suspense>
       )}
       {appStatusOpen && (
-        <AppStatusModal
-          onClose={() => setAppStatusOpen(false)}
-          wsStatus={wsStatus}
-          networkOnline={networkOnline}
-          loadError={loadError}
-        />
+        <Suspense fallback={null}>
+          <AppStatusModal
+            onClose={() => setAppStatusOpen(false)}
+            wsStatus={wsStatus}
+            networkOnline={networkOnline}
+            loadError={loadError}
+          />
+        </Suspense>
       )}
       {bugReportOpen ? (
-        <BugReportModal userId={user.id} nav={nav} onClose={() => setBugReportOpen(false)} />
+        <Suspense fallback={null}>
+          <BugReportModal userId={user.id} nav={nav} onClose={() => setBugReportOpen(false)} />
+        </Suspense>
       ) : null}
       {menuStub === 'settings' ? (
-        <SettingsModal
-          open
-          onClose={() => setMenuStub(null)}
-          notificationsEnabled={notificationsEnabled}
-          onNotificationsEnabledChange={(v) => {
-            setNotificationsEnabled(v);
-            saveNotificationsEnabled(v);
-            setAppNotificationsEnabled(v);
-          }}
-          theme={appTheme}
-          onThemeChange={(t) => {
-            setAppTheme(t);
-            saveTheme(t);
-            applyThemeToDocument(t);
-          }}
-        />
+        <Suspense fallback={null}>
+          <SettingsModal
+            open
+            onClose={() => setMenuStub(null)}
+            notificationsEnabled={notificationsEnabled}
+            onNotificationsEnabledChange={(v) => {
+              setNotificationsEnabled(v);
+              saveNotificationsEnabled(v);
+              setAppNotificationsEnabled(v);
+            }}
+            theme={appTheme}
+            onThemeChange={(t) => {
+              setAppTheme(t);
+              saveTheme(t);
+              applyThemeToDocument(t);
+            }}
+          />
+        </Suspense>
       ) : menuStub === 'privacy' ? (
         <StubMenuModal open onClose={() => setMenuStub(null)} title="Конфиденциальность">
           <div
@@ -901,94 +960,108 @@ export default function App() {
         </StubMenuModal>
       ) : null}
       {possibleFriendsOpen && user?.id ? (
-        <PossibleFriendsModal
-          open
-          userId={user.id}
-          onClose={() => setPossibleFriendsOpen(false)}
-          onFriendsChanged={onFriendsChanged}
-        />
+        <Suspense fallback={null}>
+          <PossibleFriendsModal
+            open
+            userId={user.id}
+            onClose={() => setPossibleFriendsOpen(false)}
+            onFriendsChanged={onFriendsChanged}
+          />
+        </Suspense>
       ) : null}
       {createRoomOpen ? (
-        <CreateRoomModal
-          userId={user.id}
-          open
-          onClose={() => setCreateRoomOpen(false)}
-          onCreated={() => {
-            void refreshSocial();
-          }}
-        />
+        <Suspense fallback={null}>
+          <CreateRoomModal
+            userId={user.id}
+            open
+            onClose={() => setCreateRoomOpen(false)}
+            onCreated={() => {
+              void refreshSocial();
+            }}
+          />
+        </Suspense>
       ) : null}
       {roomDetailId ? (
-        <RoomDetailModal
-          userId={user.id}
-          roomId={roomDetailId}
-          onClose={() => setRoomDetailId(null)}
-          onRoomUpdated={(r) => {
-            void refreshSocial();
-            setOpenRoomChat((prev) =>
-              prev && String(prev.id) === String(r.id) ? { ...prev, title: r.title } : prev,
-            );
-          }}
-          onRoomDeleted={(deletedId) => {
-            void refreshSocial();
-            setRoomDetailId(null);
-            setOpenRoomChat((prev) => (prev && String(prev.id) === String(deletedId) ? null : prev));
-          }}
-        />
+        <Suspense fallback={null}>
+          <RoomDetailModal
+            userId={user.id}
+            roomId={roomDetailId}
+            onClose={() => setRoomDetailId(null)}
+            onRoomUpdated={(r) => {
+              void refreshSocial();
+              setOpenRoomChat((prev) =>
+                prev && String(prev.id) === String(r.id) ? { ...prev, title: r.title } : prev,
+              );
+            }}
+            onRoomDeleted={(deletedId) => {
+              void refreshSocial();
+              setRoomDetailId(null);
+              setOpenRoomChat((prev) => (prev && String(prev.id) === String(deletedId) ? null : prev));
+            }}
+          />
+        </Suspense>
       ) : null}
       {searchOpen ? (
-        <SearchModal
-          open
-          userId={user.id}
-          onClose={() => setSearchOpen(false)}
-          onSelectUser={(u) => {
-            setSearchOpen(false);
-            if (u?.id) setPeerProfileUserId(u.id);
-          }}
-        />
+        <Suspense fallback={null}>
+          <SearchModal
+            open
+            userId={user.id}
+            onClose={() => setSearchOpen(false)}
+            onSelectUser={(u) => {
+              setSearchOpen(false);
+              if (u?.id) setPeerProfileUserId(u.id);
+            }}
+          />
+        </Suspense>
       ) : null}
       {peerProfileUserId && (
-        <FriendProfileSheet
-          targetUserId={peerProfileUserId}
-          viewerId={user.id}
-          onClose={() => setPeerProfileUserId(null)}
-          onFriendshipChanged={async () => {
-            await onFriendsChanged();
-            await syncOpenChatFromServer();
-          }}
-          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
-          onViewFullProfile={() => {
-            const id = peerProfileUserId;
-            setPeerProfileUserId(null);
-            if (id) {
-              setPeerFullProfileViewerPreview(false);
-              setPeerFullProfileUserId(id);
-            }
-          }}
-        />
+        <Suspense fallback={null}>
+          <FriendProfileSheet
+            targetUserId={peerProfileUserId}
+            viewerId={user.id}
+            onClose={() => setPeerProfileUserId(null)}
+            onFriendshipChanged={async () => {
+              await onFriendsChanged();
+              await syncOpenChatFromServer();
+            }}
+            onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+            onViewFullProfile={() => {
+              const id = peerProfileUserId;
+              setPeerProfileUserId(null);
+              if (id) {
+                setPeerFullProfileViewerPreview(false);
+                setPeerFullProfileUserId(id);
+              }
+            }}
+          />
+        </Suspense>
       )}
       {peerFullProfileUserId ? (
-        <PeerProfileFullScreen
-          targetUserId={peerFullProfileUserId}
-          viewerId={user.id}
-          onClose={() => {
-            setPeerFullProfileUserId(null);
-            setPeerFullProfileViewerPreview(false);
-          }}
-          onFriendshipChanged={async () => {
-            await onFriendsChanged();
-            await syncOpenChatFromServer();
-          }}
-          onViewAvatar={(url) => setAvatarLightboxUrl(url)}
-          onOpenStory={(authorId, startItemId, opts) => {
-            void openStoryAuthor(authorId, startItemId, opts || {});
-          }}
-          onStoriesUpdated={() => void refreshStories()}
-          viewerPreview={peerFullProfileViewerPreview}
-        />
+        <Suspense fallback={<FullScreenFallback label="Загрузка профиля…" />}>
+          <PeerProfileFullScreen
+            targetUserId={peerFullProfileUserId}
+            viewerId={user.id}
+            onClose={() => {
+              setPeerFullProfileUserId(null);
+              setPeerFullProfileViewerPreview(false);
+            }}
+            onFriendshipChanged={async () => {
+              await onFriendsChanged();
+              await syncOpenChatFromServer();
+            }}
+            onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+            onOpenStory={(authorId, startItemId, opts) => {
+              void openStoryAuthor(authorId, startItemId, opts || {});
+            }}
+            onStoriesUpdated={() => void refreshStories()}
+            viewerPreview={peerFullProfileViewerPreview}
+          />
+        </Suspense>
       ) : null}
       {avatarLightboxUrl ? (
-        <AvatarLightbox url={avatarLightboxUrl} onClose={() => setAvatarLightboxUrl(null)} />
+        <Suspense fallback={null}>
+          <AvatarLightbox url={avatarLightboxUrl} onClose={() => setAvatarLightboxUrl(null)} />
+        </Suspense>
       ) : null}
 
       {showMainChrome && (

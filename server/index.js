@@ -3,6 +3,7 @@ import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
@@ -130,8 +131,15 @@ app.use(
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   }),
 );
-app.use(express.json());
-app.use('/uploads', express.static(uploadsRoot));
+app.use(compression({ threshold: 1024 }));
+app.use(express.json({ limit: '12mb' }));
+app.use(
+  '/uploads',
+  express.static(uploadsRoot, {
+    maxAge: process.env.NODE_ENV === 'production' ? '1d' : 0,
+    etag: true,
+  }),
+);
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -1843,7 +1851,17 @@ wss.on('connection', (ws, req) => {
 const clientDist = path.resolve(__dirname, '..', 'client', 'dist');
 const serveSpa = process.env.NODE_ENV === 'production' || process.env.SERVE_SPA === '1';
 if (serveSpa && fs.existsSync(path.join(clientDist, 'index.html'))) {
-  app.use(express.static(clientDist));
+  app.use(
+    express.static(clientDist, {
+      maxAge: process.env.NODE_ENV === 'production' ? '1y' : 0,
+      etag: true,
+      setHeaders(res, filePath) {
+        if (path.basename(filePath) === 'index.html') {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    }),
+  );
   app.get(/.*/, (req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     if (req.path.startsWith('/api') || req.path.startsWith('/uploads')) return next();

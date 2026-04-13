@@ -28,11 +28,15 @@ function buildDefaultWsUrl(userId) {
  * Лёгкая обёртка над нативным WebSocket: переподключение и JSON-сообщения.
  * @param enabled — если false, соединение не открывается (до авторизации).
  */
+const RECONNECT_BASE_MS = 900;
+const RECONNECT_MAX_MS = 60_000;
+
 export function useWebSocket(url, { userId = 'demo-user', enabled = true } = {}) {
-  const [status, setStatus] = useState(enabled ? 'idle' : 'idle');
+  const [status, setStatus] = useState('idle');
   const [lastEvent, setLastEvent] = useState(null);
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
+  const reconnectAttempt = useRef(0);
 
   const wsUrl = url || buildDefaultWsUrl(userId);
 
@@ -50,19 +54,29 @@ export function useWebSocket(url, { userId = 'demo-user', enabled = true } = {})
 
     let stopped = false;
 
+    function scheduleReconnect() {
+      if (stopped) return;
+      reconnectAttempt.current += 1;
+      const n = reconnectAttempt.current;
+      const exp = Math.min(RECONNECT_MAX_MS, RECONNECT_BASE_MS * 2 ** Math.min(n - 1, 12));
+      const jitter = Math.floor(Math.random() * Math.min(1200, exp * 0.35));
+      reconnectTimer.current = window.setTimeout(connect, exp + jitter);
+    }
+
     function connect() {
       if (stopped) return;
       setStatus('connecting');
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
 
-      socket.onopen = () => setStatus('open');
+      socket.onopen = () => {
+        reconnectAttempt.current = 0;
+        setStatus('open');
+      };
       socket.onclose = () => {
         setStatus('closed');
         wsRef.current = null;
-        if (!stopped) {
-          reconnectTimer.current = window.setTimeout(connect, 2000);
-        }
+        if (!stopped) scheduleReconnect();
       };
       socket.onerror = () => socket.close();
       socket.onmessage = (ev) => {
@@ -75,6 +89,7 @@ export function useWebSocket(url, { userId = 'demo-user', enabled = true } = {})
       };
     }
 
+    reconnectAttempt.current = 0;
     connect();
 
     const ping = window.setInterval(() => {
@@ -85,6 +100,8 @@ export function useWebSocket(url, { userId = 'demo-user', enabled = true } = {})
       stopped = true;
       window.clearInterval(ping);
       if (reconnectTimer.current) window.clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
+      reconnectAttempt.current = 0;
       wsRef.current?.close();
       wsRef.current = null;
     };
