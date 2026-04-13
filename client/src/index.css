@@ -320,6 +320,166 @@ a:hover {
   line-height: 1;
 }
 
+/* Профиль: шапка в стиле Telegram (тёмная тема) */
+.profile-tg-hero {
+  position: relative;
+  padding: 8px 14px 22px;
+  overflow: hidden;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0;
+}
+.profile-tg-hero-pattern {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  pointer-events: none;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle at 1px 1px, rgba(193, 123, 75, 0.35) 1px, transparent 0);
+  background-size: 14px 14px;
+}
+.profile-tg-hero-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+  margin-bottom: 6px;
+}
+.profile-tg-square-btn {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.profile-tg-square-btn:active {
+  opacity: 0.85;
+}
+.profile-tg-pill-btn {
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+}
+.profile-tg-pill-btn:active {
+  opacity: 0.92;
+}
+.profile-tg-avatar-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 14px;
+}
+.profile-tg-display-name {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text);
+}
+.profile-tg-subline {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.profile-tg-dot {
+  opacity: 0.55;
+}
+.profile-tg-username {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.profile-tg-compact-card {
+  padding: 0 !important;
+}
+.profile-tg-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.profile-tg-row:last-child {
+  border-bottom: none;
+}
+.profile-tg-row:hover {
+  background: rgba(193, 123, 75, 0.07);
+}
+.profile-tg-row__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.profile-tg-row__icon--accent {
+  color: var(--accent);
+}
+.profile-tg-row__label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.profile-tg-row__label--accent {
+  color: var(--accent);
+  font-weight: 500;
+}
+.profile-tg-row__chev {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.profile-tg-row-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0;
+}
+.profile-tg-back {
+  display: inline-block;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 500;
+  padding: 6px 0 10px;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .feed-new-post-toast {
   position: fixed;
   left: 50%;
