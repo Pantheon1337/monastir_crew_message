@@ -796,6 +796,23 @@ a:hover {
 .friend-mini-action-btn__label {
   opacity: 0.95;
 }
+.friend-mini-actions--compact {
+  max-width: 200px;
+  gap: 6px;
+  padding: 0 12px 4px;
+}
+.friend-mini-action-btn--sm {
+  flex: 0 1 auto;
+  min-width: 56px;
+  max-width: 92px;
+  padding: 6px 8px;
+  gap: 2px;
+  border-radius: 11px;
+  font-size: 10px;
+}
+.friend-mini-action-btn--sm .friend-mini-action-btn__icon {
+  font-size: 15px;
+}
 .friend-mini-card {
   position: relative;
   z-index: 2;

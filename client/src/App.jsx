@@ -750,8 +750,7 @@ export default function App() {
   const openFeedAuthorProfile = useCallback(
     (authorId) => {
       if (!authorId || !user?.id) return;
-      setPeerFullProfileViewerPreview(String(authorId) === String(user.id));
-      setPeerFullProfileUserId(authorId);
+      setPeerProfileUserId(authorId);
     },
     [user?.id],
   );
@@ -1184,10 +1183,6 @@ export default function App() {
             presenceLastSeen={presenceLastSeen}
             presenceLastSeenHidden={presenceLastSeenHidden}
             onOpenDirectChat={() => void handleOpenDirectChatByPeerUserId(peerProfileUserId)}
-            onOpenSearch={() => {
-              setPeerProfileUserId(null);
-              setSearchOpen(true);
-            }}
             onViewFullProfile={() => {
               const id = peerProfileUserId;
               setPeerProfileUserId(null);

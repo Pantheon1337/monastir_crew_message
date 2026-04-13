@@ -38,7 +38,6 @@ export default function FriendProfileSheet({
   presenceLastSeen = {},
   presenceLastSeenHidden = {},
   onOpenDirectChat,
-  onOpenSearch,
 }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -201,9 +200,9 @@ export default function FriendProfileSheet({
                 </h2>
                 {presenceText ? <p className="friend-mini-presence">{presenceText}</p> : null}
 
-                <div className="friend-mini-actions">
+                <div className="friend-mini-actions friend-mini-actions--compact">
                   {!isSelf && typeof onOpenDirectChat === 'function' ? (
-                    <button type="button" className="friend-mini-action-btn" onClick={onOpenDirectChat} title="Чат">
+                    <button type="button" className="friend-mini-action-btn friend-mini-action-btn--sm" onClick={onOpenDirectChat} title="Чат">
                       <span className="friend-mini-action-btn__icon" aria-hidden>
                         💬
                       </span>
@@ -211,19 +210,11 @@ export default function FriendProfileSheet({
                     </button>
                   ) : null}
                   {!isSelf && typeof onViewFullProfile === 'function' ? (
-                    <button type="button" className="friend-mini-action-btn" onClick={onViewFullProfile} title="Профиль">
+                    <button type="button" className="friend-mini-action-btn friend-mini-action-btn--sm" onClick={onViewFullProfile} title="Профиль">
                       <span className="friend-mini-action-btn__icon" aria-hidden>
                         👤
                       </span>
                       <span className="friend-mini-action-btn__label">Профиль</span>
-                    </button>
-                  ) : null}
-                  {typeof onOpenSearch === 'function' ? (
-                    <button type="button" className="friend-mini-action-btn" onClick={onOpenSearch} title="Поиск">
-                      <span className="friend-mini-action-btn__icon" aria-hidden>
-                        🔍
-                      </span>
-                      <span className="friend-mini-action-btn__label">Поиск</span>
                     </button>
                   ) : null}
                 </div>

@@ -403,7 +403,7 @@ export default function PostCard({
                 type="button"
                 className="feed-post-author-btn"
                 onClick={() => onOpenAuthorProfile(post.authorId)}
-                title="Открыть профиль"
+                title="Открыть мини-профиль"
               >
                 <div className="feed-post-author-name">{post.authorName || nick}</div>
                 <div className="feed-post-author-sub">
