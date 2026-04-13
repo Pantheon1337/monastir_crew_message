@@ -41,6 +41,12 @@ export default function ProfileScreen({
   presenceOnline = {},
   onOpenChatWithFriend,
   onOpenFriendProfile,
+  onOpenAppStatus,
+  onOpenPossibleFriends,
+  onOpenSettings,
+  onOpenPrivacy,
+  onOpenSecurity,
+  onOpenBugReport,
 }) {
   const fileRef = useRef(null);
   const [incoming, setIncoming] = useState([]);
@@ -369,8 +375,49 @@ export default function ProfileScreen({
   return (
     <>
     <section style={{ padding: '12px 14px 28px', maxWidth: 520, margin: '0 auto' }}>
-      <h2 style={{ margin: '0 0 6px', fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em' }}>Профиль</h2>
-      <p className="muted" style={{ margin: '0 0 16px', fontSize: 12, lineHeight: 1.4 }}>
+      <p className="profile-settings-section-title" style={{ marginTop: 0 }}>
+        Сервис и настройки
+      </p>
+      <div className="profile-settings-card" style={{ padding: 0, marginBottom: 16, overflow: 'hidden' }}>
+        <button type="button" className="profile-service-row" onClick={() => onOpenAppStatus?.()}>
+          <span>Статус приложения</span>
+          <span className="profile-service-row__chev" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button type="button" className="profile-service-row" onClick={() => onOpenPossibleFriends?.()}>
+          <span>Возможно друзья</span>
+          <span className="profile-service-row__chev" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button type="button" className="profile-service-row" onClick={() => onOpenSettings?.()}>
+          <span>Настройки</span>
+          <span className="profile-service-row__chev" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button type="button" className="profile-service-row" onClick={() => onOpenPrivacy?.()}>
+          <span>Конфиденциальность</span>
+          <span className="profile-service-row__chev" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button type="button" className="profile-service-row" onClick={() => onOpenSecurity?.()}>
+          <span>Безопасность</span>
+          <span className="profile-service-row__chev" aria-hidden>
+            ›
+          </span>
+        </button>
+        <button type="button" className="profile-service-row" onClick={() => onOpenBugReport?.()}>
+          <span>Сообщить о баге</span>
+          <span className="profile-service-row__chev" aria-hidden>
+            ›
+          </span>
+        </button>
+      </div>
+
+      <p className="muted" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.4 }}>
         Данные аккаунта и отображение в чатах
       </p>
 

@@ -185,48 +185,65 @@ function RoomRow({ room, onOpen }) {
 }
 
 function Panel({ title, children, headerAction }) {
+  const showHead = Boolean(title) || Boolean(headerAction);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, background: 'var(--bg)' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '10px 12px 6px',
-          fontSize: 13,
-          fontWeight: 700,
-          letterSpacing: 0.2,
-          color: 'var(--accent)',
-          gap: 8,
-        }}
-      >
-        <span style={{ minWidth: 0 }}>{title}</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          {headerAction}
-        </span>
-      </div>
+      {showHead ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '10px 12px 6px',
+            fontSize: 13,
+            fontWeight: 700,
+            letterSpacing: 0.2,
+            color: 'var(--accent)',
+            gap: 8,
+          }}
+        >
+          <span style={{ minWidth: 0 }}>{title || '\u00a0'}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {headerAction}
+          </span>
+        </div>
+      ) : null}
       <div style={{ flex: 1, overflow: 'hidden' }}>{children}</div>
     </div>
   );
 }
 
-export default function Dashboard({ chats = [], rooms = [], singleColumn, onOpenChat, onCreateRoom, onOpenRoom, presenceOnline = {} }) {
-  const chatsBlock = (
+export default function Dashboard({
+  chats = [],
+  rooms = [],
+  singleColumn,
+  onOpenChat,
+  onCreateRoom,
+  onOpenRoom,
+  presenceOnline = {},
+  chatsBare = false,
+}) {
+  const chatsInner =
+    chats.length === 0 ? (
+      <p className="muted" style={{ fontSize: 12, margin: '0 12px 12px' }}>
+        Нет диалогов
+      </p>
+    ) : (
+      chats.map((c) => (
+        <ChatRow
+          key={c.id}
+          chat={c}
+          onOpen={onOpenChat}
+          peerOnline={c.peerUserId != null ? Boolean(presenceOnline[String(c.peerUserId)]) : undefined}
+        />
+      ))
+    );
+
+  const chatsBlock = chatsBare ? (
+    <div className="dashboard-chat-card">{chatsInner}</div>
+  ) : (
     <Panel title="Чаты">
-      {chats.length === 0 ? (
-        <p className="muted" style={{ fontSize: 12, margin: '0 12px 12px' }}>
-          Нет диалогов
-        </p>
-      ) : (
-        chats.map((c) => (
-          <ChatRow
-            key={c.id}
-            chat={c}
-            onOpen={onOpenChat}
-            peerOnline={c.peerUserId != null ? Boolean(presenceOnline[String(c.peerUserId)]) : undefined}
-          />
-        ))
-      )}
+      {chatsInner}
     </Panel>
   );
 

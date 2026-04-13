@@ -23,7 +23,7 @@ export function AvatarRing({ children, variant = 'new' }) {
             width: '100%',
             height: '100%',
             borderRadius: '50%',
-            background: '#252830',
+            background: 'var(--story-avatar-inner)',
             overflow: 'hidden',
             display: 'flex',
             alignItems: 'center',

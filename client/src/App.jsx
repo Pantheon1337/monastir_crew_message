@@ -733,17 +733,7 @@ export default function App() {
   return (
     <div className="app-shell">
       {showMainChrome && (
-        <Header
-          userId={user.id}
-          onSocialChanged={refreshSocial}
-          onOpenAppStatus={() => setAppStatusOpen(true)}
-          onOpenPossibleFriends={() => setPossibleFriendsOpen(true)}
-          onOpenSearch={() => setSearchOpen(true)}
-          onOpenSettings={() => setMenuStub('settings')}
-          onOpenPrivacy={() => setMenuStub('privacy')}
-          onOpenSecurity={() => setMenuStub('security')}
-          onOpenBugReport={() => setBugReportOpen(true)}
-        />
+        <Header userId={user.id} onSocialChanged={refreshSocial} onOpenSearch={() => setSearchOpen(true)} nav={nav} />
       )}
 
       {showMainChrome && loadError ? (
@@ -776,15 +766,25 @@ export default function App() {
       )}
 
       {nav === 'chats' && showMainChrome && (
-        <section style={{ padding: '8px 12px 16px' }}>
-          <Dashboard
-            chats={chats}
-            rooms={[]}
-            singleColumn="chats"
+        <Suspense fallback={<AppChunkFallback label="Загрузка…" />}>
+          <StoriesBar
+            user={user}
+            buckets={storyBuckets}
             presenceOnline={presenceOnline}
-            onOpenChat={handleOpenChat}
+            onAddStory={() => setStoryCreateOpen(true)}
+            onOpenAuthor={openStoryAuthor}
           />
-        </section>
+          <div style={{ padding: '8px 12px 16px' }}>
+            <Dashboard
+              chats={chats}
+              rooms={[]}
+              singleColumn="chats"
+              presenceOnline={presenceOnline}
+              onOpenChat={handleOpenChat}
+              chatsBare
+            />
+          </div>
+        </Suspense>
       )}
 
       {nav === 'rooms' && showMainChrome && (
@@ -822,6 +822,12 @@ export default function App() {
               setPeerFullProfileViewerPreview(false);
               setPeerFullProfileUserId(id);
             }}
+            onOpenAppStatus={() => setAppStatusOpen(true)}
+            onOpenPossibleFriends={() => setPossibleFriendsOpen(true)}
+            onOpenSettings={() => setMenuStub('settings')}
+            onOpenPrivacy={() => setMenuStub('privacy')}
+            onOpenSecurity={() => setMenuStub('security')}
+            onOpenBugReport={() => setBugReportOpen(true)}
           />
         </Suspense>
       )}
