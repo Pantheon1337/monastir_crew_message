@@ -641,6 +641,26 @@ export default function App() {
     [user?.id, handleOpenChat],
   );
 
+  /** Мини-профиль: открыть ЛС с пользователем по id. */
+  const handleOpenDirectChatByPeerUserId = useCallback(
+    async (peerUserId) => {
+      if (!user?.id || !peerUserId) return;
+      const r = await api('/api/chats', { userId: user.id });
+      if (!r.ok) return;
+      const list = r.data.chats || [];
+      const chat = list.find((c) => !c.isSavedMessages && String(c.peerUserId) === String(peerUserId));
+      if (chat) {
+        setPeerProfileUserId(null);
+        setOpenRoomChat(null);
+        setNav('chats');
+        handleOpenChat(chat);
+      } else {
+        window.alert('Чат с этим пользователем не найден. Откройте раздел «Чаты» и обновите список.');
+      }
+    },
+    [user?.id, handleOpenChat],
+  );
+
   const openFeedAuthorProfile = useCallback(
     (authorId) => {
       if (!authorId || !user?.id) return;
@@ -1067,6 +1087,14 @@ export default function App() {
               await syncOpenChatFromServer();
             }}
             onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+            presenceOnline={presenceOnline}
+            presenceLastSeen={presenceLastSeen}
+            presenceLastSeenHidden={presenceLastSeenHidden}
+            onOpenDirectChat={() => void handleOpenDirectChatByPeerUserId(peerProfileUserId)}
+            onOpenSearch={() => {
+              setPeerProfileUserId(null);
+              setSearchOpen(true);
+            }}
             onViewFullProfile={() => {
               const id = peerProfileUserId;
               setPeerProfileUserId(null);

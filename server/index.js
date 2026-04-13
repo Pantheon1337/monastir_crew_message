@@ -29,6 +29,7 @@ import {
   stripNicknameChangeMeta,
   setUserDisplayRole,
   setUserAffiliationEmoji,
+  setUserProfileHeroTint,
   normalizeAffiliationEmoji,
   setUserLastSeenAt,
   setUserHideLastSeen,
@@ -791,6 +792,20 @@ app.patch('/api/users/me', (req, res) => {
       }
       setUserAffiliationEmoji(userId, n);
     }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'profileHeroTint')) {
+    const raw = req.body?.profileHeroTint;
+    if (raw !== null && raw !== undefined && typeof raw !== 'number' && typeof raw !== 'string') {
+      res.status(400).json({ error: 'Цвет шапки профиля — число 0–4' });
+      return;
+    }
+    const n = raw === null || raw === '' ? 0 : typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 4) {
+      res.status(400).json({ error: 'Цвет шапки: от 0 до 4' });
+      return;
+    }
+    setUserProfileHeroTint(userId, n);
   }
 
   const body = req.body || {};

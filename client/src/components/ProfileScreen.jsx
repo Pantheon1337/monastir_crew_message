@@ -5,17 +5,9 @@ import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { AFFILIATION_EMOJI_CHOICES } from '../affiliationConstants.js';
 import { formatPhoneRu } from '../formatPhone.js';
+import { PROFILE_HERO_TINTS, profileHeroTintBg } from '../profileHeroTints.js';
 
 const MAX_ABOUT = 100;
-
-/** Фон шапки профиля (как в Telegram — приглушённые градиенты) */
-const PROFILE_HERO_TINTS = [
-  { label: 'Тёмный', bg: 'linear-gradient(180deg, #25252c 0%, #16161b 100%)' },
-  { label: 'Синий', bg: 'linear-gradient(180deg, #2c3848 0%, #1e2835 100%)' },
-  { label: 'Бирюза', bg: 'linear-gradient(180deg, #243d3d 0%, #1a2e2e 100%)' },
-  { label: 'Тёплый', bg: 'linear-gradient(180deg, #3d362e 0%, #262018 100%)' },
-  { label: 'Пурпур', bg: 'linear-gradient(180deg, #332d3d 0%, #221a2a 100%)' },
-];
 
 function profileHeroTintKey(userId) {
   return userId != null ? `profileHeroTint:${userId}` : null;
@@ -257,8 +249,14 @@ export default function ProfileScreen({
   }, [loadIncoming, socialTick]);
 
   useEffect(() => {
-    setHeroTintIndex(readProfileHeroTint(user?.id));
-  }, [user?.id]);
+    if (user?.id == null) return;
+    const srv = user.profileHeroTint;
+    if (typeof srv === 'number' && srv >= 0 && srv < PROFILE_HERO_TINTS.length) {
+      setHeroTintIndex(srv);
+      return;
+    }
+    setHeroTintIndex(readProfileHeroTint(user.id));
+  }, [user?.id, user?.profileHeroTint]);
 
   async function accept(id) {
     setActionId(id);
@@ -440,7 +438,7 @@ export default function ProfileScreen({
     (user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0);
 
   const displayNameLine = [user?.firstName, user?.lastName].filter((x) => x && String(x).trim()).join(' ').trim() || '—';
-  const heroBg = PROFILE_HERO_TINTS[Math.min(heroTintIndex, PROFILE_HERO_TINTS.length - 1)]?.bg ?? PROFILE_HERO_TINTS[0].bg;
+  const heroBg = profileHeroTintBg(heroTintIndex);
   const incomingCount = incoming.length;
 
   return (
@@ -625,7 +623,14 @@ export default function ProfileScreen({
             onOpen={user?.avatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(user.avatarUrl) : undefined}
           />
         </div>
-        <h1 className="profile-tg-display-name">{displayNameLine}</h1>
+        <h1 className="profile-tg-display-name profile-tg-display-name--with-emoji">
+          <span className="profile-tg-display-name__text">{displayNameLine}</span>
+          {user?.affiliationEmoji ? (
+            <span className="profile-tg-name-emoji" title="Смайлик у ника" aria-hidden>
+              {user.affiliationEmoji}
+            </span>
+          ) : null}
+        </h1>
         <div className="profile-tg-subline">
           <span>{displayPhone || '—'}</span>
           {user?.nickname ? (
@@ -731,76 +736,53 @@ export default function ProfileScreen({
           </button>
         </div>
 
-        <p className="muted" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.4 }}>
-          Данные аккаунта и отображение в чатах
-        </p>
-
-      <p className="profile-settings-section-title">Отображение в приложении</p>
-      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
-        <div style={{ margin: '0 0 12px' }}>
+        <p className="profile-settings-section-title">Роль</p>
+        <div className="profile-settings-card" style={{ marginBottom: 12 }}>
           <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-            Ник и смайлик в чатах
+            {user?.displayRole === 'developer' ? 'Роль' : 'Сменить роль'}
           </p>
-          <div style={{ fontSize: 14, color: 'var(--accent)' }}>
-            {user?.nickname ? (
-              <NicknameWithBadge nickname={user.nickname} affiliationEmoji={user?.affiliationEmoji} />
-            ) : (
-              '—'
-            )}
-          </div>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-            {profileRoleCaption(user?.displayRole)}
-          </p>
-        </div>
-
-        <div className="profile-settings-divider" />
-
-        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          {user?.displayRole === 'developer' ? 'Роль' : 'Сменить роль'}
-        </p>
-        {user?.displayRole === 'developer' ? (
-          <p style={{ margin: '0 0 12px', fontSize: 12 }} className="muted">
-            Назначается автоматически для аккаунта разработчика.
-          </p>
-        ) : (
-          <div style={{ marginBottom: 12 }}>
-            <select
-              className="text-input"
-              style={{ width: '100%', fontSize: 13, padding: '8px 10px' }}
-              value={user?.displayRole === 'beta' ? 'beta' : 'user'}
-              disabled={roleSaving}
-              onChange={(e) => {
-                const displayRole = e.target.value;
-                void (async () => {
-                  if (!user?.id) return;
-                  setRoleSaving(true);
-                  const { ok, data } = await api('/api/users/me', {
-                    method: 'PATCH',
-                    body: { displayRole },
-                    userId: user.id,
-                  });
-                  setRoleSaving(false);
-                  if (!ok) {
-                    alert(data?.error || 'Не удалось сохранить роль');
-                    return;
-                  }
-                  if (data?.user) {
-                    setStoredUser(data.user);
-                    onUserUpdated?.(data.user);
-                  }
-                })();
-              }}
-            >
-              <option value="user">Пользователь 👤</option>
-              <option value="beta">Бета-тестер 🧪</option>
-            </select>
-            <p className="muted" style={{ margin: '6px 0 0', fontSize: 10 }}>
-              Роль «Разработчик» недоступна для выбора и отображается только у отмеченных аккаунтов.
+          {user?.displayRole === 'developer' ? (
+            <p style={{ margin: 0, fontSize: 12 }} className="muted">
+              Назначается автоматически для аккаунта разработчика.
             </p>
-          </div>
-        )}
-
-      </div>
+          ) : (
+            <div>
+              <select
+                className="text-input"
+                style={{ width: '100%', fontSize: 13, padding: '8px 10px' }}
+                value={user?.displayRole === 'beta' ? 'beta' : 'user'}
+                disabled={roleSaving}
+                onChange={(e) => {
+                  const displayRole = e.target.value;
+                  void (async () => {
+                    if (!user?.id) return;
+                    setRoleSaving(true);
+                    const { ok, data } = await api('/api/users/me', {
+                      method: 'PATCH',
+                      body: { displayRole },
+                      userId: user.id,
+                    });
+                    setRoleSaving(false);
+                    if (!ok) {
+                      alert(data?.error || 'Не удалось сохранить роль');
+                      return;
+                    }
+                    if (data?.user) {
+                      setStoredUser(data.user);
+                      onUserUpdated?.(data.user);
+                    }
+                  })();
+                }}
+              >
+                <option value="user">Пользователь 👤</option>
+                <option value="beta">Бета-тестер 🧪</option>
+              </select>
+              <p className="muted" style={{ margin: '6px 0 0', fontSize: 10 }}>
+                Роль «Разработчик» недоступна для выбора и отображается только у отмеченных аккаунтов.
+              </p>
+            </div>
+          )}
+        </div>
 
       {onOpenArchive ? (
         <>
@@ -944,7 +926,7 @@ export default function ProfileScreen({
             </button>
           </div>
           <p className="muted" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.45 }}>
-            Фон за аватаром в шапке. Сохраняется на этом устройстве.
+            Фон шапки профиля и в мини-профиле у других пользователей.
           </p>
           <div className="profile-hero-tint-grid">
             {PROFILE_HERO_TINTS.map((t, i) => (
@@ -957,9 +939,20 @@ export default function ProfileScreen({
                 aria-pressed={heroTintIndex === i}
                 style={{ background: t.bg }}
                 onClick={() => {
-                  setHeroTintIndex(i);
-                  if (user?.id) writeProfileHeroTint(user.id, i);
-                  setProfileColorSheetOpen(false);
+                  void (async () => {
+                    setHeroTintIndex(i);
+                    if (user?.id) writeProfileHeroTint(user.id, i);
+                    const { ok, data } = await api('/api/users/me', {
+                      method: 'PATCH',
+                      body: { profileHeroTint: i },
+                      userId: user.id,
+                    });
+                    if (ok && data?.user) {
+                      setStoredUser(data.user);
+                      onUserUpdated?.(data.user);
+                    }
+                    setProfileColorSheetOpen(false);
+                  })();
                 }}
               >
                 {heroTintIndex === i ? <span className="profile-hero-tint-swatch__check">✓</span> : null}

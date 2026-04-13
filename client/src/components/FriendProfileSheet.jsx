@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
-import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
+import { profileHeroTintBg } from '../profileHeroTints.js';
+import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 
 function formatJoined(ts) {
   if (ts == null) return '—';
@@ -16,6 +17,16 @@ function profileRoleCaption(displayRole) {
   return 'Пользователь';
 }
 
+function presenceLineForPeer(peerId, presenceOnline, presenceLastSeen, presenceLastSeenHidden) {
+  if (peerId == null) return null;
+  const id = String(peerId);
+  const hasO = Object.prototype.hasOwnProperty.call(presenceOnline, id);
+  const online = hasO ? Boolean(presenceOnline[id]) : undefined;
+  const lastAt = presenceLastSeen[id];
+  const hidden = presenceLastSeenHidden[id] === true;
+  return peerPresenceSubtitle(online, lastAt, hidden);
+}
+
 export default function FriendProfileSheet({
   targetUserId,
   viewerId,
@@ -23,6 +34,11 @@ export default function FriendProfileSheet({
   onFriendshipChanged,
   onViewAvatar,
   onViewFullProfile,
+  presenceOnline = {},
+  presenceLastSeen = {},
+  presenceLastSeenHidden = {},
+  onOpenDirectChat,
+  onOpenSearch,
 }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -56,6 +72,17 @@ export default function FriendProfileSheet({
       cancelled = true;
     };
   }, [load]);
+
+  const heroBg = useMemo(() => profileHeroTintBg(profile?.profileHeroTint ?? 0), [profile?.profileHeroTint]);
+
+  const presenceText = useMemo(
+    () => presenceLineForPeer(targetUserId, presenceOnline, presenceLastSeen, presenceLastSeenHidden),
+    [targetUserId, presenceOnline, presenceLastSeen, presenceLastSeenHidden],
+  );
+
+  const displayName = profile
+    ? [profile.firstName, profile.lastName].filter((x) => x && String(x).trim()).join(' ').trim() || '—'
+    : '';
 
   async function doRemoveFriend() {
     if (!viewerId || !targetUserId) return;
@@ -118,7 +145,7 @@ export default function FriendProfileSheet({
     <div
       role="dialog"
       aria-modal="true"
-      className="modal-overlay"
+      className="modal-overlay friend-mini-overlay"
       style={{
         position: 'fixed',
         inset: 0,
@@ -126,84 +153,111 @@ export default function FriendProfileSheet({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 16,
-        paddingTop: 'max(16px, env(safe-area-inset-top))',
-        paddingBottom: 'max(16px, env(safe-area-inset-bottom))',
+        padding: 12,
+        paddingTop: 'max(12px, env(safe-area-inset-top))',
+        paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
       }}
       onClick={onClose}
     >
       <div
-        className="block modal-panel"
-        style={{
-          width: '100%',
-          maxWidth: 420,
-          maxHeight: 'min(85dvh, 640px)',
-          overflow: 'auto',
-          padding: 16,
-          borderRadius: 'var(--radius)',
-        }}
+        className="friend-mini-sheet block"
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>Профиль</span>
-          <button type="button" className="icon-btn" style={{ width: 36, height: 36 }} onClick={onClose} aria-label="Закрыть">
-            ×
-          </button>
-        </div>
-        {!loading && !err && profile && !isSelf && typeof onViewFullProfile === 'function' ? (
-          <button type="button" className="btn-primary" style={{ width: '100%', marginBottom: 12 }} onClick={onViewFullProfile}>
-            Смотреть профиль
-          </button>
-        ) : null}
         {loading ? (
-          <p className="muted" style={{ fontSize: 12 }}>
-            Загрузка…
-          </p>
+          <div style={{ padding: 24, textAlign: 'center' }}>
+            <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+              Загрузка…
+            </p>
+          </div>
         ) : err ? (
-          <p style={{ fontSize: 12, color: '#c45c5c' }}>{err}</p>
+          <div style={{ padding: 24 }}>
+            <p style={{ fontSize: 13, color: '#c45c5c', margin: 0 }}>{err}</p>
+          </div>
         ) : profile ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
-            <UserAvatar
-              src={profile.avatarUrl}
-              size={88}
-              onOpen={
-                profile.avatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(profile.avatarUrl) : undefined
-              }
-            />
-            <div>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>
-                {profile.firstName} {profile.lastName}
+          <>
+            <header className="friend-mini-hero" style={{ background: heroBg }}>
+              <div className="friend-mini-hero-pattern" aria-hidden />
+              <div className="friend-mini-hero-top">
+                <button type="button" className="friend-mini-circle-btn" onClick={onClose} aria-label="Закрыть">
+                  ‹
+                </button>
+                <div style={{ flex: 1 }} />
               </div>
-              <div style={{ fontSize: 13, color: 'var(--accent)', marginTop: 4, display: 'flex', justifyContent: 'center' }}>
-                {profile.nickname ? (
-                  <NicknameWithBadge nickname={profile.nickname} affiliationEmoji={profile.affiliationEmoji} />
-                ) : (
-                  '—'
-                )}
+              <div className="friend-mini-hero-main">
+                <UserAvatar
+                  src={profile.avatarUrl}
+                  size={96}
+                  onOpen={
+                    profile.avatarUrl && typeof onViewAvatar === 'function' ? () => onViewAvatar(profile.avatarUrl) : undefined
+                  }
+                />
+                <h2 className="friend-mini-name">
+                  <span className="friend-mini-name__text">{displayName}</span>
+                  {profile.affiliationEmoji ? (
+                    <span className="friend-mini-name__emoji" aria-hidden>
+                      {profile.affiliationEmoji}
+                    </span>
+                  ) : null}
+                </h2>
+                {presenceText ? <p className="friend-mini-presence">{presenceText}</p> : null}
+
+                <div className="friend-mini-actions">
+                  {!isSelf && typeof onOpenDirectChat === 'function' ? (
+                    <button type="button" className="friend-mini-action-btn" onClick={onOpenDirectChat} title="Чат">
+                      <span className="friend-mini-action-btn__icon" aria-hidden>
+                        💬
+                      </span>
+                      <span className="friend-mini-action-btn__label">Чат</span>
+                    </button>
+                  ) : null}
+                  {!isSelf && typeof onViewFullProfile === 'function' ? (
+                    <button type="button" className="friend-mini-action-btn" onClick={onViewFullProfile} title="Профиль">
+                      <span className="friend-mini-action-btn__icon" aria-hidden>
+                        👤
+                      </span>
+                      <span className="friend-mini-action-btn__label">Профиль</span>
+                    </button>
+                  ) : null}
+                  {typeof onOpenSearch === 'function' ? (
+                    <button type="button" className="friend-mini-action-btn" onClick={onOpenSearch} title="Поиск">
+                      <span className="friend-mini-action-btn__icon" aria-hidden>
+                        🔍
+                      </span>
+                      <span className="friend-mini-action-btn__label">Поиск</span>
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--muted)' }}>{profileRoleCaption(profile.displayRole)}</p>
-            </div>
-            {isSelf && profile.phone && (
-              <div className="muted" style={{ fontSize: 11 }}>
-                тел. {formatPhoneRu(profile.phone)}
+            </header>
+
+            <div className="friend-mini-card">
+              {isSelf && profile.phone ? (
+                <div className="friend-mini-row">
+                  <span className="friend-mini-row__label">мобильный</span>
+                  <span className="friend-mini-row__value friend-mini-row__value--accent">{formatPhoneRu(profile.phone)}</span>
+                </div>
+              ) : null}
+              {profile.nickname ? (
+                <div className="friend-mini-row">
+                  <span className="friend-mini-row__label">имя пользователя</span>
+                  <span className="friend-mini-row__value friend-mini-row__value--accent">@{profile.nickname}</span>
+                </div>
+              ) : null}
+              <div className="friend-mini-row">
+                <span className="friend-mini-row__label">роль</span>
+                <span className="friend-mini-row__value">{profileRoleCaption(profile.displayRole)}</span>
               </div>
-            )}
-            {profile.about ? (
-              <div style={{ width: '100%', textAlign: 'left', marginTop: 4 }}>
-                <p className="muted" style={{ fontSize: 10, margin: '0 0 4px' }}>
-                  О себе
-                </p>
-                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {profile.about}
-                </p>
-              </div>
-            ) : null}
-            <div className="muted" style={{ fontSize: 11 }}>
-              в сервисе с {formatJoined(profile.createdAt)}
+              {profile.about ? (
+                <div className="friend-mini-about">
+                  <span className="friend-mini-row__label">о себе</span>
+                  <p className="friend-mini-about__text">{profile.about}</p>
+                </div>
+              ) : null}
+              <p className="friend-mini-meta-muted">в сервисе с {formatJoined(profile.createdAt)}</p>
             </div>
 
             {!isSelf && friendship?.hasDirectChat ? (
-              <div style={{ width: '100%', marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)', textAlign: 'left' }}>
+              <div className="friend-mini-footer-actions">
                 {friendship.theyBlockedYou ? (
                   <p className="muted" style={{ fontSize: 10, margin: '0 0 10px', lineHeight: 1.4 }}>
                     Этот пользователь ограничил вам сообщения.
@@ -229,13 +283,7 @@ export default function FriendProfileSheet({
                     Разблокировать
                   </button>
                 ) : (
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    style={{ width: '100%', marginTop: friendship.friendsActive ? 0 : 0 }}
-                    disabled={busy}
-                    onClick={() => void doBlock()}
-                  >
+                  <button type="button" className="btn-outline" style={{ width: '100%' }} disabled={busy} onClick={() => void doBlock()}>
                     Заблокировать
                   </button>
                 )}
@@ -244,7 +292,7 @@ export default function FriendProfileSheet({
                 </p>
               </div>
             ) : null}
-          </div>
+          </>
         ) : null}
       </div>
     </div>

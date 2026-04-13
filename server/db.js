@@ -598,6 +598,16 @@ function migrate(database) {
     setSchemaVersion(database, 27);
     ver = 27;
   }
+
+  if (ver < 28) {
+    const u28 = database.prepare('PRAGMA table_info(users)').all();
+    const u28n = new Set(u28.map((row) => row.name));
+    if (!u28n.has('profile_hero_tint')) {
+      database.exec(`ALTER TABLE users ADD COLUMN profile_hero_tint INTEGER NOT NULL DEFAULT 0;`);
+    }
+    setSchemaVersion(database, 28);
+    ver = 28;
+  }
 }
 
 export function getDb() {
@@ -718,6 +728,8 @@ export function mapPublicUser(row) {
   const ncc = Number(row.nicknameChangeCount ?? row.nickname_change_count ?? 0);
   const nls = row.nicknameLastChangedAt ?? row.nickname_last_changed_at;
   const nicknameLastChangedAt = nls != null && nls !== '' ? Number(nls) : null;
+  const pht = Number(row.profileHeroTint ?? row.profile_hero_tint ?? 0);
+  const profileHeroTint = Number.isFinite(pht) && pht >= 0 && pht <= 4 ? Math.floor(pht) : 0;
   return {
     id: row.id,
     phone: row.phone,
@@ -737,10 +749,11 @@ export function mapPublicUser(row) {
     nicknameChangeCount: Number.isFinite(ncc) ? ncc : 0,
     nicknameLastChangedAt,
     nicknameChangesRemaining: Math.max(0, 2 - (Number.isFinite(ncc) ? ncc : 0)),
+    profileHeroTint,
   };
 }
 
-const USER_PUBLIC_SELECT = `id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen, nickname_change_count AS nicknameChangeCount, nickname_last_changed_at AS nicknameLastChangedAt`;
+const USER_PUBLIC_SELECT = `id, phone, first_name AS firstName, last_name AS lastName, nickname, created_at AS createdAt, avatar_path AS avatarPath, about, display_role AS displayRole, display_role_emoji AS displayRoleEmoji, hide_last_seen AS hideLastSeen, nickname_change_count AS nicknameChangeCount, nickname_last_changed_at AS nicknameLastChangedAt, profile_hero_tint AS profileHeroTint`;
 
 export function findUserByPhone(phone) {
   const row = getDb()
@@ -894,6 +907,12 @@ export function setUserAffiliationEmoji(userId, emojiOrNull) {
   } else {
     getDb().prepare(`UPDATE users SET display_role_emoji = ? WHERE id = ?`).run(v, userId);
   }
+}
+
+/** Индекс градиента шапки профиля (0–4), синхронизируется с клиентом. */
+export function setUserProfileHeroTint(userId, index) {
+  const n = Math.min(4, Math.max(0, Math.floor(Number(index) || 0)));
+  getDb().prepare(`UPDATE users SET profile_hero_tint = ? WHERE id = ?`).run(n, userId);
 }
 
 /** Время «был в сети» при отключении последнего WebSocket-соединения. */
