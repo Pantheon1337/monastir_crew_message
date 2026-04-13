@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense, Fragment } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
+import { createPortal } from 'react-dom';
 import Header from './components/Header.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import BottomNav from './components/BottomNav.jsx';
@@ -83,8 +84,6 @@ export default function App() {
   const [nav, setNav] = useState('home');
   const [feed, setFeed] = useState([]);
   const [chats, setChats] = useState([]);
-  const [archivedChats, setArchivedChats] = useState([]);
-  const [chatListScope, setChatListScope] = useState('main');
   const [rooms, setRooms] = useState([]);
   const [storyBuckets, setStoryBuckets] = useState([]);
   const [loadError, setLoadError] = useState(null);
@@ -156,15 +155,13 @@ export default function App() {
 
   const refreshSocial = useCallback(async () => {
     if (!user?.id) return;
-    const [c, ca, inc, un, rm] = await Promise.all([
+    const [c, inc, un, rm] = await Promise.all([
       api('/api/chats', { userId: user.id }),
-      api('/api/chats?scope=archive', { userId: user.id }),
       api('/api/friends/requests/incoming', { userId: user.id }),
       api('/api/chats/unread-total', { userId: user.id }),
       api('/api/rooms', { userId: user.id }),
     ]);
     if (c.ok) setChats(c.data.chats || []);
-    if (ca.ok) setArchivedChats(ca.data.chats || []);
     if (inc.ok) setPendingFriendCount((inc.data.requests || []).length);
     if (un.ok) setChatUnreadTotal(un.data.total ?? 0);
     if (rm.ok) setRooms(rm.data.rooms || []);
@@ -213,17 +210,10 @@ export default function App() {
     [user?.id],
   );
 
-  const chatListsUnion = useMemo(() => {
-    const m = new Map();
-    for (const x of chats) m.set(String(x.id), x);
-    for (const x of archivedChats) m.set(String(x.id), x);
-    return m;
-  }, [chats, archivedChats]);
-
-  /** Открытый чат + актуальные поля из списков чатов (основной и архив) после refreshSocial. */
+  /** Открытый чат + актуальные peerNickname / peerAffiliationEmoji из списка `/api/chats` после refreshSocial. */
   const openChatResolved = useMemo(() => {
     if (!openChat) return null;
-    const c = chatListsUnion.get(String(openChat.id));
+    const c = chats.find((x) => String(x.id) === String(openChat.id));
     if (!c) return openChat;
     return {
       ...openChat,
@@ -238,7 +228,7 @@ export default function App() {
       canMessage: c.canMessage !== false,
       isSavedMessages: c.isSavedMessages === true,
     };
-  }, [openChat, chatListsUnion]);
+  }, [openChat, chats]);
 
   /** После принятия заявки обновляем и ленту/истории (новый друг видит ваши посты и наоборот). */
   const onFriendsChanged = useCallback(async () => {
@@ -362,19 +352,17 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        const [f, roomsRes, s, c, ca, inc, un] = await Promise.all([
+        const [f, roomsRes, s, c, inc, un] = await Promise.all([
           api('/api/feed', { userId: user.id }),
           api('/api/rooms', { userId: user.id }),
           api('/api/stories', { userId: user.id }),
           api('/api/chats', { userId: user.id }),
-          api('/api/chats?scope=archive', { userId: user.id }),
           api('/api/friends/requests/incoming', { userId: user.id }),
           api('/api/chats/unread-total', { userId: user.id }),
         ]);
         if (cancelled) return;
         setFeed(f.ok ? f.data.posts || [] : []);
         setChats(c.ok ? c.data.chats || [] : []);
-        setArchivedChats(ca.ok ? ca.data.chats || [] : []);
         setPendingFriendCount(inc.ok ? (inc.data.requests || []).length : 0);
         setChatUnreadTotal(un.ok ? un.data.total ?? 0 : 0);
         setRooms(roomsRes.ok ? roomsRes.data.rooms || [] : []);
@@ -408,12 +396,11 @@ export default function App() {
   const presenceIdKey = useMemo(() => {
     const s = new Set();
     for (const c of chats) if (c.peerUserId) s.add(String(c.peerUserId));
-    for (const c of archivedChats) if (c.peerUserId) s.add(String(c.peerUserId));
     for (const b of storyBuckets) if (b.userId) s.add(String(b.userId));
     for (const p of feed) if (p.authorId) s.add(String(p.authorId));
     if (openChat?.peerUserId) s.add(String(openChat.peerUserId));
     return [...s].sort().join(',');
-  }, [chats, archivedChats, storyBuckets, feed, openChat?.peerUserId]);
+  }, [chats, storyBuckets, feed, openChat?.peerUserId]);
 
   useEffect(() => {
     if (session !== 'in' || !user?.id || !presenceIdKey) return undefined;
@@ -619,8 +606,6 @@ export default function App() {
     setArchiveOpen(false);
     setPeerProfileUserId(null);
     setBugReportOpen(false);
-    setChatListScope('main');
-    setArchivedChats([]);
   }, []);
 
   const handleOpenChat = useCallback((chat) => {
@@ -697,39 +682,11 @@ export default function App() {
       }
       setPeerFullProfileUserId(null);
       setPeerFullProfileViewerPreview(false);
-      setChatListScope('main');
       setNav('chats');
       handleOpenChat(res.data.chat);
       await refreshSocial();
     },
     [user?.id, handleOpenChat, refreshSocial],
-  );
-
-  const handleArchiveChat = useCallback(
-    async (chat) => {
-      if (!user?.id || !chat?.id || chat.isSavedMessages) return;
-      const { ok, data } = await api(`/api/chats/${encodeURIComponent(chat.id)}/archive`, { method: 'POST', userId: user.id });
-      if (!ok) {
-        alert(data?.error || 'Не удалось');
-        return;
-      }
-      if (openChat && String(openChat.id) === String(chat.id)) setOpenChat(null);
-      await refreshSocial();
-    },
-    [user?.id, openChat, refreshSocial],
-  );
-
-  const handleUnarchiveChat = useCallback(
-    async (chat) => {
-      if (!user?.id || !chat?.id) return;
-      const { ok, data } = await api(`/api/chats/${encodeURIComponent(chat.id)}/unarchive`, { method: 'POST', userId: user.id });
-      if (!ok) {
-        alert(data?.error || 'Не удалось');
-        return;
-      }
-      await refreshSocial();
-    },
-    [user?.id, refreshSocial],
   );
 
   const handleDeleteChatForMe = useCallback(
@@ -757,9 +714,9 @@ export default function App() {
 
   const syncOpenChatFromServer = useCallback(async () => {
     if (!user?.id) return;
-    const [r, ra] = await Promise.all([api('/api/chats', { userId: user.id }), api('/api/chats?scope=archive', { userId: user.id })]);
+    const r = await api('/api/chats', { userId: user.id });
     if (!r.ok) return;
-    const merged = [...(r.data.chats || []), ...(ra.ok ? ra.data.chats || [] : [])];
+    const merged = r.data.chats || [];
     setOpenChat((prev) => {
       if (!prev) return prev;
       const c = merged.find((x) => String(x.id) === String(prev.id));
@@ -837,7 +794,6 @@ export default function App() {
   const showMainChrome = !openChat && !openRoomChat;
 
   return (
-    <Fragment>
     <div className="app-shell">
       {showMainChrome && (
         <Header userId={user.id} onSocialChanged={refreshSocial} onOpenSearch={() => setSearchOpen(true)} nav={nav} />
@@ -883,12 +839,7 @@ export default function App() {
           />
           <div style={{ padding: '8px 12px 16px' }}>
             <Dashboard
-              chats={chatListScope === 'archive' ? archivedChats : chats}
-              chatScope={chatListScope}
-              archivedCount={archivedChats.length}
-              onChatScopeChange={setChatListScope}
-              onArchiveChat={handleArchiveChat}
-              onUnarchiveChat={handleUnarchiveChat}
+              chats={chats}
               onDeleteChatForMe={handleDeleteChatForMe}
               rooms={[]}
               singleColumn="chats"
@@ -944,6 +895,67 @@ export default function App() {
           />
         </Suspense>
       )}
+
+      {openChatResolved?.id != null &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <Suspense fallback={<FullScreenFallback label="Загрузка чата…" />}>
+            <DirectChatScreen
+              userId={user.id}
+              chatId={openChatResolved.id}
+              peerLabel={openChatResolved.name}
+              peerNickname={openChatResolved.peerNickname}
+              peerFirstName={openChatResolved.peerFirstName}
+              peerLastName={openChatResolved.peerLastName}
+              peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
+              peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
+              peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
+              isSavedMessages={openChatResolved.isSavedMessages === true}
+              peerOnline={
+                openChatResolved.peerUserId != null &&
+                Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
+                  ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
+                  : undefined
+              }
+              peerLastSeenAt={
+                openChatResolved.peerUserId != null
+                  ? presenceLastSeen[String(openChatResolved.peerUserId)]
+                  : undefined
+              }
+              peerLastSeenHidden={
+                openChatResolved.peerUserId != null
+                  ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
+                  : false
+              }
+              canMessage={openChatResolved.canMessage !== false}
+              friendsActive={openChatResolved.friendsActive !== false}
+              onClose={() => setOpenChat(null)}
+              lastEvent={lastEvent}
+              onAfterChange={refreshSocial}
+              onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
+              onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+            />
+          </Suspense>,
+          document.body,
+        )}
+
+      {openRoomChat?.id != null &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <Suspense fallback={<FullScreenFallback label="Загрузка комнаты…" />}>
+            <RoomChatScreen
+              userId={user.id}
+              roomId={openRoomChat.id}
+              roomTitle={openRoomChat.title}
+              onClose={() => setOpenRoomChat(null)}
+              lastEvent={lastEvent}
+              onAfterChange={refreshSocial}
+              onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
+              onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+            />
+          </Suspense>,
+          document.body,
+        )}
 
       {storyViewer && (
         <Suspense fallback={<FullScreenFallback label="Загрузка историй…" />}>
@@ -1181,61 +1193,5 @@ export default function App() {
         />
       )}
     </div>
-
-      {openChatResolved?.id != null ? (
-        <Suspense fallback={<FullScreenFallback label="Загрузка чата…" />}>
-          <DirectChatScreen
-            userId={user.id}
-            chatId={openChatResolved.id}
-            peerLabel={openChatResolved.name}
-            peerNickname={openChatResolved.peerNickname}
-            peerFirstName={openChatResolved.peerFirstName}
-            peerLastName={openChatResolved.peerLastName}
-            peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
-            peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
-            peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
-            isSavedMessages={openChatResolved.isSavedMessages === true}
-            peerOnline={
-              openChatResolved.peerUserId != null &&
-              Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
-                ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
-                : undefined
-            }
-            peerLastSeenAt={
-              openChatResolved.peerUserId != null
-                ? presenceLastSeen[String(openChatResolved.peerUserId)]
-                : undefined
-            }
-            peerLastSeenHidden={
-              openChatResolved.peerUserId != null
-                ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
-                : false
-            }
-            canMessage={openChatResolved.canMessage !== false}
-            friendsActive={openChatResolved.friendsActive !== false}
-            onClose={() => setOpenChat(null)}
-            lastEvent={lastEvent}
-            onAfterChange={refreshSocial}
-            onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
-            onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-          />
-        </Suspense>
-      ) : null}
-
-      {openRoomChat?.id != null ? (
-        <Suspense fallback={<FullScreenFallback label="Загрузка комнаты…" />}>
-          <RoomChatScreen
-            userId={user.id}
-            roomId={openRoomChat.id}
-            roomTitle={openRoomChat.title}
-            onClose={() => setOpenRoomChat(null)}
-            lastEvent={lastEvent}
-            onAfterChange={refreshSocial}
-            onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
-            onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-          />
-        </Suspense>
-      ) : null}
-    </Fragment>
   );
 }

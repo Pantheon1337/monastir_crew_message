@@ -16,7 +16,6 @@ function ChatRowInner({ chat, peerOnline, onActivate, style }) {
       : 'transparent';
   return (
     <div
-      ref={innerRef}
       role="button"
       tabIndex={0}
       onClick={onActivate}
@@ -154,15 +153,7 @@ function useLongPress(onLongPress, { ms = LONG_PRESS_MS } = {}) {
   };
 }
 
-function ChatSwipeRow({
-  chat,
-  peerOnline,
-  onOpen,
-  archiveScope,
-  onArchive,
-  onUnarchive,
-  onDeleteForMe,
-}) {
+function ChatSwipeRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
   const [offset, setOffset] = useState(0);
   const offsetRef = useRef(0);
   useEffect(() => {
@@ -250,25 +241,9 @@ function ChatSwipeRow({
     <>
       <div className="chat-swipe-wrap">
         <div className="chat-swipe-under" aria-hidden="true">
-          {archiveScope ? (
-            <>
-              <button type="button" className="chat-swipe-btn chat-swipe-btn--restore" onClick={() => onUnarchive?.(chat)}>
-                Вернуть
-              </button>
-              <button type="button" className="chat-swipe-btn chat-swipe-btn--delete" onClick={() => onDeleteForMe?.(chat)}>
-                Удалить
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="chat-swipe-btn chat-swipe-btn--archive" onClick={() => onArchive?.(chat)}>
-                В архив
-              </button>
-              <button type="button" className="chat-swipe-btn chat-swipe-btn--delete" onClick={() => onDeleteForMe?.(chat)}>
-                Удалить
-              </button>
-            </>
-          )}
+          <button type="button" className="chat-swipe-btn chat-swipe-btn--delete" onClick={() => onDeleteForMe?.(chat)}>
+            Удалить
+          </button>
         </div>
         <div
           className="chat-swipe-front"
@@ -320,53 +295,16 @@ function ChatSwipeRow({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {archiveScope ? (
-              <>
-                <button
-                  type="button"
-                  className="chat-actions-sheet-item"
-                  onClick={() => {
-                    setSheetOpen(false);
-                    onUnarchive?.(chat);
-                  }}
-                >
-                  Вернуть из архива
-                </button>
-                <button
-                  type="button"
-                  className="chat-actions-sheet-item chat-actions-sheet-item--danger"
-                  onClick={() => {
-                    setSheetOpen(false);
-                    onDeleteForMe?.(chat);
-                  }}
-                >
-                  Удалить из списка…
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="chat-actions-sheet-item"
-                  onClick={() => {
-                    setSheetOpen(false);
-                    onArchive?.(chat);
-                  }}
-                >
-                  В архив
-                </button>
-                <button
-                  type="button"
-                  className="chat-actions-sheet-item chat-actions-sheet-item--danger"
-                  onClick={() => {
-                    setSheetOpen(false);
-                    onDeleteForMe?.(chat);
-                  }}
-                >
-                  Удалить из списка…
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              className="chat-actions-sheet-item chat-actions-sheet-item--danger"
+              onClick={() => {
+                setSheetOpen(false);
+                onDeleteForMe?.(chat);
+              }}
+            >
+              Удалить из списка…
+            </button>
             <button type="button" className="chat-actions-sheet-cancel" onClick={() => setSheetOpen(false)}>
               Отмена
             </button>
@@ -501,19 +439,12 @@ export default function Dashboard({
   onOpenRoom,
   presenceOnline = {},
   chatsBare = false,
-  chatScope = 'main',
-  archivedCount = 0,
-  onChatScopeChange,
-  onArchiveChat,
-  onUnarchiveChat,
   onDeleteChatForMe,
 }) {
-  const archiveScope = chatScope === 'archive';
-
   const chatsInner =
     chats.length === 0 ? (
       <p className="muted" style={{ fontSize: 12, margin: '0 12px 12px' }}>
-        {archiveScope ? 'В архиве пусто' : 'Нет диалогов'}
+        Нет диалогов
       </p>
     ) : (
       chats.map((c) => {
@@ -532,66 +463,24 @@ export default function Dashboard({
             chat={c}
             peerOnline={peerOnline}
             onOpen={onOpenChat}
-            archiveScope={archiveScope}
-            onArchive={onArchiveChat}
-            onUnarchive={onUnarchiveChat}
             onDeleteForMe={onDeleteChatForMe}
           />
         );
       })
     );
 
-  const archiveEntryRow =
-    !archiveScope && typeof onChatScopeChange === 'function' ? (
-      <button
-        type="button"
-        className="chat-archive-entry-row"
-        onClick={() => onChatScopeChange('archive')}
-      >
-        <span className="chat-archive-entry-row__icon" aria-hidden>
-          📦
-        </span>
-        <span className="chat-archive-entry-row__label">Архив</span>
-        {archivedCount > 0 ? (
-          <span className="chat-archive-entry-row__badge">{archivedCount > 99 ? '99+' : archivedCount}</span>
-        ) : null}
-        <span className="chat-archive-entry-row__chev" aria-hidden>
-          ›
-        </span>
-      </button>
-    ) : null;
-
-  const headerBack =
-    archiveScope && typeof onChatScopeChange === 'function' ? (
-      <button
-        type="button"
-        className="btn-outline"
-        style={{ fontSize: 12, padding: '6px 10px', fontWeight: 600 }}
-        onClick={() => onChatScopeChange('main')}
-      >
-        ← Чаты
-      </button>
-    ) : null;
-
-  const panelTitle = archiveScope ? 'Архив' : 'Чаты';
-
   const scrollArea = (
     <div className="dashboard-chat-scroll" style={{ overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: 'min(72dvh, 560px)' }}>
-      {archiveEntryRow}
       {chatsInner}
     </div>
   );
 
   const chatsBlock = chatsBare ? (
     <div className="dashboard-chat-card">
-      <Panel title={panelTitle} headerAction={headerBack}>
-        {scrollArea}
-      </Panel>
+      <Panel title="Чаты">{scrollArea}</Panel>
     </div>
   ) : (
-    <Panel title={panelTitle} headerAction={headerBack}>
-      {scrollArea}
-    </Panel>
+    <Panel title="Чаты">{scrollArea}</Panel>
   );
 
   const roomsBlock = (

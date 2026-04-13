@@ -6,29 +6,15 @@ import { useEffect, useState } from 'react';
  *
  * @param {() => void} [onLayout] — после обновления прямоугольника (скролл таймлайна и т.д.).
  */
-function pickVvSize(vv) {
-  let w = vv.width;
-  let h = vv.height;
-  if (typeof window !== 'undefined' && (w < 32 || h < 32)) {
-    w = window.innerWidth;
-    h = window.innerHeight;
-  }
-  return { width: w, height: h };
-}
-
 export function useVisualViewportRect(onLayout) {
   const [vvRect, setVvRect] = useState(() =>
     typeof window !== 'undefined' && window.visualViewport
-      ? (() => {
-          const vv = window.visualViewport;
-          const { width, height } = pickVvSize(vv);
-          return {
-            top: vv.offsetTop,
-            left: vv.offsetLeft,
-            width,
-            height,
-          };
-        })()
+      ? {
+          top: window.visualViewport.offsetTop,
+          left: window.visualViewport.offsetLeft,
+          width: window.visualViewport.width,
+          height: window.visualViewport.height,
+        }
       : null,
   );
 
@@ -37,12 +23,11 @@ export function useVisualViewportRect(onLayout) {
     if (!vv) return undefined;
 
     const sync = () => {
-      const { width, height } = pickVvSize(vv);
       setVvRect({
         top: vv.offsetTop,
         left: vv.offsetLeft,
-        width,
-        height,
+        width: vv.width,
+        height: vv.height,
       });
       onLayout?.();
     };
