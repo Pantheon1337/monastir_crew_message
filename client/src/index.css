@@ -928,6 +928,8 @@ a:hover {
   position: relative;
   background: var(--bg);
   will-change: transform;
+  /* Вместе с JS-распознаванием оси: вертикальный скролл списка не тянет панель «Удалить» */
+  touch-action: pan-y;
 }
 .chat-archive-entry-row {
   display: flex;

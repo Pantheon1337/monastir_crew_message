@@ -5,6 +5,9 @@ import NicknameWithBadge from './NicknameWithBadge.jsx';
 const SWIPE_MAX = 152;
 const LONG_PRESS_MS = 480;
 const MOVE_CANCEL_PX = 14;
+/** Скролл списка чатов не должен открывать кнопку «Удалить» — только явный горизонтальный свайп. */
+const SWIPE_ARM_MIN_DX = 16;
+const SCROLL_LOCK_MIN_DY = 12;
 
 function ChatRowInner({ chat, peerOnline, onActivate, style }) {
   const unread = (chat.unreadCount ?? 0) > 0;
@@ -162,7 +165,10 @@ function ChatSwipeRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
   const [isDragging, setIsDragging] = useState(false);
   const dragging = useRef(false);
   const startX = useRef(0);
+  const startY = useRef(0);
   const startOff = useRef(0);
+  /** undecided | vertical (скролл списка) | horizontal (свайп к кнопкам) */
+  const gestureAxisRef = useRef('undecided');
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const skipNextOpenChat = useRef(false);
@@ -183,29 +189,57 @@ function ChatSwipeRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
     if (e.button !== 0) return;
     lp.onPointerDown(e);
     dragging.current = true;
-    setIsDragging(true);
+    gestureAxisRef.current = 'undecided';
+    setIsDragging(false);
     startX.current = e.clientX;
+    startY.current = e.clientY;
     startOff.current = offsetRef.current;
-    e.currentTarget.setPointerCapture?.(e.pointerId);
   };
 
   const onPointerMove = (e) => {
     lp.onPointerMove(e);
     if (!dragging.current) return;
+
     const dx = e.clientX - startX.current;
-    let next = startOff.current + dx;
-    if (next > 0) next = 0;
-    if (next < -SWIPE_MAX) next = -SWIPE_MAX;
-    setOffset(next);
+    const dy = e.clientY - startY.current;
+
+    if (gestureAxisRef.current === 'vertical') {
+      return;
+    }
+
+    if (gestureAxisRef.current === 'undecided') {
+      // Сначала определяем ось: вертикаль — отдаём скроллу родителя, без смещения строки
+      if (Math.abs(dy) >= SCROLL_LOCK_MIN_DY && Math.abs(dy) >= Math.abs(dx) - 2) {
+        gestureAxisRef.current = 'vertical';
+        setOffset(0);
+        setIsDragging(false);
+        return;
+      }
+      // Горизонтальный свайп — только при явном преобладании dx
+      if (Math.abs(dx) >= SWIPE_ARM_MIN_DX && Math.abs(dx) > Math.abs(dy) + 8) {
+        gestureAxisRef.current = 'horizontal';
+        setIsDragging(true);
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+      }
+      return;
+    }
+
+    if (gestureAxisRef.current === 'horizontal') {
+      let next = startOff.current + dx;
+      if (next > 0) next = 0;
+      if (next < -SWIPE_MAX) next = -SWIPE_MAX;
+      setOffset(next);
+    }
   };
 
   const onPointerUp = (e) => {
     lp.onPointerUp();
     if (dragging.current) {
       dragging.current = false;
-      setIsDragging(false);
       snap(offsetRef.current);
+      setIsDragging(false);
     }
+    gestureAxisRef.current = 'undecided';
     try {
       e.currentTarget.releasePointerCapture?.(e.pointerId);
     } catch {
@@ -217,6 +251,7 @@ function ChatSwipeRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
     lp.onPointerCancel();
     dragging.current = false;
     setIsDragging(false);
+    gestureAxisRef.current = 'undecided';
     snap(offsetRef.current);
     try {
       e.currentTarget.releasePointerCapture?.(e.pointerId);
