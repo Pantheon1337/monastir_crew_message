@@ -67,6 +67,8 @@ export default function ChatScaffold({ vvRect, zIndex = 60, top, timelineRef, ti
           overscrollBehavior: 'contain',
           WebkitOverflowScrolling: 'touch',
           padding: '10px 8px',
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {timeline}

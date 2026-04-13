@@ -35,6 +35,8 @@ function scrollTimelineToBottom(el) {
 }
 
 const CHAT_TIMELINE_STACK_STYLE = {
+  flex: '1 1 auto',
+  width: '100%',
   minHeight: '100%',
   display: 'flex',
   flexDirection: 'column',
@@ -1217,7 +1219,7 @@ export default function RoomChatScreen({
     <>
       <ChatScaffold
         vvRect={vvRect}
-        zIndex={60}
+        zIndex={80}
         top={
           <header
             style={{

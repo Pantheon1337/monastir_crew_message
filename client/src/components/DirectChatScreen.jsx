@@ -41,6 +41,8 @@ function scrollTimelineToBottom(el) {
 
 /** Лента «прижата» к низу при малом числе сообщений — иначе жест и колесо ощущаются перевёрнутыми. */
 const CHAT_TIMELINE_STACK_STYLE = {
+  flex: '1 1 auto',
+  width: '100%',
   minHeight: '100%',
   display: 'flex',
   flexDirection: 'column',
@@ -1379,7 +1381,7 @@ export default function DirectChatScreen({
     <>
       <ChatScaffold
         vvRect={vvRect}
-        zIndex={60}
+        zIndex={80}
         top={
           <header
             style={{
