@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef, lazy, Suspense, Fragment } from 'react';
 import Header from './components/Header.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import BottomNav from './components/BottomNav.jsx';
@@ -838,6 +837,7 @@ export default function App() {
   const showMainChrome = !openChat && !openRoomChat;
 
   return (
+    <Fragment>
     <div className="app-shell">
       {showMainChrome && (
         <Header userId={user.id} onSocialChanged={refreshSocial} onOpenSearch={() => setSearchOpen(true)} nav={nav} />
@@ -944,67 +944,6 @@ export default function App() {
           />
         </Suspense>
       )}
-
-      {openChatResolved?.id != null &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <Suspense fallback={<FullScreenFallback label="Загрузка чата…" />}>
-            <DirectChatScreen
-              userId={user.id}
-              chatId={openChatResolved.id}
-              peerLabel={openChatResolved.name}
-              peerNickname={openChatResolved.peerNickname}
-              peerFirstName={openChatResolved.peerFirstName}
-              peerLastName={openChatResolved.peerLastName}
-              peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
-              peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
-              peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
-              isSavedMessages={openChatResolved.isSavedMessages === true}
-              peerOnline={
-                openChatResolved.peerUserId != null &&
-                Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
-                  ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
-                  : undefined
-              }
-              peerLastSeenAt={
-                openChatResolved.peerUserId != null
-                  ? presenceLastSeen[String(openChatResolved.peerUserId)]
-                  : undefined
-              }
-              peerLastSeenHidden={
-                openChatResolved.peerUserId != null
-                  ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
-                  : false
-              }
-              canMessage={openChatResolved.canMessage !== false}
-              friendsActive={openChatResolved.friendsActive !== false}
-              onClose={() => setOpenChat(null)}
-              lastEvent={lastEvent}
-              onAfterChange={refreshSocial}
-              onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
-              onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-            />
-          </Suspense>,
-          document.body,
-        )}
-
-      {openRoomChat?.id != null &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <Suspense fallback={<FullScreenFallback label="Загрузка комнаты…" />}>
-            <RoomChatScreen
-              userId={user.id}
-              roomId={openRoomChat.id}
-              roomTitle={openRoomChat.title}
-              onClose={() => setOpenRoomChat(null)}
-              lastEvent={lastEvent}
-              onAfterChange={refreshSocial}
-              onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
-              onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
-            />
-          </Suspense>,
-          document.body,
-        )}
 
       {storyViewer && (
         <Suspense fallback={<FullScreenFallback label="Загрузка историй…" />}>
@@ -1242,5 +1181,61 @@ export default function App() {
         />
       )}
     </div>
+
+      {openChatResolved?.id != null ? (
+        <Suspense fallback={<FullScreenFallback label="Загрузка чата…" />}>
+          <DirectChatScreen
+            userId={user.id}
+            chatId={openChatResolved.id}
+            peerLabel={openChatResolved.name}
+            peerNickname={openChatResolved.peerNickname}
+            peerFirstName={openChatResolved.peerFirstName}
+            peerLastName={openChatResolved.peerLastName}
+            peerAffiliationEmoji={openChatResolved.peerAffiliationEmoji}
+            peerUserId={openChatResolved.isSavedMessages ? null : openChatResolved.peerUserId}
+            peerAvatarUrl={openChatResolved.isSavedMessages ? user.avatarUrl : openChatResolved.peerAvatarUrl}
+            isSavedMessages={openChatResolved.isSavedMessages === true}
+            peerOnline={
+              openChatResolved.peerUserId != null &&
+              Object.prototype.hasOwnProperty.call(presenceOnline, String(openChatResolved.peerUserId))
+                ? Boolean(presenceOnline[String(openChatResolved.peerUserId)])
+                : undefined
+            }
+            peerLastSeenAt={
+              openChatResolved.peerUserId != null
+                ? presenceLastSeen[String(openChatResolved.peerUserId)]
+                : undefined
+            }
+            peerLastSeenHidden={
+              openChatResolved.peerUserId != null
+                ? Boolean(presenceLastSeenHidden[String(openChatResolved.peerUserId)])
+                : false
+            }
+            canMessage={openChatResolved.canMessage !== false}
+            friendsActive={openChatResolved.friendsActive !== false}
+            onClose={() => setOpenChat(null)}
+            lastEvent={lastEvent}
+            onAfterChange={refreshSocial}
+            onOpenPeerProfile={() => setPeerProfileUserId(openChatResolved.peerUserId)}
+            onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+          />
+        </Suspense>
+      ) : null}
+
+      {openRoomChat?.id != null ? (
+        <Suspense fallback={<FullScreenFallback label="Загрузка комнаты…" />}>
+          <RoomChatScreen
+            userId={user.id}
+            roomId={openRoomChat.id}
+            roomTitle={openRoomChat.title}
+            onClose={() => setOpenRoomChat(null)}
+            lastEvent={lastEvent}
+            onAfterChange={refreshSocial}
+            onOpenRoomInfo={() => setRoomDetailId(openRoomChat.id)}
+            onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
+          />
+        </Suspense>
+      ) : null}
+    </Fragment>
   );
 }
