@@ -1,37 +1,47 @@
 import { useMemo } from 'react';
 
+/** visualViewport иногда отдаёт 0×0 на первом кадре — иначе fixed-оболочка чата невидима (чёрный экран). */
+const MIN_VV_PX = 64;
+
+function visualViewportUsable(rect) {
+  if (rect == null || typeof rect !== 'object') return false;
+  const w = Number(rect.width);
+  const h = Number(rect.height);
+  return Number.isFinite(w) && Number.isFinite(h) && w >= MIN_VV_PX && h >= MIN_VV_PX;
+}
+
 /**
  * Каркас экрана чата по схеме Element / Matrix: шапка → таймлайн (flex:1) → композер.
  * Область совпадает с visualViewport, safe-area только у «полки» композера (без дубля с полем).
  */
 export default function ChatScaffold({ vvRect, zIndex = 60, top, timelineRef, timeline, footer, errorBanner }) {
-  const shellStyle =
-    vvRect != null
-      ? {
-          position: 'fixed',
-          top: vvRect.top,
-          left: vvRect.left,
-          width: vvRect.width,
-          height: vvRect.height,
-          zIndex,
-          background: 'var(--bg)',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          overflow: 'hidden',
-        }
-      : {
-          position: 'fixed',
-          inset: 0,
-          zIndex,
-          background: 'var(--bg)',
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          height: '100dvh',
-          maxHeight: '100dvh',
-          overflow: 'hidden',
-        };
+  const shellStyle = useMemo(() => {
+    const base = {
+      zIndex,
+      background: 'var(--bg)',
+      display: 'flex',
+      flexDirection: 'column',
+      minHeight: 0,
+      overflow: 'hidden',
+    };
+    if (visualViewportUsable(vvRect)) {
+      return {
+        ...base,
+        position: 'fixed',
+        top: vvRect.top,
+        left: vvRect.left,
+        width: vvRect.width,
+        height: vvRect.height,
+      };
+    }
+    return {
+      ...base,
+      position: 'fixed',
+      inset: 0,
+      height: '100dvh',
+      maxHeight: '100dvh',
+    };
+  }, [vvRect, zIndex]);
 
   /** Клавиатура / IME: узкий viewport — уменьшаем внутренние отступы композера к нижнему краю. */
   const imeTight = useMemo(() => {
