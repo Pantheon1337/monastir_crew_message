@@ -906,18 +906,6 @@ export default function DirectChatScreen({
 
   /** Клавиатура / vv / смена высоты — не чаще одного выравнивания за кадр. */
   useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return undefined;
-    const ro = new ResizeObserver(() => {
-      scheduleScrollToBottomIfStuck();
-    });
-    ro.observe(root);
-    return () => {
-      ro.disconnect();
-    };
-  }, [scheduleScrollToBottomIfStuck]);
-
-  useEffect(() => {
     const onWinResize = () => {
       scheduleScrollToBottomIfStuck();
     };
@@ -986,22 +974,43 @@ export default function DirectChatScreen({
     const el = scrollRef.current;
     if (!el) return undefined;
     syncScrollDownFab();
+
+    let fabRaf = 0;
+    const scheduleFabSync = () => {
+      if (fabRaf) return;
+      fabRaf = requestAnimationFrame(() => {
+        fabRaf = 0;
+        syncScrollDownFab();
+      });
+    };
+
     const onScroll = () => {
-      syncScrollDownFab();
+      scheduleFabSync();
       if (el.scrollTop < 120 && hasMoreOlder && !loadingOlder) {
         void loadOlder();
       }
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
+
     const ro = new ResizeObserver(() => {
+      scheduleScrollToBottomIfStuck();
       requestAnimationFrame(syncScrollDownFab);
     });
     ro.observe(el);
+
+    el.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       el.removeEventListener('scroll', onScroll);
       ro.disconnect();
+      if (fabRaf) cancelAnimationFrame(fabRaf);
     };
-  }, [syncScrollDownFab, messages.length, hasMoreOlder, loadingOlder, loadOlder]);
+  }, [
+    syncScrollDownFab,
+    scheduleScrollToBottomIfStuck,
+    messages.length,
+    hasMoreOlder,
+    loadingOlder,
+    loadOlder,
+  ]);
 
   useEffect(() => {
     syncScrollDownFab();

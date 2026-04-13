@@ -60,14 +60,6 @@ export default function ChatScaffold({ vvRect, zIndex = 60, top, timelineRef, ti
         className="chat-scaffold-timeline"
         role="region"
         aria-label="Сообщения чата"
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflow: 'auto',
-          overscrollBehavior: 'contain',
-          WebkitOverflowScrolling: 'touch',
-          padding: '12px 14px',
-        }}
       >
         {timeline}
       </div>

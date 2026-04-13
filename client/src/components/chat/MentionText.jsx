@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 /**
  * Текст с подсветкой @username; клик — открытие профиля (если родитель обрабатывает).
  */
@@ -23,30 +25,13 @@ function splitMentions(text) {
   return parts;
 }
 
-/** pre-line; ширина блока = ширина пузыря — строки набираются по всей полосе, не по одному слову. */
-const textWrapStyle = {
-  display: 'block',
-  width: '100%',
-  minWidth: 0,
-  boxSizing: 'border-box',
-  whiteSpace: 'pre-line',
-  wordBreak: 'normal',
-  overflowWrap: 'break-word',
-  lineHeight: 'inherit',
-  letterSpacing: 'normal',
-  hyphens: 'none',
-  WebkitHyphens: 'none',
-  fontFamily: 'var(--chat-font-family)',
-  fontSize: 'inherit',
-};
-
-export default function MentionText({ text, onMentionClick }) {
+function MentionTextInner({ text, onMentionClick }) {
   const parts = splitMentions(text);
   if (parts.length === 0) {
-    return <span style={textWrapStyle}>{text}</span>;
+    return <span className="chat-message-text">{text}</span>;
   }
   return (
-    <span style={textWrapStyle}>
+    <span className="chat-message-text">
       {parts.map((p, i) => {
         if (p.type === 'text') {
           return <span key={i}>{p.value}</span>;
@@ -69,3 +54,7 @@ export default function MentionText({ text, onMentionClick }) {
     </span>
   );
 }
+
+const MentionText = memo(MentionTextInner);
+MentionText.displayName = 'MentionText';
+export default MentionText;

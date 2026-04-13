@@ -591,6 +591,12 @@ export default function RoomChatScreen({
   const mediaModeRef = useRef('video');
   const HOLD_START_MS = 300;
 
+  const scrollLayoutKey = useMemo(() => {
+    const n = messages.length;
+    if (n === 0) return '0';
+    return `${n}:${messages[n - 1]?.id ?? ''}`;
+  }, [messages]);
+
   useEffect(() => {
     mediaModeRef.current = mediaMode;
   }, [mediaMode]);
@@ -784,19 +790,7 @@ export default function RoomChatScreen({
     if (!stickToBottomRef.current) return;
     scrollMessagesToBottomImmediate();
     requestAnimationFrame(scrollMessagesToBottomImmediate);
-  }, [messages, loading, scrollMessagesToBottomImmediate]);
-
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return undefined;
-    const ro = new ResizeObserver(() => {
-      scheduleScrollToBottomIfStuck();
-    });
-    ro.observe(root);
-    return () => {
-      ro.disconnect();
-    };
-  }, [scheduleScrollToBottomIfStuck]);
+  }, [scrollLayoutKey, loading, scrollMessagesToBottomImmediate]);
 
   useEffect(() => {
     const onWinResize = () => {
@@ -849,26 +843,47 @@ export default function RoomChatScreen({
     const el = scrollRef.current;
     if (!el) return undefined;
     syncScrollDownFab();
+
+    let fabRaf = 0;
+    const scheduleFabSync = () => {
+      if (fabRaf) return;
+      fabRaf = requestAnimationFrame(() => {
+        fabRaf = 0;
+        syncScrollDownFab();
+      });
+    };
+
     const onScroll = () => {
-      syncScrollDownFab();
+      scheduleFabSync();
       if (el.scrollTop < 120 && hasMoreOlder && !loadingOlder) {
         void loadOlder();
       }
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
+
     const ro = new ResizeObserver(() => {
+      scheduleScrollToBottomIfStuck();
       requestAnimationFrame(syncScrollDownFab);
     });
     ro.observe(el);
+
+    el.addEventListener('scroll', onScroll, { passive: true });
     return () => {
       el.removeEventListener('scroll', onScroll);
       ro.disconnect();
+      if (fabRaf) cancelAnimationFrame(fabRaf);
     };
-  }, [syncScrollDownFab, messages.length, hasMoreOlder, loadingOlder, loadOlder]);
+  }, [
+    syncScrollDownFab,
+    scheduleScrollToBottomIfStuck,
+    messages.length,
+    hasMoreOlder,
+    loadingOlder,
+    loadOlder,
+  ]);
 
   useEffect(() => {
     syncScrollDownFab();
-  }, [messages, loading, syncScrollDownFab]);
+  }, [scrollLayoutKey, loading, syncScrollDownFab]);
 
   const appendMessage = useCallback((m) => {
     const row = normalizeChatMessage(m);

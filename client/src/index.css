@@ -1485,8 +1485,14 @@ video.chat-video-note {
   filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
 }
 
-/* Лента чата: без выделения текста страницы при долгом нажатии (iOS / Android) */
+/* Лента чата: скролл и фон в CSS — меньше новых объектов style при каждом кадре VV */
 .chat-scaffold-timeline {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 14px;
   -webkit-user-select: none;
   user-select: none;
   -moz-user-select: none;
@@ -1542,6 +1548,24 @@ video.chat-video-note {
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   -webkit-font-smoothing: antialiased;
+  /* изолируем перерасчёт строк внутри пузыря от остального таймлайна */
+  contain: layout;
+}
+
+/* Тело текстового сообщения: длинные URL/токены без горизонтального рывка; смешанный RTL */
+.chat-message-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: inherit;
+  letter-spacing: normal;
+  font-family: var(--chat-font-family);
+  font-size: inherit;
+  unicode-bidi: plaintext;
 }
 
 /* Время и галочки: нижний правый край пузыря, как в Telegram */
