@@ -332,10 +332,10 @@ a:hover {
 .profile-tg-hero-pattern {
   position: absolute;
   inset: 0;
-  opacity: 0.14;
+  opacity: 0.16;
   pointer-events: none;
-  background-color: var(--bg);
-  background-image: radial-gradient(circle at 1px 1px, rgba(193, 123, 75, 0.35) 1px, transparent 0);
+  background-color: transparent;
+  background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.12) 1px, transparent 0);
   background-size: 14px 14px;
 }
 .profile-tg-hero-bar {
@@ -478,6 +478,79 @@ a:hover {
   cursor: pointer;
   font-family: inherit;
   -webkit-tap-highlight-color: transparent;
+}
+
+.profile-tg-incoming-badge {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #e53935;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+}
+
+.profile-emoji-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+}
+@media (max-width: 360px) {
+  .profile-emoji-sheet-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+.profile-emoji-sheet-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-hero-tint-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+.profile-hero-tint-swatch {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  padding: 0;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  -webkit-tap-highlight-color: transparent;
+}
+.profile-hero-tint-swatch[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.2),
+    0 0 0 2px rgba(193, 123, 75, 0.45);
+}
+.profile-hero-tint-swatch__check {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.65);
+  pointer-events: none;
 }
 
 .feed-new-post-toast {

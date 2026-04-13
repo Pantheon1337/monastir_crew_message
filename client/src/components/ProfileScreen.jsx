@@ -9,6 +9,33 @@ import { formatPhoneRu } from '../formatPhone.js';
 
 const MAX_ABOUT = 100;
 
+/** Фон шапки профиля (как в Telegram — приглушённые градиенты) */
+const PROFILE_HERO_TINTS = [
+  { label: 'Тёмный', bg: 'linear-gradient(180deg, #25252c 0%, #16161b 100%)' },
+  { label: 'Синий', bg: 'linear-gradient(180deg, #2c3848 0%, #1e2835 100%)' },
+  { label: 'Бирюза', bg: 'linear-gradient(180deg, #243d3d 0%, #1a2e2e 100%)' },
+  { label: 'Тёплый', bg: 'linear-gradient(180deg, #3d362e 0%, #262018 100%)' },
+  { label: 'Пурпур', bg: 'linear-gradient(180deg, #332d3d 0%, #221a2a 100%)' },
+];
+
+function profileHeroTintKey(userId) {
+  return userId != null ? `profileHeroTint:${userId}` : null;
+}
+
+function readProfileHeroTint(userId) {
+  const k = profileHeroTintKey(userId);
+  if (!k || typeof localStorage === 'undefined') return 0;
+  const n = parseInt(localStorage.getItem(k), 10);
+  if (Number.isNaN(n) || n < 0 || n >= PROFILE_HERO_TINTS.length) return 0;
+  return n;
+}
+
+function writeProfileHeroTint(userId, index) {
+  const k = profileHeroTintKey(userId);
+  if (!k || typeof localStorage === 'undefined') return;
+  localStorage.setItem(k, String(index));
+}
+
 function TgGridIcon() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -88,6 +115,73 @@ function profileRoleCaption(displayRole) {
   return 'Пользователь';
 }
 
+function ProfileIncomingRequests({ loading, incoming, actionId, onAccept, onReject }) {
+  return (
+    <div className="profile-settings-card" style={{ padding: 14, marginBottom: 12 }}>
+      <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600 }}>Входящие заявки</p>
+      {loading ? (
+        <p className="muted" style={{ margin: 0, fontSize: 11 }}>
+          Загрузка…
+        </p>
+      ) : incoming.length === 0 ? (
+        <p className="muted" style={{ margin: 0, fontSize: 11 }}>
+          Нет входящих заявок
+        </p>
+      ) : (
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+          {incoming.map((r) => (
+            <li
+              key={r.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                padding: '8px 0',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>
+                  {[r.from?.firstName, r.from?.lastName].filter(Boolean).join(' ').trim() ||
+                    (r.from?.nickname ? `@${r.from.nickname}` : '—')}
+                </div>
+                <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
+                  {[r.from?.firstName, r.from?.lastName].filter(Boolean).join(' ').trim() && r.from?.nickname ? (
+                    <NicknameWithBadge nickname={r.from.nickname} affiliationEmoji={r.from?.affiliationEmoji} />
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{ width: 36, height: 36, color: 'var(--online)' }}
+                  disabled={actionId === r.id}
+                  aria-label="Принять"
+                  onClick={() => onAccept(r.id)}
+                >
+                  ✓
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{ width: 36, height: 36, color: '#c45c5c' }}
+                  disabled={actionId === r.id}
+                  aria-label="Отклонить"
+                  onClick={() => onReject(r.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export default function ProfileScreen({
   user,
   onLogout,
@@ -116,8 +210,9 @@ export default function ProfileScreen({
   );
   const [roleSaving, setRoleSaving] = useState(false);
   const [emojiSaving, setEmojiSaving] = useState(false);
-  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
-  const emojiPickerRef = useRef(null);
+  const [emojiSheetOpen, setEmojiSheetOpen] = useState(false);
+  const [profileColorSheetOpen, setProfileColorSheetOpen] = useState(false);
+  const [heroTintIndex, setHeroTintIndex] = useState(0);
   /** main — карточка профиля; friends — список друзей */
   const [profileSubview, setProfileSubview] = useState('main');
   const [fullEditorOpen, setFullEditorOpen] = useState(false);
@@ -166,21 +261,16 @@ export default function ProfileScreen({
   }, [loadIncoming, socialTick]);
 
   useEffect(() => {
+    setHeroTintIndex(readProfileHeroTint(user?.id));
+  }, [user?.id]);
+
+  useEffect(() => {
     const sync = () => {
       if (typeof Notification !== 'undefined') setNotifPerm(Notification.permission);
     };
     document.addEventListener('visibilitychange', sync);
     return () => document.removeEventListener('visibilitychange', sync);
   }, []);
-
-  useEffect(() => {
-    if (!emojiPickerOpen) return;
-    function onDoc(e) {
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) setEmojiPickerOpen(false);
-    }
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [emojiPickerOpen]);
 
   async function accept(id) {
     setActionId(id);
@@ -194,6 +284,7 @@ export default function ProfileScreen({
       return;
     }
     await loadIncoming();
+    await loadPeers();
     onFriendsChanged?.();
   }
 
@@ -323,8 +414,24 @@ export default function ProfileScreen({
     setFullEditorOpen(false);
   }
 
-  function scrollToAffiliationEmoji() {
-    document.getElementById('profile-affiliation-block')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  async function applyAffiliationEmoji(raw) {
+    if (!user?.id) return;
+    setEmojiSaving(true);
+    const { ok, data } = await api('/api/users/me', {
+      method: 'PATCH',
+      body: { affiliationEmoji: raw },
+      userId: user.id,
+    });
+    setEmojiSaving(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось сохранить');
+      return;
+    }
+    if (data?.user) {
+      setStoredUser(data.user);
+      onUserUpdated?.(data.user);
+    }
+    setEmojiSheetOpen(false);
   }
 
   async function onPickAvatar(e) {
@@ -345,6 +452,8 @@ export default function ProfileScreen({
     (user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0);
 
   const displayNameLine = [user?.firstName, user?.lastName].filter((x) => x && String(x).trim()).join(' ').trim() || '—';
+  const heroBg = PROFILE_HERO_TINTS[Math.min(heroTintIndex, PROFILE_HERO_TINTS.length - 1)]?.bg ?? PROFILE_HERO_TINTS[0].bg;
+  const incomingCount = incoming.length;
 
   return (
     <>
@@ -356,6 +465,13 @@ export default function ProfileScreen({
         <p className="profile-settings-section-title" style={{ marginTop: 12 }}>
           Друзья
         </p>
+        <ProfileIncomingRequests
+          loading={loading}
+          incoming={incoming}
+          actionId={actionId}
+          onAccept={accept}
+          onReject={reject}
+        />
         <div className="profile-settings-card" style={{ padding: 14, marginBottom: 12 }}>
           <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Ваши друзья</p>
           <p className="muted" style={{ margin: '0 0 12px', fontSize: 10, lineHeight: 1.4 }}>
@@ -503,7 +619,7 @@ export default function ProfileScreen({
       </section>
     ) : (
     <section style={{ padding: '0 0 28px', maxWidth: 520, margin: '0 auto' }}>
-      <header className="profile-tg-hero">
+      <header className="profile-tg-hero" style={{ background: heroBg }}>
         <div className="profile-tg-hero-pattern" aria-hidden />
         <div className="profile-tg-hero-bar">
           <button type="button" className="profile-tg-square-btn" aria-label="Меню" onClick={() => onOpenSettings?.()}>
@@ -535,7 +651,7 @@ export default function ProfileScreen({
 
       <div style={{ padding: '12px 14px 0' }}>
         <div className="profile-settings-card profile-tg-compact-card" style={{ padding: 0, marginBottom: 12, overflow: 'hidden' }}>
-          <button type="button" className="profile-tg-row" onClick={scrollToAffiliationEmoji}>
+          <button type="button" className="profile-tg-row" onClick={() => setEmojiSheetOpen(true)}>
             <TgRowIconSmile />
             <span className="profile-tg-row__label profile-tg-row__label--accent">Сменить эмодзи-статус</span>
             <span className="profile-tg-row__chev" aria-hidden>
@@ -543,11 +659,7 @@ export default function ProfileScreen({
             </span>
           </button>
           <div className="profile-tg-row-divider" />
-          <button
-            type="button"
-            className="profile-tg-row"
-            onClick={() => document.getElementById('profile-display-block')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-          >
+          <button type="button" className="profile-tg-row" onClick={() => setProfileColorSheetOpen(true)}>
             <TgRowIconSparkle />
             <span className="profile-tg-row__label profile-tg-row__label--accent">Изменить цвет профиля</span>
             <span className="profile-tg-row__chev" aria-hidden>
@@ -578,6 +690,11 @@ export default function ProfileScreen({
           <button type="button" className="profile-tg-row" onClick={() => setProfileSubview('friends')}>
             <TgRowIconUsers />
             <span className="profile-tg-row__label">Друзья</span>
+            {incomingCount > 0 ? (
+              <span className="profile-tg-incoming-badge" aria-label={`Входящих заявок: ${incomingCount}`}>
+                {incomingCount > 99 ? '99+' : incomingCount}
+              </span>
+            ) : null}
             <span className="profile-tg-row__chev" aria-hidden>
               ›
             </span>
@@ -631,7 +748,7 @@ export default function ProfileScreen({
         </p>
 
       <p className="profile-settings-section-title">Отображение в приложении</p>
-      <div id="profile-display-block" className="profile-settings-card" style={{ marginBottom: 12 }}>
+      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
         <div style={{ margin: '0 0 12px' }}>
           <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
             Ник и смайлик в чатах
@@ -694,149 +811,6 @@ export default function ProfileScreen({
             </p>
           </div>
         )}
-
-        <p id="profile-affiliation-block" style={{ margin: '12px 0 6px', fontSize: 11 }} className="muted">
-          Смайлик у ника
-        </p>
-        <div ref={emojiPickerRef} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 12, position: 'relative' }}>
-          <button
-            type="button"
-            className="btn-outline"
-            style={{
-              width: 'auto',
-              padding: '6px 10px',
-              fontSize: 12,
-              opacity: emojiSaving ? 0.6 : 1,
-              borderColor: user?.customAffiliationEmoji == null ? 'var(--accent)' : undefined,
-            }}
-            disabled={emojiSaving}
-            onClick={() => {
-              void (async () => {
-                if (!user?.id) return;
-                setEmojiSaving(true);
-                setEmojiPickerOpen(false);
-                const { ok, data } = await api('/api/users/me', {
-                  method: 'PATCH',
-                  body: { affiliationEmoji: '' },
-                  userId: user.id,
-                });
-                setEmojiSaving(false);
-                if (!ok) {
-                  alert(data?.error || 'Не удалось сохранить');
-                  return;
-                }
-                if (data?.user) {
-                  setStoredUser(data.user);
-                  onUserUpdated?.(data.user);
-                }
-              })();
-            }}
-          >
-            По умолчанию
-          </button>
-          <button
-            type="button"
-            className="btn-outline"
-            aria-expanded={emojiPickerOpen}
-            aria-haspopup="listbox"
-            style={{
-              minWidth: 44,
-              height: 40,
-              padding: '0 12px',
-              fontSize: 22,
-              lineHeight: 1,
-              opacity: emojiSaving ? 0.6 : 1,
-              borderColor: user?.customAffiliationEmoji != null ? 'var(--accent)' : undefined,
-            }}
-            disabled={emojiSaving}
-            title="Выбрать смайлик"
-            onClick={() => setEmojiPickerOpen((v) => !v)}
-          >
-            {user?.customAffiliationEmoji != null ? user.customAffiliationEmoji : '☺'}
-          </button>
-          {emojiPickerOpen ? (
-            <div
-              role="listbox"
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: '100%',
-                marginTop: 6,
-                zIndex: 30,
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 6,
-                padding: 10,
-                maxWidth: 320,
-                background: 'var(--bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                boxShadow: '0 8px 28px rgba(0,0,0,0.25)',
-              }}
-            >
-              {AFFILIATION_EMOJI_CHOICES.map((em) => (
-                <button
-                  key={em}
-                  type="button"
-                  className="btn-outline"
-                  title={em}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    padding: 0,
-                    fontSize: 20,
-                    lineHeight: 1,
-                    opacity: emojiSaving ? 0.6 : 1,
-                    borderColor: user?.customAffiliationEmoji === em ? 'var(--accent)' : undefined,
-                  }}
-                  disabled={emojiSaving}
-                  onClick={() => {
-                    void (async () => {
-                      if (!user?.id) return;
-                      setEmojiSaving(true);
-                      const { ok, data } = await api('/api/users/me', {
-                        method: 'PATCH',
-                        body: { affiliationEmoji: em },
-                        userId: user.id,
-                      });
-                      setEmojiSaving(false);
-                      if (!ok) {
-                        alert(data?.error || 'Не удалось сохранить');
-                        return;
-                      }
-                      if (data?.user) {
-                        setStoredUser(data.user);
-                        onUserUpdated?.(data.user);
-                      }
-                      setEmojiPickerOpen(false);
-                    })();
-                  }}
-                >
-                  {em}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-
-      </div>
-
-      <p className="profile-settings-section-title">Контакты и о себе</p>
-      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
-        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          Телефон
-        </p>
-        <p style={{ margin: '0 0 14px', fontSize: 13 }}>{displayPhone || '—'}</p>
-
-        <p style={{ margin: '0 0 4px', fontSize: 11 }} className="muted">
-          О себе
-        </p>
-        <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.45, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {user?.about != null && String(user.about).trim() ? String(user.about) : '—'}
-        </p>
-        <p className="muted" style={{ margin: 0, fontSize: 10 }}>
-          Редактирование — кнопка «Изм.» в шапке профиля.
-        </p>
 
       </div>
 
@@ -910,72 +884,143 @@ export default function ProfileScreen({
         </>
       ) : null}
 
-      <p className="profile-settings-section-title">Заявки в друзья</p>
-      <div className="profile-settings-card" style={{ padding: 14 }}>
-        <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600 }}>Входящие</p>
-        {loading ? (
-          <p className="muted" style={{ margin: 0, fontSize: 11 }}>
-            Загрузка…
-          </p>
-        ) : incoming.length === 0 ? (
-          <p className="muted" style={{ margin: 0, fontSize: 11 }}>
-            Нет входящих заявок
-          </p>
-        ) : (
-          <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-            {incoming.map((r) => (
-              <li
-                key={r.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  padding: '8px 0',
-                  borderBottom: '1px solid var(--border)',
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>
-                    {[r.from?.firstName, r.from?.lastName].filter(Boolean).join(' ').trim() ||
-                      (r.from?.nickname ? `@${r.from.nickname}` : '—')}
-                  </div>
-                  <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
-                    {[r.from?.firstName, r.from?.lastName].filter(Boolean).join(' ').trim() && r.from?.nickname ? (
-                      <NicknameWithBadge nickname={r.from.nickname} affiliationEmoji={r.from?.affiliationEmoji} />
-                    ) : null}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    style={{ width: 36, height: 36, color: 'var(--online)' }}
-                    disabled={actionId === r.id}
-                    aria-label="Принять"
-                    onClick={() => accept(r.id)}
-                  >
-                    ✓
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    style={{ width: 36, height: 36, color: '#c45c5c' }}
-                    disabled={actionId === r.id}
-                    aria-label="Отклонить"
-                    onClick={() => reject(r.id)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
       </div>
     </section>
     )}
+
+    {emojiSheetOpen ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-emoji-sheet-title"
+        className="modal-overlay profile-field-modal-overlay"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 200,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          paddingTop: 'max(48px, env(safe-area-inset-top))',
+        }}
+        onClick={() => !emojiSaving && setEmojiSheetOpen(false)}
+        onKeyDown={(e) => e.key === 'Escape' && !emojiSaving && setEmojiSheetOpen(false)}
+      >
+        <div
+          className="block modal-panel profile-emoji-sheet-panel"
+          style={{ width: '100%', maxWidth: 360, padding: 16, maxHeight: 'min(85vh, 520px)', overflow: 'auto' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span id="profile-emoji-sheet-title" style={{ fontSize: 15, fontWeight: 700 }}>
+              Смайлик у ника
+            </span>
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ width: 36, height: 36 }}
+              disabled={emojiSaving}
+              onClick={() => setEmojiSheetOpen(false)}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+          </div>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ width: '100%', marginBottom: 12, opacity: emojiSaving ? 0.6 : 1 }}
+            disabled={emojiSaving}
+            onClick={() => void applyAffiliationEmoji('')}
+          >
+            По умолчанию (как у роли)
+          </button>
+          <div className="profile-emoji-sheet-grid">
+            {AFFILIATION_EMOJI_CHOICES.map((em) => (
+              <button
+                key={em}
+                type="button"
+                className="profile-emoji-sheet-cell btn-outline"
+                title={em}
+                disabled={emojiSaving}
+                style={{
+                  borderColor: user?.customAffiliationEmoji === em ? 'var(--accent)' : undefined,
+                }}
+                onClick={() => void applyAffiliationEmoji(em)}
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    ) : null}
+
+    {profileColorSheetOpen ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-color-sheet-title"
+        className="modal-overlay profile-field-modal-overlay"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 200,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          paddingTop: 'max(48px, env(safe-area-inset-top))',
+        }}
+        onClick={() => setProfileColorSheetOpen(false)}
+        onKeyDown={(e) => e.key === 'Escape' && setProfileColorSheetOpen(false)}
+      >
+        <div
+          className="block modal-panel"
+          style={{ width: '100%', maxWidth: 360, padding: 16 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <span id="profile-color-sheet-title" style={{ fontSize: 15, fontWeight: 700 }}>
+              Цвет профиля
+            </span>
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ width: 36, height: 36 }}
+              onClick={() => setProfileColorSheetOpen(false)}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+          </div>
+          <p className="muted" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.45 }}>
+            Фон за аватаром в шапке. Сохраняется на этом устройстве.
+          </p>
+          <div className="profile-hero-tint-grid">
+            {PROFILE_HERO_TINTS.map((t, i) => (
+              <button
+                key={t.label}
+                type="button"
+                className="profile-hero-tint-swatch"
+                title={t.label}
+                aria-label={t.label}
+                aria-pressed={heroTintIndex === i}
+                style={{ background: t.bg }}
+                onClick={() => {
+                  setHeroTintIndex(i);
+                  if (user?.id) writeProfileHeroTint(user.id, i);
+                  setProfileColorSheetOpen(false);
+                }}
+              >
+                {heroTintIndex === i ? <span className="profile-hero-tint-swatch__check">✓</span> : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    ) : null}
 
     {fullEditorOpen ? (
       <div
