@@ -178,6 +178,7 @@ function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
       <div
         className="chat-list-row"
         {...lp}
+        onSelectStart={(e) => e.preventDefault()}
         title="Удерживайте строку, чтобы удалить диалог из списка"
       >
         <ChatRowInner chat={chat} peerOnline={peerOnline} onActivate={openChat} />
@@ -370,7 +371,11 @@ export default function Dashboard({
         const saved = c.isSavedMessages === true;
         if (saved) {
           return (
-            <div key={c.id} className="chat-list-row chat-list-row--plain">
+            <div
+              key={c.id}
+              className="chat-list-row chat-list-row--plain"
+              onSelectStart={(e) => e.preventDefault()}
+            >
               <ChatRowInner chat={c} peerOnline={peerOnline} onActivate={() => onOpenChat?.(c)} />
             </div>
           );

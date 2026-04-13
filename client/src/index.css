@@ -883,15 +883,33 @@ a:hover {
 }
 
 /* Список чатов: тап — открыть; удержание — меню с удалением (без свайпа) */
-.chat-list-row {
+.chat-list-row,
+.chat-list-row--plain {
   position: relative;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  /* меньше конфликтов с вертикальным скроллом списка */
+  touch-action: manipulation;
 }
-.chat-list-row--plain {
-  border-bottom: 1px solid var(--border);
+
+.chat-list-row *,
+.chat-list-row--plain * {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.chat-list-row img,
+.chat-list-row--plain img {
+  -webkit-user-drag: none;
+  user-select: none;
 }
 .chat-archive-entry-row {
   display: flex;
