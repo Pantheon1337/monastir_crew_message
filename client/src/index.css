@@ -882,54 +882,16 @@ a:hover {
   border-radius: 0 0 18px 18px;
 }
 
-/* Список чатов: свайп и архив */
-.chat-swipe-wrap {
+/* Список чатов: тап — открыть; удержание — меню с удалением (без свайпа) */
+.chat-list-row {
   position: relative;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
-  touch-action: pan-y;
-}
-.chat-swipe-wrap--plain {
-  border-bottom: 1px solid var(--border);
-}
-.chat-swipe-under {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: row;
-  justify-content: flex-end;
-  align-items: stretch;
-  gap: 0;
-  pointer-events: none;
-}
-.chat-swipe-under .chat-swipe-btn {
-  pointer-events: auto;
-}
-.chat-swipe-btn {
-  min-width: 76px;
-  padding: 0 12px;
-  border: none;
-  font-size: 12px;
-  font-weight: 700;
-  font-family: inherit;
-  cursor: pointer;
-  color: #fff;
-}
-.chat-swipe-btn--archive {
-  background: rgba(90, 140, 200, 0.95);
-}
-.chat-swipe-btn--restore {
-  background: rgba(80, 160, 120, 0.95);
-}
-.chat-swipe-btn--delete {
-  background: rgba(196, 80, 80, 0.95);
-}
-.chat-swipe-front {
-  position: relative;
   background: var(--bg);
-  will-change: transform;
-  /* Вместе с JS-распознаванием оси: вертикальный скролл списка не тянет панель «Удалить» */
-  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+.chat-list-row--plain {
+  border-bottom: 1px solid var(--border);
 }
 .chat-archive-entry-row {
   display: flex;

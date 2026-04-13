@@ -1,13 +1,10 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback } from 'react';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
-const SWIPE_MAX = 152;
-const LONG_PRESS_MS = 480;
-const MOVE_CANCEL_PX = 14;
-/** Скролл списка чатов не должен открывать кнопку «Удалить» — только явный горизонтальный свайп. */
-const SWIPE_ARM_MIN_DX = 16;
-const SCROLL_LOCK_MIN_DY = 12;
+const LONG_PRESS_MS = 520;
+/** Сдвиг пальца отменяет удержание — при скролле списка меню не откроется. */
+const MOVE_CANCEL_PX = 22;
 
 function ChatRowInner({ chat, peerOnline, onActivate, style }) {
   const unread = (chat.unreadCount ?? 0) > 0;
@@ -156,148 +153,34 @@ function useLongPress(onLongPress, { ms = LONG_PRESS_MS } = {}) {
   };
 }
 
-function ChatSwipeRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
-  const [offset, setOffset] = useState(0);
-  const offsetRef = useRef(0);
-  useEffect(() => {
-    offsetRef.current = offset;
-  }, [offset]);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragging = useRef(false);
-  const startX = useRef(0);
-  const startY = useRef(0);
-  const startOff = useRef(0);
-  /** undecided | vertical (скролл списка) | horizontal (свайп к кнопкам) */
-  const gestureAxisRef = useRef('undecided');
-
+/** Удаление только через удержание → нижнее меню (без горизонтального свайпа — не мешает скроллу списка). */
+function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const skipNextOpenChat = useRef(false);
+
   const openActionSheet = useCallback(() => {
-    setOffset(0);
     setSheetOpen(true);
     skipNextOpenChat.current = true;
   }, []);
 
   const lp = useLongPress(openActionSheet);
 
-  const snap = useCallback((o) => {
-    const t = o < -SWIPE_MAX / 2 ? -SWIPE_MAX : 0;
-    setOffset(t);
-  }, []);
-
-  const onPointerDown = (e) => {
-    if (e.button !== 0) return;
-    lp.onPointerDown(e);
-    dragging.current = true;
-    gestureAxisRef.current = 'undecided';
-    setIsDragging(false);
-    startX.current = e.clientX;
-    startY.current = e.clientY;
-    startOff.current = offsetRef.current;
-  };
-
-  const onPointerMove = (e) => {
-    lp.onPointerMove(e);
-    if (!dragging.current) return;
-
-    const dx = e.clientX - startX.current;
-    const dy = e.clientY - startY.current;
-
-    if (gestureAxisRef.current === 'vertical') {
-      return;
-    }
-
-    if (gestureAxisRef.current === 'undecided') {
-      // Сначала определяем ось: вертикаль — отдаём скроллу родителя, без смещения строки
-      if (Math.abs(dy) >= SCROLL_LOCK_MIN_DY && Math.abs(dy) >= Math.abs(dx) - 2) {
-        gestureAxisRef.current = 'vertical';
-        setOffset(0);
-        setIsDragging(false);
-        return;
-      }
-      // Горизонтальный свайп — только при явном преобладании dx
-      if (Math.abs(dx) >= SWIPE_ARM_MIN_DX && Math.abs(dx) > Math.abs(dy) + 8) {
-        gestureAxisRef.current = 'horizontal';
-        setIsDragging(true);
-        e.currentTarget.setPointerCapture?.(e.pointerId);
-      }
-      return;
-    }
-
-    if (gestureAxisRef.current === 'horizontal') {
-      let next = startOff.current + dx;
-      if (next > 0) next = 0;
-      if (next < -SWIPE_MAX) next = -SWIPE_MAX;
-      setOffset(next);
-    }
-  };
-
-  const onPointerUp = (e) => {
-    lp.onPointerUp();
-    if (dragging.current) {
-      dragging.current = false;
-      snap(offsetRef.current);
-      setIsDragging(false);
-    }
-    gestureAxisRef.current = 'undecided';
-    try {
-      e.currentTarget.releasePointerCapture?.(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const onPointerCancel = (e) => {
-    lp.onPointerCancel();
-    dragging.current = false;
-    setIsDragging(false);
-    gestureAxisRef.current = 'undecided';
-    snap(offsetRef.current);
-    try {
-      e.currentTarget.releasePointerCapture?.(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const openChat = () => {
+  const openChat = useCallback(() => {
     if (skipNextOpenChat.current) {
       skipNextOpenChat.current = false;
       return;
     }
-    if (offsetRef.current < -24) {
-      setOffset(0);
-      return;
-    }
     onOpen?.(chat);
-  };
+  }, [chat, onOpen]);
 
   return (
     <>
-      <div className="chat-swipe-wrap">
-        <div className="chat-swipe-under" aria-hidden="true">
-          <button type="button" className="chat-swipe-btn chat-swipe-btn--delete" onClick={() => onDeleteForMe?.(chat)}>
-            Удалить
-          </button>
-        </div>
-        <div
-          className="chat-swipe-front"
-          style={{
-            transform: `translate3d(${offset}px,0,0)`,
-            transition: isDragging ? 'none' : 'transform 0.22s cubic-bezier(0.25, 0.8, 0.25, 1)',
-          }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-        >
-          <ChatRowInner
-            chat={chat}
-            peerOnline={peerOnline}
-            onActivate={openChat}
-            style={{ touchAction: 'pan-y' }}
-          />
-        </div>
+      <div
+        className="chat-list-row"
+        {...lp}
+        title="Удерживайте строку, чтобы удалить диалог из списка"
+      >
+        <ChatRowInner chat={chat} peerOnline={peerOnline} onActivate={openChat} />
       </div>
 
       {sheetOpen ? (
@@ -487,13 +370,13 @@ export default function Dashboard({
         const saved = c.isSavedMessages === true;
         if (saved) {
           return (
-            <div key={c.id} className="chat-swipe-wrap chat-swipe-wrap--plain">
+            <div key={c.id} className="chat-list-row chat-list-row--plain">
               <ChatRowInner chat={c} peerOnline={peerOnline} onActivate={() => onOpenChat?.(c)} />
             </div>
           );
         }
         return (
-          <ChatSwipeRow
+          <ChatListRow
             key={c.id}
             chat={c}
             peerOnline={peerOnline}
