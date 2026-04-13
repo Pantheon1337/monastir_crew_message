@@ -38,6 +38,9 @@ export default function ProfileScreen({
   onOpenArchive,
   onViewAvatar,
   onPreviewOwnProfile,
+  presenceOnline = {},
+  onOpenChatWithFriend,
+  onOpenFriendProfile,
 }) {
   const fileRef = useRef(null);
   const [incoming, setIncoming] = useState([]);
@@ -57,10 +60,35 @@ export default function ProfileScreen({
   const [modalDraft, setModalDraft] = useState('');
   const [modalSaving, setModalSaving] = useState(false);
   const [modalError, setModalError] = useState(null);
+  const [peers, setPeers] = useState([]);
+  const [peersLoading, setPeersLoading] = useState(false);
+  const [friendMenuId, setFriendMenuId] = useState(null);
+  const friendMenuRef = useRef(null);
 
   useEffect(() => {
     setAboutDraft(user?.about != null ? String(user.about) : '');
   }, [user?.id, user?.about]);
+
+  const loadPeers = useCallback(async () => {
+    if (!user?.id) return;
+    setPeersLoading(true);
+    const { ok, data } = await api('/api/friends/peers', { userId: user.id });
+    setPeersLoading(false);
+    if (ok) setPeers(data.peers || []);
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadPeers();
+  }, [loadPeers, socialTick]);
+
+  useEffect(() => {
+    if (!friendMenuId) return;
+    function onDoc(e) {
+      if (friendMenuRef.current && !friendMenuRef.current.contains(e.target)) setFriendMenuId(null);
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [friendMenuId]);
 
   const loadIncoming = useCallback(async () => {
     if (!user?.id) return;
@@ -118,6 +146,45 @@ export default function ProfileScreen({
       return;
     }
     await loadIncoming();
+    onFriendsChanged?.();
+  }
+
+  async function removeFriendPeer(peerId) {
+    setFriendMenuId(null);
+    if (!user?.id || !peerId) return;
+    if (
+      !window.confirm(
+        'Убрать из друзей? Личный чат останется; при необходимости можно снова отправить заявку.',
+      )
+    )
+      return;
+    const { ok, data } = await api('/api/friends/remove', {
+      method: 'POST',
+      body: { peerUserId: peerId },
+      userId: user.id,
+    });
+    if (!ok) {
+      alert(data?.error || 'Не удалось');
+      return;
+    }
+    await loadPeers();
+    onFriendsChanged?.();
+  }
+
+  async function blockFriendPeer(peerId) {
+    setFriendMenuId(null);
+    if (!user?.id || !peerId) return;
+    if (!window.confirm('Заблокировать пользователя? Он не сможет писать вам и исчезнет из списка друзей.')) return;
+    const { ok, data } = await api('/api/friends/block', {
+      method: 'POST',
+      body: { peerUserId: peerId },
+      userId: user.id,
+    });
+    if (!ok) {
+      alert(data?.error || 'Не удалось');
+      return;
+    }
+    await loadPeers();
     onFriendsChanged?.();
   }
 
@@ -729,6 +796,152 @@ export default function ProfileScreen({
         </div>
         </>
       ) : null}
+
+      <p className="profile-settings-section-title">Друзья</p>
+      <div className="profile-settings-card" style={{ padding: 14, marginBottom: 12 }}>
+        <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Ваши друзья</p>
+        <p className="muted" style={{ margin: '0 0 12px', fontSize: 10, lineHeight: 1.4 }}>
+          Нажмите на строку — открыть чат. Аватар — полный профиль. Меню «⋯» — убрать из друзей или заблокировать.
+        </p>
+        {peersLoading ? (
+          <p className="muted" style={{ margin: 0, fontSize: 11 }}>
+            Загрузка…
+          </p>
+        ) : peers.length === 0 ? (
+          <p className="muted" style={{ margin: 0, fontSize: 11 }}>
+            Пока нет друзей — примите заявку или отправьте свою из поиска.
+          </p>
+        ) : (
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {peers.map((peer) => {
+              const fullName = [peer.firstName, peer.lastName].filter(Boolean).join(' ').trim();
+              const online =
+                peer.id != null && Object.prototype.hasOwnProperty.call(presenceOnline, String(peer.id))
+                  ? Boolean(presenceOnline[String(peer.id)])
+                  : undefined;
+              return (
+                <li key={peer.id} style={{ position: 'relative' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <div
+                      onClick={() => onOpenChatWithFriend?.(peer)}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '8px 10px',
+                        border: '1px solid var(--border)',
+                        borderRadius: 8,
+                        background: 'var(--bg)',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <UserAvatar
+                        src={peer.avatarUrl}
+                        size={40}
+                        presenceOnline={typeof online === 'boolean' ? online : undefined}
+                        onOpen={
+                          typeof onOpenFriendProfile === 'function'
+                            ? () => onOpenFriendProfile(peer.id)
+                            : undefined
+                        }
+                        ariaLabel="Профиль"
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>
+                          {peer.nickname ? (
+                            <NicknameWithBadge nickname={peer.nickname} affiliationEmoji={peer.affiliationEmoji} />
+                          ) : (
+                            '—'
+                          )}
+                        </div>
+                        {fullName ? (
+                          <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                            {fullName}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div ref={friendMenuId === peer.id ? friendMenuRef : null} style={{ position: 'relative', flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        aria-label="Действия"
+                        aria-expanded={friendMenuId === peer.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setFriendMenuId((id) => (id === peer.id ? null : peer.id));
+                        }}
+                        style={{ width: 36, height: 36 }}
+                      >
+                        ⋯
+                      </button>
+                      {friendMenuId === peer.id ? (
+                        <div
+                          role="menu"
+                          style={{
+                            position: 'absolute',
+                            right: 0,
+                            top: '100%',
+                            marginTop: 4,
+                            minWidth: 200,
+                            padding: '6px 0',
+                            background: 'var(--bg)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 8,
+                            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+                            zIndex: 25,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void removeFriendPeer(peer.id)}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              padding: '8px 12px',
+                              border: 'none',
+                              background: 'none',
+                              color: 'inherit',
+                              fontSize: 13,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Убрать из друзей
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void blockFriendPeer(peer.id)}
+                            style={{
+                              display: 'block',
+                              width: '100%',
+                              textAlign: 'left',
+                              padding: '8px 12px',
+                              border: 'none',
+                              background: 'none',
+                              color: '#c45c5c',
+                              fontSize: 13,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Заблокировать
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
 
       <p className="profile-settings-section-title">Заявки в друзья</p>
       <div className="profile-settings-card" style={{ padding: 14 }}>

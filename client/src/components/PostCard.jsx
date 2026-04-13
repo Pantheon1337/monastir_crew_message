@@ -118,11 +118,13 @@ function useLongPress(onLongPress, { ms = 480, moveTol = 12 } = {}) {
   };
 }
 
-export default function PostCard({ post, viewerId, onChanged, authorOnline, onViewAuthorAvatar }) {
+export default function PostCard({ post, viewerId, onChanged, authorOnline, onViewAuthorAvatar, onOpenAuthorProfile }) {
   const vvRect = useVisualViewportRect();
   const nick = post.authorNickname ? `@${post.authorNickname}` : post.authorName || '—';
   const affiliationEmoji = post.authorAffiliationEmoji || null;
   const isMine = viewerId && String(post.authorId) === String(viewerId);
+  const canOpenAuthorProfile =
+    typeof onOpenAuthorProfile === 'function' && post.authorId != null && viewerId;
   const [menuOpen, setMenuOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(post.body || '');
@@ -376,7 +378,32 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500 }}>{post.authorName || nick}</div>
             <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-              {post.authorNickname ? (
+              {canOpenAuthorProfile ? (
+                <button
+                  type="button"
+                  onClick={() => onOpenAuthorProfile(post.authorId)}
+                  title="Профиль"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: 'inherit',
+                    font: 'inherit',
+                    padding: 0,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: 4,
+                    textAlign: 'left',
+                  }}
+                >
+                  {post.authorNickname ? (
+                    <NicknameWithBadge nickname={post.authorNickname} affiliationEmoji={affiliationEmoji} />
+                  ) : (
+                    nick
+                  )}
+                </button>
+              ) : post.authorNickname ? (
                 <NicknameWithBadge nickname={post.authorNickname} affiliationEmoji={affiliationEmoji} />
               ) : (
                 nick

@@ -13,7 +13,15 @@ function swipeTargetOk(el) {
   return !el.closest('input, textarea, button, select, a, label, [data-feed-no-swipe]');
 }
 
-export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}, onViewAuthorAvatar, onSwipeOpenStory }) {
+export default function Feed({
+  posts = [],
+  userId,
+  onPosted,
+  presenceOnline = {},
+  onViewAuthorAvatar,
+  onSwipeOpenStory,
+  onOpenAuthorProfile,
+}) {
   const [draft, setDraft] = useState('');
   const [err, setErr] = useState(null);
   const [sending, setSending] = useState(false);
@@ -237,6 +245,7 @@ export default function Feed({ posts = [], userId, onPosted, presenceOnline = {}
             onChanged={onPosted}
             authorOnline={p.authorId != null ? Boolean(presenceOnline[String(p.authorId)]) : undefined}
             onViewAuthorAvatar={onViewAuthorAvatar}
+            onOpenAuthorProfile={onOpenAuthorProfile}
           />
         ))
       )}

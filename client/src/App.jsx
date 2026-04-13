@@ -622,6 +622,34 @@ export default function App() {
     });
   }, []);
 
+  /** Из списка друзей в профиле: открыть ЛС с другом. */
+  const handleOpenChatWithFriend = useCallback(
+    async (friend) => {
+      if (!user?.id || !friend?.id) return;
+      const r = await api('/api/chats', { userId: user.id });
+      if (!r.ok) return;
+      const list = r.data.chats || [];
+      const chat = list.find((c) => !c.isSavedMessages && String(c.peerUserId) === String(friend.id));
+      if (chat) {
+        setOpenRoomChat(null);
+        setNav('chats');
+        handleOpenChat(chat);
+      } else {
+        window.alert('Чат с этим пользователем не найден. Откройте раздел «Чаты» и обновите список.');
+      }
+    },
+    [user?.id, handleOpenChat],
+  );
+
+  const openFeedAuthorProfile = useCallback(
+    (authorId) => {
+      if (!authorId || !user?.id) return;
+      setPeerFullProfileViewerPreview(String(authorId) === String(user.id));
+      setPeerFullProfileUserId(authorId);
+    },
+    [user?.id],
+  );
+
   const syncOpenChatFromServer = useCallback(async () => {
     if (!user?.id) return;
     const r = await api('/api/chats', { userId: user.id });
@@ -742,6 +770,7 @@ export default function App() {
             onPosted={refreshFeed}
             onViewAuthorAvatar={(url) => setAvatarLightboxUrl(url)}
             onSwipeOpenStory={() => setStoryCreateOpen(true)}
+            onOpenAuthorProfile={openFeedAuthorProfile}
           />
         </Suspense>
       )}
@@ -785,6 +814,13 @@ export default function App() {
                 setPeerFullProfileViewerPreview(true);
                 setPeerFullProfileUserId(user.id);
               }
+            }}
+            presenceOnline={presenceOnline}
+            onOpenChatWithFriend={handleOpenChatWithFriend}
+            onOpenFriendProfile={(id) => {
+              if (!id) return;
+              setPeerFullProfileViewerPreview(false);
+              setPeerFullProfileUserId(id);
             }}
           />
         </Suspense>
