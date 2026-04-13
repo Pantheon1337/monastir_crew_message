@@ -232,7 +232,7 @@ function requireUser(req, res) {
 }
 
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'monastir-crew-message' });
+  res.json({ ok: true, service: 'ruscord-crew' });
 });
 
 app.post('/api/bugs', (req, res) => {

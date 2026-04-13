@@ -1,5 +1,5 @@
 {
-  "name": "monastir-crew",
+  "name": "ruscord-crew",
   "private": true,
   "description": "Клиент (Vite/React) + сервер (Express, SQLite, WebSocket)",
   "scripts": {

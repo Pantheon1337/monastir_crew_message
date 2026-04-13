@@ -1,4 +1,4 @@
-# Monastir Crew Message (MCM)
+# Ruscord - Crew
 
 > Minimalist social network for crews. No likes counter, no algorithms.  
 > Chat 1-1 | Group rooms | Stories | Timeline  
@@ -85,8 +85,8 @@
 ## 🚀 Быстрый старт
 
 ```bash
-git clone https://github.com/yourname/Monastir-Crew-Message.git
-cd Monastir-Crew-Message
+git clone https://github.com/yourname/Ruscord-Crew.git
+cd Ruscord-Crew
 docker-compose up -d
 npm install
 npm run dev

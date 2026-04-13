@@ -1,4 +1,4 @@
-const USER_KEY = 'mcm_user';
+const USER_KEY = 'ruscord_crew_user';
 
 function isValidUserShape(u) {
   return (

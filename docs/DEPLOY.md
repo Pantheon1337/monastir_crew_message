@@ -4,13 +4,13 @@
 
 1. Убедитесь, что в репозиторий **не** попадают секреты и данные: в `.gitignore` уже указаны `node_modules`, `dist`, `.env`, `server/data/`, `server/uploads/`, `*.db`.
 
-2. Инициализация и первый коммит (в корне проекта `monastir crew`):
+2. Инициализация и первый коммит (в корне проекта `ruscord crew`):
 
 ```bash
 git init
 git add -A
 git status
-git commit -m "Initial commit: Monastir Crew client + server"
+git commit -m "Initial commit: Ruscord - Crew client + server"
 ```
 
 3. Создайте **пустой** репозиторий на GitHub / GitLab / Gitea и добавьте remote:
@@ -27,7 +27,7 @@ git push -u origin main
 
 ## Пошаговый план на VPS (тестирование и обновления)
 
-Ниже порядок для **Ubuntu 22.04/24.04** по SSH. Подставьте свой IP, домен и путь к клону (пример: `/opt/monastir-crew`). Репозиторий: `Pantheon1337/monastir_crew_message`.
+Ниже порядок для **Ubuntu 22.04/24.04** по SSH. Подставьте свой IP, домен и путь к клону (пример: `/opt/ruscord-crew`). Репозиторий: `Pantheon1337/ruscord_crew`.
 
 ### Этап 0 — доступ и обновление системы
 
@@ -83,23 +83,23 @@ sudo ufw allow 3001/tcp
 База и загрузки не должны теряться при `git pull`.
 
 ```bash
-sudo mkdir -p /var/lib/monastir
-sudo chown www-data:www-data /var/lib/monastir
+sudo mkdir -p /var/lib/ruscord-crew
+sudo chown www-data:www-data /var/lib/ruscord-crew
 ```
 
 Каталог репозитория (пример):
 
 ```bash
-sudo mkdir -p /opt/monastir-crew
-sudo chown $USER:$USER /opt/monastir-crew
+sudo mkdir -p /opt/ruscord-crew
+sudo chown $USER:$USER /opt/ruscord-crew
 ```
 
 ### Этап 5 — клонирование
 
 ```bash
 cd /opt
-git clone https://github.com/Pantheon1337/monastir_crew_message.git monastir-crew
-cd monastir-crew
+git clone https://github.com/Pantheon1337/ruscord_crew.git ruscord-crew
+cd ruscord-crew
 ```
 
 Для приватного репозитория: [Personal Access Token](https://github.com/settings/tokens) при `git clone` по HTTPS или [SSH-ключ](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) на сервере.
@@ -116,8 +116,8 @@ npm run build
 ### Этап 7 — права на uploads
 
 ```bash
-sudo mkdir -p /opt/monastir-crew/server/uploads
-sudo chown -R www-data:www-data /opt/monastir-crew/server/uploads
+sudo mkdir -p /opt/ruscord-crew/server/uploads
+sudo chown -R www-data:www-data /opt/ruscord-crew/server/uploads
 ```
 
 (Путь к репо замените на свой, пользователь — тот же, что в `User=` в systemd.)
@@ -125,10 +125,10 @@ sudo chown -R www-data:www-data /opt/monastir-crew/server/uploads
 ### Этап 8 — пробный запуск вручную
 
 ```bash
-cd /opt/monastir-crew/server
+cd /opt/ruscord-crew/server
 export NODE_ENV=production
 export PORT=3001
-export SQLITE_PATH=/var/lib/monastir/app.db
+export SQLITE_PATH=/var/lib/ruscord-crew/app.db
 node index.js
 ```
 
@@ -140,9 +140,9 @@ node index.js
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now monastir.service
-sudo systemctl status monastir.service
-sudo journalctl -u monastir.service -n 80 --no-pager
+sudo systemctl enable --now ruscord-crew.service
+sudo systemctl status ruscord-crew.service
+sudo journalctl -u ruscord-crew.service -n 80 --no-pager
 ```
 
 ### Этап 10 — nginx и HTTPS
@@ -159,11 +159,11 @@ sudo journalctl -u monastir.service -n 80 --no-pager
 На сервере:
 
 ```bash
-cd /opt/monastir-crew
+cd /opt/ruscord-crew
 git pull
 npm run install:all
 npm run build
-sudo systemctl restart monastir.service
+sudo systemctl restart ruscord-crew.service
 ```
 
 ### Разработка на VPS (опционально)
@@ -177,7 +177,7 @@ sudo systemctl restart monastir.service
 - **Ubuntu 22.04+** с SSH.
 - **Node.js 20 LTS** — см. этап 2 выше.
 - **nginx** — прокси и TLS; для быстрого теста можно обойтись портом **3001** и ufw.
-- Каталог для БД (**`/var/lib/monastir`** или `SQLITE_PATH`) и **`server/uploads`** с правами пользователя сервиса.
+- Каталог для БД (**`/var/lib/ruscord-crew`** или `SQLITE_PATH`) и **`server/uploads`** с правами пользователя сервиса.
 
 ---
 
@@ -185,8 +185,8 @@ sudo systemctl restart monastir.service
 
 ```bash
 cd /opt   # или домашний каталог пользователя
-git clone https://github.com/YOUR_USER/YOUR_REPO.git monastir-crew
-cd monastir-crew
+git clone https://github.com/YOUR_USER/YOUR_REPO.git ruscord-crew
+cd ruscord-crew
 
 npm run install:all
 npm run build
@@ -212,20 +212,20 @@ npm run build
 
 ## 5. systemd (один процесс Node)
 
-Файл `/etc/systemd/system/monastir.service` (пути подставьте свои):
+Файл `/etc/systemd/system/ruscord-crew.service` (пути подставьте свои):
 
 ```ini
 [Unit]
-Description=Monastir Crew API + SPA
+Description=Ruscord - Crew API + SPA
 After=network.target
 
 [Service]
 Type=simple
 User=www-data
-WorkingDirectory=/opt/monastir-crew/server
+WorkingDirectory=/opt/ruscord-crew/server
 Environment=NODE_ENV=production
 Environment=PORT=3001
-Environment=SQLITE_PATH=/var/lib/monastir/app.db
+Environment=SQLITE_PATH=/var/lib/ruscord-crew/app.db
 ExecStart=/usr/bin/node index.js
 Restart=on-failure
 RestartSec=5
@@ -235,35 +235,35 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo mkdir -p /var/lib/monastir
-sudo chown www-data:www-data /var/lib/monastir
+sudo mkdir -p /var/lib/ruscord-crew
+sudo chown www-data:www-data /var/lib/ruscord-crew
 sudo systemctl daemon-reload
-sudo systemctl enable --now monastir.service
-sudo systemctl status monastir.service
+sudo systemctl enable --now ruscord-crew.service
+sudo systemctl status ruscord-crew.service
 ```
 
-Убедитесь, что каталог `server/uploads` существует и доступен записи (аватары и истории): например `sudo mkdir -p /opt/monastir-crew/server/uploads && sudo chown -R www-data:www-data /opt/monastir-crew/server/uploads`.
+Убедитесь, что каталог `server/uploads` существует и доступен записи (аватары и истории): например `sudo mkdir -p /opt/ruscord-crew/server/uploads && sudo chown -R www-data:www-data /opt/ruscord-crew/server/uploads`.
 
 ### Управление службой: вкл / выкл / перезапуск
 
-Имя юнита в примерах: **`monastir.service`** (коротко в командах: **`monastir`**).
+Имя юнита в примерах: **`ruscord-crew.service`** (коротко в командах: **`ruscord-crew`**).
 
 | Действие | Команда |
 |----------|---------|
-| **Запустить** | `sudo systemctl start monastir` |
-| **Остановить** | `sudo systemctl stop monastir` |
-| **Перезапустить** (после `git pull`, сборки или правок) | `sudo systemctl restart monastir` |
-| **Статус** (работает ли, последние ошибки) | `sudo systemctl status monastir` |
-| **Логи в реальном времени** | `sudo journalctl -u monastir -f` (выход: **Ctrl+C**) |
-| **Последние 80 строк логов** | `sudo journalctl -u monastir -n 80 --no-pager` |
-| **Включить автозапуск при загрузке VPS** | `sudo systemctl enable monastir` |
-| **Выключить автозапуск** | `sudo systemctl disable monastir` |
+| **Запустить** | `sudo systemctl start ruscord-crew` |
+| **Остановить** | `sudo systemctl stop ruscord-crew` |
+| **Перезапустить** (после `git pull`, сборки или правок) | `sudo systemctl restart ruscord-crew` |
+| **Статус** (работает ли, последние ошибки) | `sudo systemctl status ruscord-crew` |
+| **Логи в реальном времени** | `sudo journalctl -u ruscord-crew -f` (выход: **Ctrl+C**) |
+| **Последние 80 строк логов** | `sudo journalctl -u ruscord-crew -n 80 --no-pager` |
+| **Включить автозапуск при загрузке VPS** | `sudo systemctl enable ruscord-crew` |
+| **Выключить автозапуск** | `sudo systemctl disable ruscord-crew` |
 
 Первый запуск после создания файла службы:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now monastir.service
+sudo systemctl enable --now ruscord-crew.service
 ```
 
 Перед этим выполните **`npm run build`** в каталоге проекта (иначе при `NODE_ENV=production` не будет `client/dist`).
@@ -271,14 +271,14 @@ sudo systemctl enable --now monastir.service
 **Типичный цикл после внесения изменений** (на сервере):
 
 ```bash
-cd /opt/monastir-crew
+cd /opt/ruscord-crew
 git pull
 npm run install:all    # только если менялись зависимости в package.json
 npm run build          # если менялся фронт (client)
-sudo systemctl restart monastir.service
+sudo systemctl restart ruscord-crew.service
 ```
 
-Если правили **только** файлы в `server/` и зависимости не трогали — достаточно `git pull` и **`sudo systemctl restart monastir`**. Если меняли **клиент** — обязательно **`npm run build`**, затем перезапуск.
+Если правили **только** файлы в `server/` и зависимости не трогали — достаточно `git pull` и **`sudo systemctl restart ruscord-crew`**. Если меняли **клиент** — обязательно **`npm run build`**, затем перезапуск.
 
 ---
 
@@ -318,11 +318,11 @@ server {
 На сервере:
 
 ```bash
-cd /opt/monastir-crew
+cd /opt/ruscord-crew
 git pull
 npm run install:all
 npm run build
-sudo systemctl restart monastir.service
+sudo systemctl restart ruscord-crew.service
 ```
 
 ---

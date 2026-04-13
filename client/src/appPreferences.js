@@ -1,5 +1,5 @@
-const KEY_NOTIF = 'monastir-app-notifications';
-const KEY_THEME = 'monastir-app-theme';
+const KEY_NOTIF = 'ruscord-crew-app-notifications';
+const KEY_THEME = 'ruscord-crew-app-theme';
 
 /** @returns {boolean} */
 export function getNotificationsEnabled() {

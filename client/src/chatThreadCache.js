@@ -3,7 +3,7 @@
  * Картинки в сообщениях кэшируются браузером по URL (/uploads/...).
  */
 
-const PREFIX = 'mcm_thread_v1_';
+const PREFIX = 'ruscord_crew_thread_v1_';
 const MAX_BYTES = 2_000_000;
 
 function keyDirect(userId, chatId) {

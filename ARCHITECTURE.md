@@ -1,4 +1,4 @@
-# Monastir Crew Message — архитектура
+# Ruscord - Crew — архитектура
 
 ## Цели продукта
 

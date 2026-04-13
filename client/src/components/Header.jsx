@@ -43,7 +43,7 @@ export default function Header({
         }}
       >
         <h1 style={{ margin: 0, fontSize: '14px', fontWeight: 600, letterSpacing: '-0.02em' }}>
-          Monastir Crew Message
+          Ruscord - Crew
         </h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button

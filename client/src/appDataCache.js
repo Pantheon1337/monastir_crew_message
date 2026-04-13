@@ -4,7 +4,7 @@
  */
 import { clearChatCachesForUser } from './chatThreadCache.js';
 
-const PREFIX = 'mcm_app_v1_';
+const PREFIX = 'ruscord_crew_app_v1_';
 const MAX_BYTES = 4_500_000;
 
 export function loadAppDataCache(userId) {

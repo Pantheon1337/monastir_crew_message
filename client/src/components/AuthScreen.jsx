@@ -115,7 +115,7 @@ export default function AuthScreen({ onAuthSuccess }) {
           textAlign: 'center',
         }}
       >
-        Monastir Crew Message
+        Ruscord - Crew
       </h1>
 
       <div
