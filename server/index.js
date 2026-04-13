@@ -131,7 +131,16 @@ app.use(
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   }),
 );
-app.use(compression({ threshold: 1024 }));
+app.use(
+  compression({
+    threshold: 1024,
+    /** Иначе middleware мешает HTTP Upgrade → WebSocket, presence (онлайн) ломается. */
+    filter: (req, res) => {
+      if (String(req.headers.upgrade || '').toLowerCase() === 'websocket') return false;
+      return compression.filter(req, res);
+    },
+  }),
+);
 app.use(express.json({ limit: '12mb' }));
 app.use(
   '/uploads',
