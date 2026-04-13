@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { clearStoredUser, setStoredUser } from '../authStorage.js';
 import { api, apiUpload } from '../api.js';
-import { requestNotificationPermission } from '../browserNotification.js';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { AFFILIATION_EMOJI_CHOICES } from '../affiliationConstants.js';
@@ -205,9 +204,6 @@ export default function ProfileScreen({
   const [incoming, setIncoming] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState(null);
-  const [notifPerm, setNotifPerm] = useState(() =>
-    typeof Notification !== 'undefined' ? Notification.permission : 'denied',
-  );
   const [roleSaving, setRoleSaving] = useState(false);
   const [emojiSaving, setEmojiSaving] = useState(false);
   const [emojiSheetOpen, setEmojiSheetOpen] = useState(false);
@@ -263,14 +259,6 @@ export default function ProfileScreen({
   useEffect(() => {
     setHeroTintIndex(readProfileHeroTint(user?.id));
   }, [user?.id]);
-
-  useEffect(() => {
-    const sync = () => {
-      if (typeof Notification !== 'undefined') setNotifPerm(Notification.permission);
-    };
-    document.addEventListener('visibilitychange', sync);
-    return () => document.removeEventListener('visibilitychange', sync);
-  }, []);
 
   async function accept(id) {
     setActionId(id);
@@ -814,45 +802,20 @@ export default function ProfileScreen({
 
       </div>
 
-      <p className="profile-settings-section-title">Уведомления</p>
-      <div className="profile-settings-card" style={{ marginBottom: 12 }}>
-        {typeof Notification !== 'undefined' && notifPerm === 'default' ? (
-          <div style={{ marginBottom: 12 }}>
-            <button
-              type="button"
-              className="btn-outline"
-              style={{ width: '100%' }}
-              onClick={() => {
-                void (async () => {
-                  const p = await requestNotificationPermission();
-                  setNotifPerm(p);
-                })();
-              }}
-            >
-              Включить уведомления
-            </button>
-            <p className="muted" style={{ margin: '6px 0 0', fontSize: 10, lineHeight: 1.35 }}>
-              О новых сообщениях и заявках в друзья, когда вкладка в фоне или открыт другой раздел.
+      {onOpenArchive ? (
+        <>
+          <p className="profile-settings-section-title">Истории</p>
+          <div className="profile-settings-card" style={{ marginBottom: 12 }}>
+            <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Архив</p>
+            <p className="muted" style={{ margin: '0 0 10px', fontSize: 10, lineHeight: 1.4 }}>
+              В ленте кружков — 24 часа. В профиле кадры висят, пока не уберёте в архив или не удалите. Архив — снятые с ленты и истёкшие без показа в профиле.
             </p>
-            {typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent) ? (
-              <p className="muted" style={{ margin: '8px 0 0', fontSize: 10, lineHeight: 1.35 }}>
-                На iPhone и iPad запрос разрешения надёжнее срабатывает в приложении на экране «Домой»: Поделиться → На экран
-                «Домой», затем откройте ярлык и нажмите кнопку выше. В обычном Safari уведомления сайта могут быть
-                недоступны.
-              </p>
-            ) : null}
+            <button type="button" className="btn-outline" onClick={() => onOpenArchive()}>
+              Открыть архив
+            </button>
           </div>
-        ) : null}
-        {typeof Notification !== 'undefined' && notifPerm === 'denied' ? (
-          <p className="muted" style={{ margin: '0 0 12px', fontSize: 10 }}>
-            Уведомления отключены в настройках браузера для этого сайта.
-          </p>
-        ) : null}
-
-        <p className="muted" style={{ margin: 0, fontSize: 10 }}>
-          Подтверждение номера по SMS будет добавлено позже.
-        </p>
-      </div>
+        </>
+      ) : null}
 
       <p className="profile-settings-section-title">Сессия</p>
       <div className="profile-settings-card" style={{ marginBottom: 12 }}>
@@ -868,21 +831,6 @@ export default function ProfileScreen({
           Выйти из аккаунта
         </button>
       </div>
-
-      {onOpenArchive ? (
-        <>
-          <p className="profile-settings-section-title">Истории</p>
-          <div className="profile-settings-card" style={{ marginBottom: 12 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 12, fontWeight: 600 }}>Архив</p>
-          <p className="muted" style={{ margin: '0 0 10px', fontSize: 10, lineHeight: 1.4 }}>
-            В ленте кружков — 24 часа. В профиле кадры висят, пока не уберёте в архив или не удалите. Архив — снятые с ленты и истёкшие без показа в профиле.
-          </p>
-          <button type="button" className="btn-outline" onClick={() => onOpenArchive()}>
-            Открыть архив
-          </button>
-        </div>
-        </>
-      ) : null}
 
       </div>
     </section>

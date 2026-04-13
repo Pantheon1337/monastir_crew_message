@@ -6,17 +6,6 @@ import { api } from '../api.js';
 import { REACTION_KEYS, REACTION_ICONS, emptyReactionCounts, normalizeReactionMine } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 
-function formatPostTime(ts) {
-  if (ts == null) return '';
-  const t = Number(ts);
-  const diff = Date.now() - t;
-  if (diff < 60_000) return 'только что';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} мин назад`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} ч назад`;
-  const d = new Date(t);
-  return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
 function formatEditedAt(ts) {
   if (ts == null) return '';
   const d = new Date(Number(ts));
@@ -29,6 +18,32 @@ function formatEditedAt(ts) {
   });
 }
 
+/** Время в полосе реакций (как в Telegram) */
+function formatPostTimeCompact(ts) {
+  if (ts == null) return '';
+  const t = Number(ts);
+  const d = new Date(t);
+  const now = new Date();
+  const sameDay =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
+  if (sameDay) {
+    return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  }
+  return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+function commentCountRu(n) {
+  if (n <= 0) return 'Комментарии';
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return `${n} комментариев`;
+  if (mod10 === 1) return `${n} комментарий`;
+  if (mod10 >= 2 && mod10 <= 4) return `${n} комментария`;
+  return `${n} комментариев`;
+}
+
 function mediaKind(url) {
   if (!url) return null;
   const u = url.split('?')[0].toLowerCase();
@@ -38,14 +53,29 @@ function mediaKind(url) {
   return 'file';
 }
 
-function PostMedia({ url }) {
+function PostMedia({ url, onImageClick }) {
   const kind = mediaKind(url);
-  const base = { maxWidth: '100%', borderRadius: 8, marginTop: 8 };
+  const base = { maxWidth: '100%', display: 'block', height: 'auto' };
   if (kind === 'image') {
-    return <img src={url} alt="" style={{ ...base, display: 'block', height: 'auto' }} />;
+    if (typeof onImageClick === 'function') {
+      return (
+        <button
+          type="button"
+          className="feed-post-media-img-btn"
+          aria-label="Открыть профиль автора"
+          onClick={(e) => {
+            e.stopPropagation();
+            onImageClick();
+          }}
+        >
+          <img src={url} alt="" style={base} />
+        </button>
+      );
+    }
+    return <img src={url} alt="" className="feed-post-media-plain" style={base} />;
   }
   if (kind === 'video') {
-    return <video src={url} controls style={{ ...base, display: 'block', maxHeight: 360 }} />;
+    return <video src={url} controls style={{ ...base, maxHeight: 360, width: '100%' }} />;
   }
   if (kind === 'audio') {
     return <audio src={url} controls style={{ width: '100%', marginTop: 8 }} />;
@@ -339,35 +369,19 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
 
   return (
     <article
+      className="feed-post-card"
       onSelectStartCapture={(e) => {
         const el = e.target;
         if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) return;
         if (typeof el.closest === 'function' && (el.closest('textarea') || el.closest('input'))) return;
         e.preventDefault();
       }}
-      style={{
-        padding: '12px 0',
-        borderBottom: '1px solid var(--border)',
-        marginBottom: 0,
-        WebkitUserSelect: 'none',
-        userSelect: 'none',
-        WebkitTouchCallout: 'none',
-        touchAction: 'manipulation',
-      }}
     >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
-        <div style={{ display: 'flex', gap: 10, minWidth: 0 }}>
+      <header className="feed-post-card__head">
+        <div className="feed-post-card__head-main">
           <UserAvatar
             src={post.authorAvatarUrl}
-            size={32}
+            size={36}
             presenceOnline={typeof authorOnline === 'boolean' ? authorOnline : undefined}
             onOpen={
               post.authorAvatarUrl && typeof onViewAuthorAvatar === 'function'
@@ -375,56 +389,45 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
                 : undefined
             }
           />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>{post.authorName || nick}</div>
-            <div className="muted" style={{ fontSize: 11, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
-              {canOpenAuthorProfile ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenAuthorProfile(post.authorId)}
-                  title="Профиль"
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'inherit',
-                    font: 'inherit',
-                    padding: 0,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 4,
-                    textAlign: 'left',
-                  }}
-                >
+          <div style={{ minWidth: 0, flex: 1 }}>
+            {canOpenAuthorProfile ? (
+              <button
+                type="button"
+                className="feed-post-author-btn"
+                onClick={() => onOpenAuthorProfile(post.authorId)}
+                title="Открыть профиль"
+              >
+                <div className="feed-post-author-name">{post.authorName || nick}</div>
+                <div className="feed-post-author-sub">
+                  {post.authorNickname ? (
+                    <NicknameWithBadge nickname={post.authorNickname} affiliationEmoji={affiliationEmoji} />
+                  ) : (
+                    <span>{nick}</span>
+                  )}
+                  {post.friendsOnly ? (
+                    <span className="feed-post-friends-only-pill" title="Этот пост видят только ваши друзья">
+                      только друзья
+                    </span>
+                  ) : null}
+                </div>
+              </button>
+            ) : (
+              <>
+                <div className="feed-post-author-name">{post.authorName || nick}</div>
+                <div className="feed-post-author-sub muted">
                   {post.authorNickname ? (
                     <NicknameWithBadge nickname={post.authorNickname} affiliationEmoji={affiliationEmoji} />
                   ) : (
                     nick
                   )}
-                </button>
-              ) : post.authorNickname ? (
-                <NicknameWithBadge nickname={post.authorNickname} affiliationEmoji={affiliationEmoji} />
-              ) : (
-                nick
-              )}
-              <span>· {formatPostTime(post.createdAt)}</span>
-              {post.friendsOnly ? (
-                <span
-                  title="Этот пост видят только ваши друзья"
-                  style={{
-                    marginLeft: 4,
-                    fontSize: 10,
-                    padding: '1px 6px',
-                    borderRadius: 4,
-                    border: '1px solid var(--border)',
-                    opacity: 0.9,
-                  }}
-                >
-                  только друзья
-                </span>
-              ) : null}
-            </div>
+                  {post.friendsOnly ? (
+                    <span className="feed-post-friends-only-pill" title="Этот пост видят только ваши друзья">
+                      только друзья
+                    </span>
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
         </div>
         {viewerId ? (
@@ -539,148 +542,144 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
 
       <div
         {...lp}
+        className="feed-post-card__body"
         style={{
           userSelect: 'none',
           WebkitUserSelect: 'none',
           touchAction: 'manipulation',
         }}
       >
-        {post.mediaUrl ? <PostMedia url={post.mediaUrl} /> : null}
-
-        {editing ? (
-          <div style={{ marginTop: 8 }}>
-            <textarea
-              className="text-input"
-              value={editText}
-              onChange={(e) => setEditText(e.target.value.slice(0, 8000))}
-              rows={5}
-              style={{
-                width: '100%',
-                resize: 'vertical',
-                fontSize: 16,
-                WebkitUserSelect: 'text',
-                userSelect: 'text',
-              }}
-              maxLength={8000}
+        {post.mediaUrl ? (
+          <div className="feed-post-card__media-wrap">
+            <PostMedia
+              url={post.mediaUrl}
+              onImageClick={canOpenAuthorProfile ? () => onOpenAuthorProfile(post.authorId) : undefined}
             />
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <button type="button" className="btn-primary" style={{ width: 'auto' }} disabled={saving} onClick={() => void saveEdit()}>
-                {saving ? '…' : 'Сохранить'}
-              </button>
-              <button
-                type="button"
-                className="btn-outline"
-                style={{ width: 'auto' }}
-                disabled={saving}
-                onClick={() => {
-                  setEditText(post.body || '');
-                  setEditing(false);
-                }}
-              >
-                Отмена
-              </button>
-            </div>
           </div>
-        ) : (
-          <>
-            {post.body ? (
-              <p style={{ margin: post.mediaUrl ? '8px 0 0' : 0, fontSize: 14, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{post.body}</p>
-            ) : null}
-            {post.editedAt ? (
-              <p className="muted" style={{ margin: '6px 0 0', fontSize: 11 }}>
-                изменено · {formatEditedAt(post.editedAt)}
-              </p>
-            ) : null}
-          </>
-        )}
-      </div>
+        ) : null}
 
-      {!editing && viewerId ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10 }} ref={reactPickerRef}>
-          {keysToShow.map((key) => {
-            const n = counts[key] ?? 0;
-            const active = mineList.includes(key);
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => void pickReaction(key)}
+        <div className="feed-post-card__text-wrap">
+          {editing ? (
+            <div style={{ marginTop: 4 }}>
+              <textarea
+                className="text-input"
+                value={editText}
+                onChange={(e) => setEditText(e.target.value.slice(0, 8000))}
+                rows={5}
                 style={{
-                  border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                  borderRadius: 999,
-                  background: active ? 'rgba(193, 123, 75, 0.2)' : 'transparent',
-                  padding: '2px 8px',
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  color: 'inherit',
-                  lineHeight: 1.3,
+                  width: '100%',
+                  resize: 'vertical',
+                  fontSize: 16,
+                  WebkitUserSelect: 'text',
+                  userSelect: 'text',
                 }}
-              >
-                {REACTION_ICONS[key]}
-                {n > 0 ? <span className="muted" style={{ fontSize: 10, marginLeft: 2 }}>{n}</span> : null}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            className="btn-outline"
-            aria-expanded={reactPickerOpen}
-            style={{ fontSize: 12, padding: '2px 10px' }}
-            onClick={() => setReactPickerOpen((v) => !v)}
-          >
-            {reactPickerOpen ? '✕' : '☺'}
-          </button>
-          {reactPickerOpen ? (
-            <div
-              style={{
-                width: '100%',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 6,
-                padding: 8,
-                marginTop: 4,
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                background: 'rgba(0,0,0,0.15)',
-              }}
-            >
-              {REACTION_KEYS.map((k) => (
+                maxLength={8000}
+              />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button type="button" className="btn-primary" style={{ width: 'auto' }} disabled={saving} onClick={() => void saveEdit()}>
+                  {saving ? '…' : 'Сохранить'}
+                </button>
                 <button
-                  key={k}
                   type="button"
-                  onClick={() => void pickReaction(k)}
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    border: '1px solid var(--border)',
-                    background: 'rgba(255,255,255,0.04)',
-                    fontSize: 18,
-                    cursor: 'pointer',
-                    color: 'inherit',
+                  className="btn-outline"
+                  style={{ width: 'auto' }}
+                  disabled={saving}
+                  onClick={() => {
+                    setEditText(post.body || '');
+                    setEditing(false);
                   }}
                 >
-                  {REACTION_ICONS[k]}
+                  Отмена
                 </button>
-              ))}
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <>
+              {post.body ? (
+                <p className="feed-post-card__text">{post.body}</p>
+              ) : null}
+              {post.editedAt ? (
+                <p className="muted feed-post-card__edited">
+                  изменено · {formatEditedAt(post.editedAt)}
+                </p>
+              ) : null}
+            </>
+          )}
+        </div>
+      </div>
+
+      {!editing ? (
+        <div className="feed-post-card__engage">
+          {viewerId ? (
+            <div className="feed-post-reactions-wrap" ref={reactPickerRef}>
+              <div className="feed-post-reactions-row">
+                {keysToShow.map((key) => {
+                  const n = counts[key] ?? 0;
+                  const active = mineList.includes(key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`feed-post-react-pill${active ? ' feed-post-react-pill--active' : ''}`}
+                      onClick={() => void pickReaction(key)}
+                    >
+                      <span className="feed-post-react-pill__emoji" aria-hidden>
+                        {REACTION_ICONS[key]}
+                      </span>
+                      {n > 0 ? <span className="feed-post-react-pill__count">{n}</span> : null}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  className="feed-post-react-add"
+                  aria-expanded={reactPickerOpen}
+                  aria-label={reactPickerOpen ? 'Закрыть выбор реакции' : 'Добавить реакцию'}
+                  onClick={() => setReactPickerOpen((v) => !v)}
+                >
+                  {reactPickerOpen ? '✕' : '+'}
+                </button>
+              </div>
+              {reactPickerOpen ? (
+                <div className="feed-post-react-picker">
+                  {REACTION_KEYS.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      className="feed-post-react-picker__btn"
+                      onClick={() => void pickReaction(k)}
+                    >
+                      {REACTION_ICONS[k]}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="feed-post-reactions-row feed-post-reactions-row--empty" aria-hidden />
+          )}
+          <time className="feed-post-card__time" dateTime={post.createdAt != null ? new Date(Number(post.createdAt)).toISOString() : undefined}>
+            {formatPostTimeCompact(post.createdAt)}
+          </time>
         </div>
       ) : null}
 
       {viewerId ? (
-        <div style={{ marginTop: 10 }}>
+        <div className="feed-post-comments-block">
           <button
             type="button"
-            className="btn-outline"
-            style={{ width: '100%', fontSize: 12, justifyContent: 'center' }}
+            className="feed-post-comments-strip"
             onClick={() => setCommentsOpen((v) => !v)}
           >
-            {commentsOpen ? 'Скрыть' : 'Комментарии'}
-            {commentCount > 0 ? ` (${commentCount})` : ''}
+            <span className="feed-post-comments-strip__label">
+              {commentsOpen ? 'Скрыть комментарии' : commentCountRu(commentCount)}
+            </span>
+            <span className="feed-post-comments-strip__chev" aria-hidden>
+              ›
+            </span>
           </button>
           {commentsOpen ? (
-            <div style={{ marginTop: 8 }}>
+            <div className="feed-post-comments-inner">
               {commentsLoading ? (
                 <p className="muted" style={{ fontSize: 12 }}>
                   Загрузка…
@@ -849,10 +848,6 @@ export default function PostCard({ post, viewerId, onChanged, authorOnline, onVi
           ) : null}
         </div>
       ) : null}
-
-      <footer style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
-        <span>{post.friendsOnly ? 'Пост только для друзей · ' : ''}лента приложения</span>
-      </footer>
 
       <ReactionUsersModal open={whoOpen} users={whoList} onClose={() => setWhoOpen(false)} title="Реакции на пост" />
 
