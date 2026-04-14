@@ -5,6 +5,7 @@ import UserAvatar from './UserAvatar.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
 import { profileHeroTintBg } from '../profileHeroTints.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
+import FriendMiniActionIcon from './FriendMiniActionIcon.jsx';
 
 function formatJoined(ts) {
   if (ts == null) return '—';
@@ -205,8 +206,8 @@ export default function FriendProfileSheet({
                 <div className="friend-mini-actions friend-mini-actions--compact">
                   {!isSelf && typeof onOpenDirectChat === 'function' ? (
                     <button type="button" className="friend-mini-action-btn friend-mini-action-btn--sm" onClick={onOpenDirectChat} title="Чат">
-                      <span className="friend-mini-action-btn__icon" aria-hidden>
-                        💬
+                      <span className="friend-mini-action-btn__icon friend-mini-action-btn__icon--img" aria-hidden>
+                        <FriendMiniActionIcon kind="chat" size={16} />
                       </span>
                       <span className="friend-mini-action-btn__label">Чат</span>
                     </button>
@@ -218,16 +219,16 @@ export default function FriendProfileSheet({
                       onClick={() => setMediaOpen(true)}
                       title="Медиа из чата"
                     >
-                      <span className="friend-mini-action-btn__icon" aria-hidden>
-                        🖼
+                      <span className="friend-mini-action-btn__icon friend-mini-action-btn__icon--img" aria-hidden>
+                        <FriendMiniActionIcon kind="media" size={16} />
                       </span>
                       <span className="friend-mini-action-btn__label">Медиа</span>
                     </button>
                   ) : null}
                   {!isSelf && typeof onViewFullProfile === 'function' ? (
                     <button type="button" className="friend-mini-action-btn friend-mini-action-btn--sm" onClick={onViewFullProfile} title="Профиль">
-                      <span className="friend-mini-action-btn__icon" aria-hidden>
-                        👤
+                      <span className="friend-mini-action-btn__icon friend-mini-action-btn__icon--img" aria-hidden>
+                        <FriendMiniActionIcon kind="profile" size={16} />
                       </span>
                       <span className="friend-mini-action-btn__label">Профиль</span>
                     </button>

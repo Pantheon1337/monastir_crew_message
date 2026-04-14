@@ -843,6 +843,12 @@ a:hover {
   font-size: 20px;
   line-height: 1;
 }
+.friend-mini-action-btn__icon--img {
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .friend-mini-action-btn__label {
   opacity: 0.95;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api, mediaPublicUrl } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
+import FriendMiniActionIcon from './FriendMiniActionIcon.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
 import { profileHeroTintBg } from '../profileHeroTints.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
@@ -285,8 +286,8 @@ export default function PeerProfileFullScreen({
                   friendship.canMessage !== false &&
                   !friendship.theyBlockedYou ? (
                     <button type="button" className="friend-mini-action-btn" onClick={() => void onOpenDirectChat()} title="Написать">
-                      <span className="friend-mini-action-btn__icon" aria-hidden>
-                        💬
+                      <span className="friend-mini-action-btn__icon friend-mini-action-btn__icon--img" aria-hidden>
+                        <FriendMiniActionIcon kind="chat" size={20} />
                       </span>
                       <span className="friend-mini-action-btn__label">Написать</span>
                     </button>
