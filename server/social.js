@@ -1870,6 +1870,7 @@ export function deleteStoryByAuthor(storyId, userId) {
   if (!row) return { error: 'История не найдена' };
   if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
   getDb().prepare(`DELETE FROM story_views WHERE story_id = ?`).run(storyId);
+  getDb().prepare(`DELETE FROM story_likes WHERE story_id = ?`).run(storyId);
   getDb().prepare(`DELETE FROM stories WHERE id = ?`).run(storyId);
   return { ok: true };
 }
@@ -1972,16 +1973,22 @@ export function listActiveStoryItems(viewerId, authorId, options = {}) {
   const now = Date.now();
   let sql;
   let params;
+  const likeSel = `(
+      SELECT COUNT(*) FROM story_likes sl WHERE sl.story_id = s.id
+    ) AS likeCount,
+    EXISTS(
+      SELECT 1 FROM story_likes sl2 WHERE sl2.story_id = s.id AND sl2.user_id = ?
+    ) AS likedByMe`;
   if (profileGridOnly) {
-    sql = `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
-       FROM stories WHERE user_id = ? AND COALESCE(feed_hidden, 0) = 0 AND COALESCE(show_in_profile, 1) = 1`;
-    params = [authorId];
+    sql = `SELECT s.id, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt, ${likeSel}
+       FROM stories s WHERE s.user_id = ? AND COALESCE(s.feed_hidden, 0) = 0 AND COALESCE(s.show_in_profile, 1) = 1`;
+    params = [viewerId, authorId];
   } else {
-    sql = `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt
-       FROM stories WHERE user_id = ? AND expires_at > ? AND COALESCE(feed_hidden, 0) = 0`;
-    params = [authorId, now];
+    sql = `SELECT s.id, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt, ${likeSel}
+       FROM stories s WHERE s.user_id = ? AND s.expires_at > ? AND COALESCE(s.feed_hidden, 0) = 0`;
+    params = [viewerId, authorId, now];
   }
-  sql += profileGridOnly ? ` ORDER BY created_at DESC` : ` ORDER BY created_at ASC`;
+  sql += profileGridOnly ? ` ORDER BY s.created_at DESC` : ` ORDER BY s.created_at ASC`;
   const rows = getDb().prepare(sql).all(...params);
   return rows.map((s) => ({
     id: s.id,
@@ -1989,7 +1996,28 @@ export function listActiveStoryItems(viewerId, authorId, options = {}) {
     mediaUrl: s.mediaPath ? `/uploads/${s.mediaPath}` : null,
     createdAt: s.createdAt,
     expiresAt: s.expiresAt,
+    likeCount: Number(s.likeCount) || 0,
+    likedByMe: Number(s.likedByMe) === 1,
   }));
+}
+
+/** Лайк на кадр истории (не путать с реакцией-эмодзи в ЛС). */
+export function toggleStoryLike(viewerId, storyId) {
+  const st = getDb()
+    .prepare(`SELECT id, user_id AS userId FROM stories WHERE id = ?`)
+    .get(storyId);
+  if (!st) return { error: 'История не найдена' };
+  if (!canViewerSeeUserStories(viewerId, st.userId)) return { error: 'Нет доступа' };
+  const db = getDb();
+  const existing = db.prepare(`SELECT 1 FROM story_likes WHERE story_id = ? AND user_id = ?`).get(storyId, viewerId);
+  const now = Date.now();
+  if (existing) {
+    db.prepare(`DELETE FROM story_likes WHERE story_id = ? AND user_id = ?`).run(storyId, viewerId);
+  } else {
+    db.prepare(`INSERT INTO story_likes (story_id, user_id, created_at) VALUES (?, ?, ?)`).run(storyId, viewerId, now);
+  }
+  const cntRow = db.prepare(`SELECT COUNT(*) AS c FROM story_likes WHERE story_id = ?`).get(storyId);
+  return { ok: true, liked: !existing, likeCount: Number(cntRow?.c) || 0 };
 }
 
 /**

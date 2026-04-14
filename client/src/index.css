@@ -1730,3 +1730,11 @@ video.chat-video-note {
 .story-viewer-stage:active {
   cursor: grabbing;
 }
+
+.story-viewer-media-frame {
+  box-sizing: border-box;
+}
+
+.story-viewer-media-img {
+  pointer-events: none;
+}

@@ -64,6 +64,7 @@ import {
   deleteFeedPost,
   listStoryBucketsForViewer,
   listActiveStoryItems,
+  toggleStoryLike,
   listArchivedStoriesForViewer,
   archiveStoryForFeed,
   unarchiveStoryForFeed,
@@ -1266,6 +1267,23 @@ app.post('/api/stories/view', (req, res) => {
     return;
   }
   res.json({ ok: true });
+});
+
+app.post('/api/stories/like', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const storyId = req.body?.storyId;
+  if (!storyId || typeof storyId !== 'string') {
+    res.status(400).json({ error: 'Нет storyId' });
+    return;
+  }
+  const result = toggleStoryLike(userId, storyId);
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : result.error.includes('не найден') ? 404 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  res.json({ liked: result.liked, likeCount: result.likeCount });
 });
 
 app.post('/api/stories/react', (req, res) => {

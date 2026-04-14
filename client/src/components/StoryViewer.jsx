@@ -26,6 +26,21 @@ function formatStoryArchiveEta(expiresAt) {
   return `≈ ${m} мин до архива`;
 }
 
+function formatStorySlideTime(ts) {
+  if (ts == null) return '';
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dayDiff = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+  if (dayDiff === 0) return `сегодня в ${timeStr}`;
+  if (dayDiff === 1) return `вчера в ${timeStr}`;
+  if (dayDiff === 2) return `позавчера в ${timeStr}`;
+  return (
+    d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) + ` в ${timeStr}`
+  );
+}
+
 export default function StoryViewer({
   story,
   userId,
@@ -46,6 +61,8 @@ export default function StoryViewer({
   const [viewersOpen, setViewersOpen] = useState(false);
   const [viewersLoading, setViewersLoading] = useState(false);
   const [viewersList, setViewersList] = useState([]);
+  const [likeLocal, setLikeLocal] = useState(null);
+  const [likeBusy, setLikeBusy] = useState(false);
   const reactionToastTimerRef = useRef(null);
   const replyToastTimerRef = useRef(null);
   /** Не сбрасывать слайд при каждом новом массиве items (архив, refetch) — только при новом «сеансе» просмотра. */
@@ -175,6 +192,10 @@ export default function StoryViewer({
       sessionKeyRef.current = '';
     };
   }, []);
+
+  useEffect(() => {
+    setLikeLocal(null);
+  }, [slide]);
 
   useEffect(() => {
     if (!viewersOpen || !userId || !story.isSelf) return undefined;
@@ -400,6 +421,31 @@ export default function StoryViewer({
     }, 1600);
   }
 
+  async function toggleStoryLike() {
+    if (!userId || !cur?.id || likeBusy) return;
+    setLikeBusy(true);
+    const { ok, data } = await api('/api/stories/like', {
+      method: 'POST',
+      body: { storyId: cur.id },
+      userId,
+    });
+    setLikeBusy(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось поставить лайк');
+      return;
+    }
+    setLikeLocal({
+      storyId: cur.id,
+      liked: Boolean(data.liked),
+      count: Number(data.likeCount) || 0,
+    });
+  }
+
+  const liked =
+    likeLocal?.storyId === cur.id ? likeLocal.liked : Boolean(cur.likedByMe);
+  const likeCount =
+    likeLocal?.storyId === cur.id ? likeLocal.count : Number(cur.likeCount) || 0;
+
   const safeBottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
   const hWin = typeof window !== 'undefined' ? window.innerHeight : 640;
   const sheetOpacity = 1 - Math.min(Math.abs(sheetY) / (hWin * 0.52), 0.22);
@@ -482,24 +528,37 @@ export default function StoryViewer({
               }}
             >
               {it.mediaUrl ? (
-                <img
-                  src={it.mediaUrl}
-                  alt=""
-                  loading="eager"
-                  decoding="async"
-                  draggable={false}
+                <div
+                  className="story-viewer-media-frame"
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    objectPosition: 'center',
-                    display: 'block',
-                    userSelect: 'none',
-                    WebkitUserDrag: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#000',
                   }}
-                />
+                >
+                  <img
+                    src={it.mediaUrl}
+                    alt=""
+                    loading="eager"
+                    decoding="async"
+                    draggable={false}
+                    className="story-viewer-media-img"
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      width: 'auto',
+                      height: 'auto',
+                      objectFit: 'contain',
+                      objectPosition: 'center',
+                      display: 'block',
+                      userSelect: 'none',
+                      WebkitUserDrag: 'none',
+                    }}
+                  />
+                </div>
               ) : null}
               {it.body ? (
                 <div
@@ -603,15 +662,18 @@ export default function StoryViewer({
             display: 'flex',
             alignItems: 'center',
             gap: 10,
-            background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.08) 100%)',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.12) 100%)',
             pointerEvents: 'auto',
           }}
         >
           <UserAvatar src={story.avatarUrl} size={36} borderless />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>{story.label}</div>
-            {archiveEta ? (
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>{archiveEta}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.25 }}>{story.label}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', marginTop: 2 }}>
+              {formatStorySlideTime(cur.createdAt)}
+            </div>
+            {story.isSelf && archiveEta ? (
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>{archiveEta}</div>
             ) : null}
           </div>
           {story.isSelf ? (
@@ -634,6 +696,31 @@ export default function StoryViewer({
               {archiving ? '…' : 'Архивировать'}
             </button>
           ) : null}
+          <button
+            type="button"
+            aria-label="Закрыть"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose();
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{
+              flexShrink: 0,
+              width: 40,
+              height: 40,
+              marginRight: -4,
+              border: 'none',
+              borderRadius: 10,
+              background: 'transparent',
+              color: '#fff',
+              fontSize: 22,
+              lineHeight: 1,
+              cursor: 'pointer',
+              opacity: 0.92,
+            }}
+          >
+            ×
+          </button>
         </div>
       </div>
 
@@ -735,26 +822,6 @@ export default function StoryViewer({
               padding: '10px 12px',
             }}
           >
-            <button
-              type="button"
-              aria-expanded={reactionBarOpen}
-              aria-label="Реакции"
-              onClick={() => setReactionBarOpen((v) => !v)}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: '50%',
-                border: '1px solid rgba(255,255,255,0.25)',
-                background: 'rgba(255,255,255,0.08)',
-                fontSize: 22,
-                cursor: 'pointer',
-                color: 'inherit',
-                flexShrink: 0,
-              }}
-              title="Реакции"
-            >
-              ☺
-            </button>
             <input
               type="text"
               className="story-viewer-reply-input"
@@ -766,15 +833,15 @@ export default function StoryViewer({
                   void sendReply();
                 }
               }}
-              placeholder="Ответить…"
+              placeholder="Ответить сообщением…"
               maxLength={4000}
               style={{
                 flex: 1,
                 minWidth: 0,
-                padding: '10px 12px',
-                borderRadius: 20,
-                border: '1px solid rgba(255,255,255,0.18)',
-                background: 'rgba(255,255,255,0.06)',
+                padding: '11px 14px',
+                borderRadius: 22,
+                border: '1px solid rgba(255,255,255,0.14)',
+                background: 'rgba(255,255,255,0.07)',
                 color: 'inherit',
                 fontSize: 16,
                 outline: 'none',
@@ -782,22 +849,76 @@ export default function StoryViewer({
             />
             <button
               type="button"
-              disabled={replyBusy || !replyText.trim()}
-              onClick={() => void sendReply()}
+              aria-pressed={liked}
+              aria-label={liked ? 'Убрать лайк' : 'Лайкнуть историю'}
+              disabled={likeBusy}
+              onClick={() => void toggleStoryLike()}
               style={{
+                position: 'relative',
+                width: 46,
+                height: 46,
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.22)',
+                background: liked ? 'rgba(255,59,92,0.22)' : 'rgba(255,255,255,0.06)',
+                cursor: likeBusy ? 'default' : 'pointer',
+                color: liked ? '#ff5a7a' : 'rgba(255,255,255,0.92)',
                 flexShrink: 0,
-                padding: '10px 14px',
-                borderRadius: 20,
-                border: 'none',
-                background: 'var(--accent)',
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: 14,
-                cursor: replyBusy || !replyText.trim() ? 'default' : 'pointer',
-                opacity: replyBusy || !replyText.trim() ? 0.45 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: likeBusy ? 0.65 : 1,
               }}
+              title="Лайк"
             >
-              {replyBusy ? '…' : 'Отпр.'}
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden>
+                <path
+                  fill={liked ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  strokeWidth="1.65"
+                  strokeLinejoin="round"
+                  d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                />
+              </svg>
+              {likeCount > 0 ? (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -2,
+                    minWidth: 16,
+                    height: 16,
+                    padding: '0 4px',
+                    borderRadius: 8,
+                    background: 'rgba(0,0,0,0.75)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    lineHeight: '16px',
+                    color: '#fff',
+                  }}
+                >
+                  {likeCount > 99 ? '99+' : likeCount}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              aria-expanded={reactionBarOpen}
+              aria-label="Реакции"
+              onClick={() => setReactionBarOpen((v) => !v)}
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: '50%',
+                border: '1px solid rgba(255,255,255,0.25)',
+                background: reactionBarOpen ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.08)',
+                fontSize: 22,
+                cursor: 'pointer',
+                color: 'inherit',
+                flexShrink: 0,
+              }}
+              title="Реакции"
+            >
+              ☺
             </button>
           </div>
           <p

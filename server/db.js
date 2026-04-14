@@ -623,6 +623,20 @@ function migrate(database) {
     setSchemaVersion(database, 29);
     ver = 29;
   }
+
+  if (ver < 30) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS story_likes (
+        story_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (story_id, user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_story_likes_story ON story_likes(story_id);
+    `);
+    setSchemaVersion(database, 30);
+    ver = 30;
+  }
 }
 
 export function getDb() {
