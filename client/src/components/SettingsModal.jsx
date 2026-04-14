@@ -124,7 +124,7 @@ export default function SettingsModal({
                 Тестовый чат
               </button>
               <p className="muted" style={{ margin: '8px 0 0', fontSize: 10, lineHeight: 1.4 }}>
-                Новый интерфейс и логика: диалог с собой (тот же поток, что «Избранное»).
+                Полный функционал чата в потоке «Избранное» (с собой): можно менять заголовок и дальше выводить отдельный UI.
               </p>
             </div>
           ) : null}

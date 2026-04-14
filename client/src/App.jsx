@@ -963,9 +963,11 @@ export default function App() {
             <TestChatScreen
               userId={user.id}
               userNickname={user.nickname}
+              userAvatarUrl={user.avatarUrl}
               lastEvent={lastEvent}
               onClose={() => setOpenTestChat(false)}
               onAfterChange={refreshSocial}
+              onOpenProfileByUserId={(id) => setPeerProfileUserId(id)}
             />
           </Suspense>,
           document.body,

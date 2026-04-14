@@ -80,6 +80,12 @@ export default function DirectChatScreen({
   canMessage = true,
   friendsActive = true,
   isSavedMessages = false,
+  /** При isSavedMessages: подпись вместо «Избранное» (напр. тестовый чат). */
+  savedMessagesTitleOverride = null,
+  /** Доп. строка под заголовком в режиме «Избранное». */
+  savedMessagesSubtitleOverride = null,
+  /** Разрешить тап по шапке/аватару, чтобы открыть свой профиль (тестовый режим). */
+  savedMessagesAllowOpenProfile = false,
 }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -875,6 +881,11 @@ export default function DirectChatScreen({
         )
       : null;
 
+  const savedProfileOpen =
+    isSavedMessages === true && savedMessagesAllowOpenProfile === true && typeof onOpenPeerProfile === 'function';
+  const peerHeaderOpen = !isSavedMessages && peerUserId && onOpenPeerProfile;
+  const headerProfileClickable = Boolean(peerHeaderOpen || savedProfileOpen);
+
   const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
 
   useLayoutEffect(() => {
@@ -894,7 +905,10 @@ export default function DirectChatScreen({
         </button>
         <button
           type="button"
-          onClick={() => peerUserId && onOpenPeerProfile?.()}
+          onClick={() => {
+            if (peerHeaderOpen) onOpenPeerProfile?.();
+            else if (savedProfileOpen) onOpenPeerProfile?.();
+          }}
           style={{
             flex: 1,
             minWidth: 0,
@@ -903,15 +917,30 @@ export default function DirectChatScreen({
             border: 'none',
             color: 'inherit',
             padding: '4px 0',
-            cursor: peerUserId && onOpenPeerProfile ? 'pointer' : 'default',
+            cursor: headerProfileClickable ? 'pointer' : 'default',
           }}
-          disabled={!peerUserId || !onOpenPeerProfile}
+          disabled={!headerProfileClickable}
         >
           <div style={{ minWidth: 0 }}>
             {isSavedMessages ? (
-              <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                Избранное
-              </div>
+              <>
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {savedMessagesTitleOverride ?? 'Избранное'}
+                </div>
+                {savedMessagesSubtitleOverride ? (
+                  <div className="muted" style={{ fontSize: 11, marginTop: 2, lineHeight: 1.25 }}>
+                    {savedMessagesSubtitleOverride}
+                  </div>
+                ) : null}
+              </>
             ) : (() => {
                 const full = [peerFirstName, peerLastName].filter(Boolean).join(' ').trim();
                 if (full) {
@@ -960,10 +989,8 @@ export default function DirectChatScreen({
           src={peerAvatarUrl}
           size={40}
           presenceOnline={typeof peerOnline === 'boolean' ? peerOnline : undefined}
-          onOpen={
-            !isSavedMessages && peerUserId && onOpenPeerProfile ? () => onOpenPeerProfile() : undefined
-          }
-          ariaLabel="Профиль собеседника"
+          onOpen={headerProfileClickable ? () => onOpenPeerProfile() : undefined}
+          ariaLabel={isSavedMessages ? 'Профиль' : 'Профиль собеседника'}
         />
           </header>
         }
