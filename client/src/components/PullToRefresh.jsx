@@ -8,7 +8,7 @@ const RESISTANCE = 0.42;
  * Потянуть вниз в верхней точке списка — обновить данные (как в ленте мессенджеров).
  * Touch-события вешаются на прокручиваемый узел; горизонтальный жест отдаём свайпам (истории и т.д.).
  */
-export default function PullToRefresh({ children, onRefresh, navKey }) {
+export default function PullToRefresh({ children, onRefresh, navKey, disabled = false }) {
   const scrollRef = useRef(null);
   const pullRef = useRef(0);
   const [pull, setPull] = useState(0);
@@ -24,7 +24,7 @@ export default function PullToRefresh({ children, onRefresh, navKey }) {
 
   const touchStart = useCallback(
     (e) => {
-      if (refreshing) return;
+      if (disabled || refreshing) return;
       const el = scrollRef.current;
       if (!el || el.scrollTop > 2) {
         armedRef.current = false;
@@ -35,12 +35,12 @@ export default function PullToRefresh({ children, onRefresh, navKey }) {
       startRef.current = { x: t.clientX, y: t.clientY };
       armedRef.current = true;
     },
-    [refreshing],
+    [disabled, refreshing],
   );
 
   const touchMove = useCallback(
     (e) => {
-      if (!armedRef.current || refreshing) return;
+      if (disabled || !armedRef.current || refreshing) return;
       const el = scrollRef.current;
       if (!el || el.scrollTop > 2) {
         armedRef.current = false;
@@ -62,10 +62,11 @@ export default function PullToRefresh({ children, onRefresh, navKey }) {
       const p = Math.min(MAX_PULL, dy * RESISTANCE);
       setPullBoth(p);
     },
-    [refreshing, setPullBoth],
+    [disabled, refreshing, setPullBoth],
   );
 
   const touchEnd = useCallback(async () => {
+    if (disabled) return;
     startRef.current = null;
     const wasArmed = armedRef.current;
     armedRef.current = false;
@@ -83,9 +84,10 @@ export default function PullToRefresh({ children, onRefresh, navKey }) {
     } else {
       setPullBoth(0);
     }
-  }, [refreshing, onRefresh, setPullBoth]);
+  }, [disabled, refreshing, onRefresh, setPullBoth]);
 
   useEffect(() => {
+    if (disabled) return undefined;
     const el = scrollRef.current;
     if (!el) return undefined;
     el.addEventListener('touchstart', touchStart, { passive: true });
@@ -101,14 +103,14 @@ export default function PullToRefresh({ children, onRefresh, navKey }) {
       el.removeEventListener('touchend', end);
       el.removeEventListener('touchcancel', end);
     };
-  }, [touchStart, touchMove, touchEnd]);
+  }, [disabled, touchStart, touchMove, touchEnd]);
 
   useEffect(() => {
     setPullBoth(0);
     setRefreshing(false);
   }, [navKey, setPullBoth]);
 
-  const indicatorH = refreshing ? 40 : pull;
+  const indicatorH = disabled ? 0 : refreshing ? 40 : pull;
 
   return (
     <div className="pull-to-refresh-root">
@@ -125,7 +127,7 @@ export default function PullToRefresh({ children, onRefresh, navKey }) {
           overflow: 'hidden',
         }}
       >
-        {(pull > 6 || refreshing) && (
+        {!disabled && (pull > 6 || refreshing) && (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {refreshing ? 'Обновление…' : pull >= THRESHOLD ? 'Отпустите для обновления' : 'Потяните для обновления'}
           </span>

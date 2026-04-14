@@ -819,7 +819,7 @@ export default function App() {
       ) : null}
 
       {showMainChrome ? (
-        <PullToRefresh navKey={nav} onRefresh={refreshMainTab}>
+        <PullToRefresh navKey={nav} onRefresh={refreshMainTab} disabled={nav === 'chats'}>
           {nav === 'home' && (
             <Suspense fallback={<AppChunkFallback label="Загрузка ленты…" />}>
               <StoriesBar
