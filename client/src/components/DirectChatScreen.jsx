@@ -24,6 +24,7 @@ import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping
 import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
+import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
 
 const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 
@@ -32,15 +33,6 @@ const MIN_MS = 400;
 
 /** После загрузки истории не доверяем gap; короткое окно — без лишних скроллов и дёрганий. */
 const POST_LOAD_STICK_MS = 320;
-
-/** Надёжный скролл к последним сообщениям (scrollHeight без clientHeight даёт лишнее в некоторых браузерах). */
-function scrollTimelineToBottom(el) {
-  if (!el) return;
-  const max = el.scrollHeight - el.clientHeight;
-  if (max <= 0) return;
-  if (Math.abs(el.scrollTop - max) < 2) return;
-  el.scrollTop = max;
-}
 
 /** Лента «прижата» к низу при малом числе сообщений — иначе жест и колесо ощущаются перевёрнутыми. */
 const CHAT_TIMELINE_STACK_STYLE = {
@@ -865,7 +857,7 @@ export default function DirectChatScreen({
 
   /** Скролл ленты без scrollIntoView — на iOS scrollIntoView уводит фокус с поля и закрывает клавиатуру. */
   const scrollMessagesToBottomImmediate = useCallback(() => {
-    scrollTimelineToBottom(scrollRef.current);
+    scrollChatTimelineToBottom(scrollRef.current);
   }, []);
 
   /** Для ResizeObserver / visualViewport: только если «прилипли» к низу; не дёргать при чтении истории. */
@@ -954,7 +946,7 @@ export default function DirectChatScreen({
       stickToBottomRef.current = true;
       setShowScrollDownFab(false);
       const gapStick = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (gapStick > 6) scrollTimelineToBottom(el);
+      if (gapStick > 6) scrollChatTimelineToBottom(el);
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -1417,10 +1409,7 @@ export default function DirectChatScreen({
   const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
 
   useLayoutEffect(() => {
-    const el = composerInputRef.current;
-    if (!el || el.tagName !== 'TEXTAREA') return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 40), 130)}px`;
+    syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 130, minHeightPx: 40 });
   }, [text]);
 
   return (

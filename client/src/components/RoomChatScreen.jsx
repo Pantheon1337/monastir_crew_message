@@ -21,6 +21,7 @@ import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
+import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
 
 const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 
@@ -28,14 +29,6 @@ const MAX_MS = 15000;
 const MIN_MS = 400;
 
 const POST_LOAD_STICK_MS = 320;
-
-function scrollTimelineToBottom(el) {
-  if (!el) return;
-  const max = el.scrollHeight - el.clientHeight;
-  if (max <= 0) return;
-  if (Math.abs(el.scrollTop - max) < 2) return;
-  el.scrollTop = max;
-}
 
 const CHAT_TIMELINE_STACK_STYLE = {
   flex: '1 1 auto',
@@ -759,7 +752,7 @@ export default function RoomChatScreen({
 
   /** Скролл ленты без scrollIntoView — на iOS scrollIntoView уводит фокус с поля и закрывает клавиатуру. */
   const scrollMessagesToBottomImmediate = useCallback(() => {
-    scrollTimelineToBottom(scrollRef.current);
+    scrollChatTimelineToBottom(scrollRef.current);
   }, []);
 
   /** Для ResizeObserver / visualViewport: только если «прилипли» к низу; не дёргать при чтении истории. */
@@ -828,7 +821,7 @@ export default function RoomChatScreen({
       stickToBottomRef.current = true;
       setShowScrollDownFab(false);
       const gapStick = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (gapStick > 6) scrollTimelineToBottom(el);
+      if (gapStick > 6) scrollChatTimelineToBottom(el);
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -1266,10 +1259,7 @@ export default function RoomChatScreen({
   const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
 
   useLayoutEffect(() => {
-    const el = composerInputRef.current;
-    if (!el || el.tagName !== 'TEXTAREA') return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, 40), 130)}px`;
+    syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 130, minHeightPx: 40 });
   }, [text]);
 
   return (
