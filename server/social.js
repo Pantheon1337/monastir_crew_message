@@ -1143,7 +1143,8 @@ export function listStoryViewersForAuthor(storyId, authorId) {
     .prepare(
       `SELECT v.viewer_id AS viewerId, v.viewed_at AS viewedAt,
         u.nickname AS authorNickname, u.first_name AS firstName, u.last_name AS lastName,
-        u.avatar_path AS avatarPath, u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji
+        u.avatar_path AS avatarPath, u.display_role AS authorStoredRole, u.display_role_emoji AS authorEmoji,
+        EXISTS(SELECT 1 FROM story_likes sl WHERE sl.story_id = v.story_id AND sl.user_id = v.viewer_id) AS likedStory
        FROM story_views v
        JOIN users u ON u.id = v.viewer_id
        WHERE v.story_id = ? AND v.viewer_id != ?
@@ -1160,6 +1161,7 @@ export function listStoryViewersForAuthor(storyId, authorId) {
       avatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
       authorBadge: computeEffectiveDisplayRole(r.authorNickname, r.authorStoredRole),
       authorAffiliationEmoji: effectiveAffiliationEmoji(r.authorNickname, r.authorStoredRole, r.authorEmoji),
+      likedStory: Number(r.likedStory) === 1,
     })),
   };
 }
