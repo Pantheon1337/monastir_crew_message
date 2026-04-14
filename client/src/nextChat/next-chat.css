@@ -1,56 +1,199 @@
 /**
- * Оболочка «нового» чата: те же узлы DOM, что у DirectChatScreen,
- * стили переопределяются по контексту .next-chat-root (без правок разметки старого экрана).
+ * Тестовый чат: визуал как в test/1.html (Telegram‑стиль, тёмная карточка).
+ * Область действия — .next-chat-root--tg-html.
  */
 
-.next-chat-root {
-  position: relative;
+.next-chat-root--tg-html {
+  --tg-html-bg: #0e0e10;
+  --tg-html-header: #1f1f23;
+  --tg-html-header-border: #2c2c2e;
+  --tg-html-bubble-in: #2c2c2e;
+  --tg-html-bubble-out: #248bf5;
+  --tg-html-meta: #8e8e93;
+  --tg-html-input-bar: #1c1c1e;
+  --tg-html-input-pill: #2c2c2e;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Мягкий фон за лентой (поверх обоев из ChatScaffold) */
-.next-chat-root .chat-scaffold-timeline {
-  background: linear-gradient(
-    180deg,
-    rgba(20, 22, 28, 0.35) 0%,
-    rgba(12, 14, 18, 0.2) 40%,
-    transparent 100%
-  );
+/* Карточка по центру как в 1.html */
+.next-chat-root--tg-html .chat-scaffold {
+  max-width: 480px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  background: var(--tg-html-bg);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
 }
 
-.next-chat-root .chat-screen-header {
-  backdrop-filter: saturate(140%) blur(14px);
-  -webkit-backdrop-filter: saturate(140%) blur(14px);
-  background: rgba(18, 20, 26, 0.72) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+/* Лента */
+.next-chat-root--tg-html .chat-scaffold-timeline {
+  background: var(--tg-html-bg) !important;
+  padding: 16px 12px 20px;
+  scroll-behavior: smooth;
 }
 
-.next-chat-root .chat-composer-bar {
-  background: rgba(14, 16, 22, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
+.next-chat-root--tg-html .chat-scaffold-timeline::-webkit-scrollbar {
+  width: 4px;
+}
+.next-chat-root--tg-html .chat-scaffold-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+.next-chat-root--tg-html .chat-scaffold-timeline::-webkit-scrollbar-thumb {
+  background: #3a3a3c;
+  border-radius: 10px;
 }
 
-.next-chat-root .chat-composer-field-wrap .chat-composer-textarea,
-.next-chat-root .text-input.chat-composer-textarea {
-  border-radius: 22px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 10px 14px;
+/* Стек сообщений: как .messages-area — колонка с зазором */
+.next-chat-root--tg-html .chat-scaffold-timeline > div {
+  gap: 12px !important;
 }
 
-.next-chat-root .chat-send-btn {
-  border-radius: 50%;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+/* Шапка */
+.next-chat-root--tg-html .test-chat-tg-header {
+  padding: 14px 16px !important;
+  background: var(--tg-html-header) !important;
+  border-bottom: 0.5px solid var(--tg-html-header-border) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: none !important;
+  align-items: flex-start;
 }
 
-.next-chat-root .icon-btn {
-  border-radius: 12px;
+.next-chat-root--tg-html .test-chat-tg-back {
+  background: transparent !important;
+  border: none !important;
+  color: #8e8e93 !important;
+  font-size: 26px !important;
+  line-height: 1 !important;
 }
 
-/* FAB «вниз» — чуть мягче */
-.next-chat-root .chat-scroll-down-fab {
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+.next-chat-root--tg-html .test-chat-tg-header button[style*='textAlign'] > div > div:first-child {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.3px !important;
+  color: #ffffff !important;
+}
+
+.next-chat-root--tg-html .test-chat-tg-header .muted {
+  font-size: 13px !important;
+  color: var(--tg-html-meta) !important;
+  margin-top: 2px !important;
+}
+
+/* Ряд сообщения: не шире 85% */
+.next-chat-root--tg-html .chat-message-row {
+  max-width: 85%;
+}
+.next-chat-root--tg-html .chat-message-row--out {
+  align-self: flex-end;
+}
+.next-chat-root--tg-html .chat-message-row--in {
+  align-self: flex-start;
+}
+
+/* Пузыри */
+.next-chat-root--tg-html {
+  --chat-bubble-incoming: var(--tg-html-bubble-in);
+  --chat-bubble-outgoing: var(--tg-html-bubble-out);
+  --chat-bubble-text: #e9e9ef;
+  --chat-bubble-time: var(--tg-html-meta);
+  --chat-bubble-meta-name: #6ab7ff;
+  --chat-bubble-reply-border: rgba(255, 255, 255, 0.2);
+  --chat-bubble-reply-bg: rgba(0, 0, 0, 0.2);
+  --chat-bubble-elevation: 0 1px 0.5px rgba(0, 0, 0, 0.1);
+  --chat-bubble-padding: 10px 14px 8px;
+  --chat-bubble-max: min(min(85vw, 100% - 24px), 400px);
+}
+
+.next-chat-root--tg-html .chat-message-row--out .chat-tg-bubble.chat-message-bubble--solid {
+  color: #ffffff !important;
+  border-radius: 18px !important;
+  border-bottom-right-radius: 4px !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+  letter-spacing: -0.2px !important;
+}
+
+.next-chat-root--tg-html .chat-message-row--in .chat-tg-bubble.chat-message-bubble--solid {
+  color: #e9e9ef !important;
+  border-radius: 18px !important;
+  border-bottom-left-radius: 4px !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+  letter-spacing: -0.2px !important;
+}
+
+.next-chat-root--tg-html .chat-bubble-meta-row {
+  margin-top: 4px !important;
+  font-size: 11px !important;
+  color: var(--tg-html-meta) !important;
+  gap: 6px !important;
+}
+
+.next-chat-root--tg-html .chat-message-row--out .chat-bubble-meta-row {
+  justify-content: flex-end !important;
+}
+
+.next-chat-root--tg-html .chat-message-row--out .chat-bubble-time {
+  color: rgba(255, 255, 255, 0.82) !important;
+}
+
+.next-chat-root--tg-html .chat-read-receipt {
+  opacity: 0.9;
+}
+
+/* Поле ввода как в 1.html */
+.next-chat-root--tg-html .test-chat-tg-composer {
+  background: var(--tg-html-input-bar) !important;
+  padding: 10px 14px 14px !important;
+  padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+  border-top: 0.5px solid var(--tg-html-header-border) !important;
+  backdrop-filter: none !important;
+}
+
+.next-chat-root--tg-html .test-chat-tg-excluded {
+  display: none !important;
+}
+
+.next-chat-root--tg-html .test-chat-tg-field-wrap {
+  flex: 1;
+  background: var(--tg-html-input-pill);
+  border-radius: 24px;
+  padding: 6px 12px;
+  min-width: 0;
+}
+
+.next-chat-root--tg-html .test-chat-tg-field-wrap .chat-composer-textarea,
+.next-chat-root--tg-html .test-chat-tg-field-wrap .text-input.chat-composer-textarea {
+  border: none !important;
+  background: transparent !important;
+  border-radius: 0 !important;
+  padding: 4px 0 !important;
+  font-size: 16px !important;
+  line-height: 1.4 !important;
+  color: #ffffff !important;
+  max-height: 100px;
+}
+
+.next-chat-root--tg-html .test-chat-tg-field-wrap .chat-composer-textarea::placeholder {
+  color: var(--tg-html-meta) !important;
+}
+
+.next-chat-root--tg-html .test-chat-tg-send {
+  background: #248bf5 !important;
+  color: #fff !important;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 30px !important;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.next-chat-root--tg-html .test-chat-tg-send:active:not(:disabled) {
+  opacity: 0.85;
+  transform: scale(0.96);
+}
+
+/* FAB внизу */
+.next-chat-root--tg-html .chat-scroll-down-fab {
+  right: max(16px, env(safe-area-inset-right));
 }

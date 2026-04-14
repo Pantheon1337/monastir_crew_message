@@ -20,7 +20,6 @@ import { messageGroupFlags } from '../chat/messageGrouping.js';
 import { useDirectChatMessageChannel } from './hooks/useDirectChatMessageChannel.js';
 import './next-chat.css';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
-import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
 import {
   CHAT_TIMELINE_STACK_STYLE,
@@ -694,8 +693,6 @@ export default function TestDirectChatScreen({
     longPressArmedRef.current = false;
   }
 
-  const hasTypedText = Boolean(text.trim());
-
   const mentionCandidates = useMemo(() => {
     if (isSavedMessages || !peerNickname) return [];
     return [{ nickname: peerNickname, label: 'Собеседник' }];
@@ -735,21 +732,22 @@ export default function TestDirectChatScreen({
   const peerHeaderOpen = !isSavedMessages && peerUserId && onOpenPeerProfile;
   const headerProfileClickable = Boolean(peerHeaderOpen || savedProfileOpen);
 
-  const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
+  /** Фон ленты как в test/1.html (без обоев профиля). */
+  const timelineSurfaceStyle = useMemo(() => ({ background: '#0e0e10' }), []);
 
   useLayoutEffect(() => {
     syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 100, minHeightPx: 40 });
   }, [text]);
 
   return (
-    <div className="next-chat-root">
+    <div className="next-chat-root next-chat-root--tg-html">
       <ChatScaffold
         vvRect={vvRect}
         zIndex={80}
-        timelineSurfaceStyle={timelineWallpaperStyle}
+        timelineSurfaceStyle={timelineSurfaceStyle}
         top={
-          <header className="chat-screen-header">
-        <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
+          <header className="chat-screen-header test-chat-tg-header">
+        <button type="button" className="icon-btn test-chat-tg-back" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
           ‹
         </button>
         <button
@@ -947,7 +945,7 @@ export default function TestDirectChatScreen({
           <div
             role="group"
             aria-label="Поле сообщения"
-            className="chat-composer-bar"
+            className="chat-composer-bar test-chat-tg-composer"
             style={{ flexDirection: 'column', alignItems: 'stretch' }}
           >
             {editingMessageId ? (
@@ -1011,7 +1009,7 @@ export default function TestDirectChatScreen({
                 </button>
               </div>
             ) : null}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, width: '100%' }}>
+            <div className="test-chat-tg-input-row" style={{ display: 'flex', alignItems: 'flex-end', gap: 8, width: '100%' }}>
             <input
               ref={chatFileInputRef}
               type="file"
@@ -1025,7 +1023,7 @@ export default function TestDirectChatScreen({
             />
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn test-chat-tg-excluded"
               disabled={canMessage === false || mediaUploading || voiceRecording || videoModal}
               aria-label="Прикрепить фото или файл"
               onClick={() => chatFileInputRef.current?.click()}
@@ -1045,7 +1043,7 @@ export default function TestDirectChatScreen({
             </button>
             <button
               type="button"
-              className="icon-btn"
+              className="icon-btn test-chat-tg-excluded"
               disabled={canMessage === false || mediaUploading || voiceRecording || videoModal}
               aria-label="Стикеры и эмодзи"
               onClick={() => setStickerPanelOpen((v) => !v)}
@@ -1059,7 +1057,7 @@ export default function TestDirectChatScreen({
             >
               <ChatComposerIcon name="stickers" fallback="😀" alt="" size={22} />
             </button>
-            <div className="chat-composer-field-wrap">
+            <div className="chat-composer-field-wrap test-chat-tg-field-wrap">
               <MentionAutocomplete
                 candidates={mentionCandidates}
                 text={text}
@@ -1072,7 +1070,7 @@ export default function TestDirectChatScreen({
                 lang="ru"
                 style={{ width: '100%' }}
                 rows={1}
-                placeholder={canMessage === false ? 'Отправка недоступна' : 'Сообщение…'}
+                placeholder={canMessage === false ? 'Отправка недоступна' : 'Сообщение...'}
                 value={text}
                 readOnly={canMessage === false}
                 enterKeyHint="send"
@@ -1103,23 +1101,27 @@ export default function TestDirectChatScreen({
                 maxLength={4000}
               />
             </div>
-        {hasTypedText ? (
-          <button
+        <button
             type="button"
-            className="chat-send-btn"
+            className="chat-send-btn test-chat-tg-send"
             aria-label="Отправить"
-            disabled={canMessage === false}
+            disabled={
+              canMessage === false ||
+              voiceRecording ||
+              Boolean(videoModal) ||
+              (!text.trim() && !editingMessageId)
+            }
             onMouseDown={(e) => e.preventDefault()}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => void sendTextMessage()}
             style={{
-              width: 44,
-              height: 44,
+              width: 40,
+              height: 40,
               flexShrink: 0,
               borderRadius: '50%',
               border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--bg)',
+              background: '#248bf5',
+              color: '#fff',
               fontSize: 20,
               lineHeight: 1,
               display: 'flex',
@@ -1128,14 +1130,14 @@ export default function TestDirectChatScreen({
               cursor: 'pointer',
               padding: 0,
               touchAction: 'manipulation',
+              opacity: !text.trim() && !editingMessageId ? 0.45 : 1,
             }}
           >
             ➤
           </button>
-        ) : (
-          <button
+        <button
             type="button"
-            className="chat-media-record-btn"
+            className="chat-media-record-btn test-chat-tg-excluded"
             disabled={canMessage === false}
             aria-label={mediaMode === 'video' ? 'Видеокружок. Тап — переключить на аудио. Удержать — записать.' : 'Голос. Тап — переключить на кружок. Удержать — записать.'}
             onPointerDown={onMediaButtonPointerDown}
@@ -1170,7 +1172,6 @@ export default function TestDirectChatScreen({
               size={mediaMode === 'video' ? 22 : 21}
             />
           </button>
-        )}
             </div>
           </div>
         }

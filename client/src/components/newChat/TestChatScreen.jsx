@@ -93,7 +93,7 @@ export default function TestChatScreen({
       chatId={chatId}
       isSavedMessages
       savedMessagesTitleOverride="Тестовый чат"
-      savedMessagesSubtitleOverride="Тот же функционал, что «Избранное» — медиа, реакции, ответ, правки"
+      savedMessagesSubtitleOverride="Макет как test/1.html — тёмная карточка, пузыри, поле ввода"
       savedMessagesAllowOpenProfile
       peerLabel="Я"
       peerNickname={userNickname}
