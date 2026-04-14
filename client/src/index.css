@@ -1630,8 +1630,8 @@ video.chat-video-note {
 }
 
 /*
- * Пузырь: стикеры/медиа — по содержимому; текст (.chat-message-bubble--solid) — на всю ширину
- * колонки до --chat-bubble-max (как Telegram: область переноса = ширина чата, не узкий shrink).
+ * Пузырь: стикеры/медиа — по содержимому; текстовый (.chat-message-bubble--solid) — по ширине текста
+ * до --chat-bubble-max (короткие сообщения узкие, длинные растягиваются и переносятся внутри max).
  */
 .chat-tg-bubble {
   display: inline-block;
@@ -1662,10 +1662,10 @@ video.chat-video-note {
   text-rendering: optimizeLegibility;
 }
 
-/* Текстовый пузырь: полная ширина полосы сообщения (до max), исходящие — прижаты вправо */
+/* Текстовый пузырь: ширина по содержимому (до max); исходящие — прижаты вправо за счёт flex ряда */
 .chat-tg-bubble.chat-message-bubble--solid {
-  display: block;
-  width: min(var(--chat-bubble-max), 100%);
+  display: inline-block;
+  width: fit-content;
   max-width: min(var(--chat-bubble-max), 100%);
 }
 
