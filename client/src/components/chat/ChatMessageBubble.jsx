@@ -84,17 +84,23 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
     );
   } else if (kind === 'sticker' && m.mediaUrl) {
     inner = (
-      <div onPointerDown={(e) => e.stopPropagation()} style={{ lineHeight: 0 }}>
+      <div
+        className="chat-sticker-slot"
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{ lineHeight: 0 }}
+      >
         <img
           src={m.mediaUrl}
           alt={m.body?.trim() ? m.body : ''}
           draggable={false}
           loading="lazy"
           decoding="async"
+          width={180}
+          height={180}
           style={{
             display: 'block',
-            maxWidth: 180,
-            maxHeight: 180,
+            maxWidth: '100%',
+            maxHeight: '100%',
             width: 'auto',
             height: 'auto',
             objectFit: 'contain',
@@ -106,21 +112,24 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   } else if (kind === 'image' && m.mediaUrl) {
     inner = (
       <div style={{ minWidth: 0, maxWidth: '100%' }}>
-        <img
-          className="chat-media-inline-img"
-          src={m.mediaUrl}
-          alt={m.body?.trim() ? m.body : 'Фото'}
-          title="Открыть полностью"
-          loading="lazy"
-          decoding="async"
-          sizes="280px"
-          style={{ display: 'block', verticalAlign: 'top' }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenImagePreview?.(m.mediaUrl);
-          }}
-        />
+        <div className="chat-media-inline-img-box">
+          <img
+            className="chat-media-inline-img"
+            src={m.mediaUrl}
+            alt={m.body?.trim() ? m.body : 'Фото'}
+            title="Открыть полностью"
+            loading="lazy"
+            decoding="async"
+            width={280}
+            height={210}
+            sizes="280px"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenImagePreview?.(m.mediaUrl);
+            }}
+          />
+        </div>
         {m.body?.trim() ? (
           <div className="chat-image-caption">
             <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />
@@ -131,12 +140,18 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
   } else if (kind === 'file' && m.mediaUrl && looksLikeVideoFileName(m.body)) {
     const cap = m.body?.trim() || '';
     inner = (
-      <div style={{ minWidth: 0, maxWidth: 'var(--chat-bubble-max)' }} onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        className="chat-video-file-wrap"
+        style={{ minWidth: 0, maxWidth: 'var(--chat-bubble-max)' }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <video
           src={m.mediaUrl}
           controls
           playsInline
           preload="metadata"
+          width={1280}
+          height={720}
           style={{ width: '100%', maxHeight: 360, borderRadius: 12, display: 'block', background: '#000' }}
         />
         {cap ? (
