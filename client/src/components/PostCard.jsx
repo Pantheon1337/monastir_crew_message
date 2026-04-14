@@ -34,6 +34,19 @@ function formatPostTimeCompact(ts) {
   return d.toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+/** Короткое время у комментария (относительное + дата). */
+function formatCommentTime(ts) {
+  if (ts == null) return '';
+  const t = Number(ts);
+  const d = new Date(t);
+  const now = Date.now();
+  const diff = now - t;
+  if (diff < 45_000) return 'только что';
+  if (diff < 3_600_000) return `${Math.max(1, Math.floor(diff / 60_000))} мин`;
+  if (diff < 86_400_000) return `${Math.max(1, Math.floor(diff / 3_600_000))} ч`;
+  return formatPostTimeCompact(ts);
+}
+
 function commentCountRu(n) {
   if (n <= 0) return 'Комментарии';
   const mod10 = n % 10;
@@ -678,45 +691,74 @@ export default function PostCard({
         <div className="feed-post-comments-block">
           <button
             type="button"
-            className="feed-post-comments-strip"
+            className={`feed-post-comments-strip${commentsOpen ? ' feed-post-comments-strip--open' : ''}`}
             onClick={() => setCommentsOpen((v) => !v)}
           >
             <span className="feed-post-comments-strip__label">
+              <span className="feed-post-comments-strip__icon" aria-hidden>
+                💬
+              </span>
               {commentsOpen ? 'Скрыть комментарии' : commentCountRu(commentCount)}
             </span>
-            <span className="feed-post-comments-strip__chev" aria-hidden>
-              ›
-            </span>
+            <span className="feed-post-comments-strip__chev" aria-hidden />
           </button>
           {commentsOpen ? (
             <div className="feed-post-comments-inner">
               {commentsLoading ? (
-                <p className="muted" style={{ fontSize: 12 }}>
-                  Загрузка…
-                </p>
+                <p className="feed-post-comments-loading muted">Загрузка…</p>
               ) : (
-                <ul style={{ margin: '0 0 10px', padding: 0, listStyle: 'none' }}>
+                <ul className="feed-post-comment-list">
                   {comments.map((c) => {
                     const isCommentMine = String(c.authorId) === String(viewerId);
                     return (
-                      <li
-                        key={c.id}
-                        style={{
-                          padding: '8px 0',
-                          borderBottom: '1px solid var(--border)',
-                          fontSize: 13,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4, alignItems: 'center' }}>
-                          <span style={{ fontWeight: 600, fontSize: 12 }}>
-                            <NicknameWithBadge nickname={c.authorNickname || 'user'} affiliationEmoji={c.authorAffiliationEmoji} />
-                          </span>
-                          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <li key={c.id} className="feed-post-comment">
+                        <UserAvatar src={c.authorAvatarUrl} size={38} />
+                        <div className="feed-post-comment__main">
+                          <div className="feed-post-comment__header">
+                            <span className="feed-post-comment__author">
+                              <NicknameWithBadge nickname={c.authorNickname || 'user'} affiliationEmoji={c.authorAffiliationEmoji} />
+                            </span>
+                            <time className="feed-post-comment__time" dateTime={c.createdAt != null ? new Date(Number(c.createdAt)).toISOString() : undefined}>
+                              {formatCommentTime(c.createdAt)}
+                            </time>
+                          </div>
+                          {c.parentId && c.parentPreview ? (
+                            <div className="feed-post-comment__reply-to">
+                              <span className="feed-post-comment__reply-to-label">Ответ @{c.parentPreview.authorNickname || 'user'}</span>
+                              <p className="feed-post-comment__reply-to-text">{c.parentPreview.bodySnippet}</p>
+                            </div>
+                          ) : null}
+                          {editingCommentId === c.id ? (
+                            <div className="feed-post-comment__edit">
+                              <textarea
+                                className="text-input feed-post-comment__edit-field"
+                                value={editCommentText}
+                                onChange={(e) => setEditCommentText(e.target.value.slice(0, 4000))}
+                                rows={3}
+                                maxLength={4000}
+                              />
+                              <div className="feed-post-comment__edit-actions">
+                                <button
+                                  type="button"
+                                  className="btn-primary feed-post-comment__edit-save"
+                                  disabled={commentSending}
+                                  onClick={() => void saveCommentEdit(c.id)}
+                                >
+                                  Сохранить
+                                </button>
+                                <button type="button" className="btn-outline feed-post-comment__edit-cancel" onClick={() => setEditingCommentId(null)}>
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="feed-post-comment__body">{c.body}</p>
+                          )}
+                          <div className="feed-post-comment__footer">
                             {viewerId ? (
                               <button
                                 type="button"
-                                className="btn-outline"
-                                style={{ fontSize: 10, padding: '2px 8px', minHeight: 0 }}
+                                className="feed-post-comment__link-btn"
                                 onClick={() =>
                                   setReplyToComment({
                                     id: c.id,
@@ -731,8 +773,8 @@ export default function PostCard({
                               <>
                                 <button
                                   type="button"
-                                  className="icon-btn"
-                                  style={{ width: 26, height: 26, fontSize: 11 }}
+                                  className="feed-post-comment__icon-btn"
+                                  aria-label="Изменить комментарий"
                                   onClick={() => {
                                     setEditingCommentId(c.id);
                                     setEditCommentText(c.body || '');
@@ -742,115 +784,48 @@ export default function PostCard({
                                 </button>
                                 <button
                                   type="button"
-                                  className="icon-btn"
-                                  style={{ width: 26, height: 26, fontSize: 11 }}
+                                  className="feed-post-comment__icon-btn feed-post-comment__icon-btn--danger"
+                                  aria-label="Удалить комментарий"
                                   onClick={() => void deleteComment(c.id)}
                                 >
                                   ✕
                                 </button>
                               </>
                             ) : null}
-                          </span>
+                            {c.editedAt ? <span className="feed-post-comment__edited muted">изменён</span> : null}
+                          </div>
                         </div>
-                        {c.parentId && c.parentPreview ? (
-                          <div
-                            className="muted"
-                            style={{
-                              fontSize: 10,
-                              marginBottom: 6,
-                              padding: '6px 8px',
-                              borderRadius: 6,
-                              background: 'rgba(0,0,0,0.12)',
-                              borderLeft: '3px solid var(--accent)',
-                            }}
-                          >
-                            <div>↩ @{c.parentPreview.authorNickname || 'user'}</div>
-                            <div style={{ marginTop: 2, opacity: 0.95 }}>{c.parentPreview.bodySnippet}</div>
-                          </div>
-                        ) : null}
-                        {editingCommentId === c.id ? (
-                          <div>
-                            <textarea
-                              className="text-input"
-                              value={editCommentText}
-                              onChange={(e) => setEditCommentText(e.target.value.slice(0, 4000))}
-                              rows={2}
-                              style={{
-                                width: '100%',
-                                fontSize: 16,
-                                WebkitUserSelect: 'text',
-                                userSelect: 'text',
-                              }}
-                              maxLength={4000}
-                            />
-                            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                              <button
-                                type="button"
-                                className="btn-primary"
-                                style={{ width: 'auto', fontSize: 12 }}
-                                disabled={commentSending}
-                                onClick={() => void saveCommentEdit(c.id)}
-                              >
-                                OK
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-outline"
-                                style={{ width: 'auto', fontSize: 12 }}
-                                onClick={() => setEditingCommentId(null)}
-                              >
-                                Отмена
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</p>
-                        )}
-                        {c.editedAt ? (
-                          <span className="muted" style={{ fontSize: 10 }}>
-                            изменён
-                          </span>
-                        ) : null}
                       </li>
                     );
                   })}
                 </ul>
               )}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                <textarea
-                  className="text-input"
-                  placeholder={replyToComment ? `Ответ для ${replyToComment.label}…` : 'Написать комментарий…'}
-                  value={commentDraft}
-                  onChange={(e) => setCommentDraft(e.target.value.slice(0, 4000))}
-                  rows={2}
-                  style={{
-                    flex: 1,
-                    fontSize: 16,
-                    resize: 'vertical',
-                    WebkitUserSelect: 'text',
-                    userSelect: 'text',
-                  }}
-                  maxLength={4000}
-                />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-                  {replyToComment ? (
-                    <button
-                      type="button"
-                      className="btn-outline"
-                      style={{ fontSize: 10, padding: '4px 8px' }}
-                      onClick={() => setReplyToComment(null)}
-                    >
-                      Без ответа
+              <div className="feed-post-comment-compose">
+                {replyToComment ? (
+                  <div className="feed-post-comment-compose__reply-bar">
+                    <span className="muted">Ответ {replyToComment.label}</span>
+                    <button type="button" className="feed-post-comment-compose__reply-clear" onClick={() => setReplyToComment(null)}>
+                      Отменить
                     </button>
-                  ) : null}
+                  </div>
+                ) : null}
+                <div className="feed-post-comment-compose__row">
+                  <textarea
+                    className="text-input feed-post-comment-compose__input"
+                    placeholder={replyToComment ? `Сообщение для ${replyToComment.label}…` : 'Написать комментарий…'}
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value.slice(0, 4000))}
+                    rows={2}
+                    maxLength={4000}
+                  />
                   <button
                     type="button"
-                    className="btn-primary"
-                    style={{ width: 'auto', fontSize: 12 }}
+                    className="feed-post-comment-compose__send"
                     disabled={commentSending || !commentDraft.trim()}
+                    aria-label="Отправить комментарий"
                     onClick={() => void sendComment()}
                   >
-                    {commentSending ? '…' : 'Отпр.'}
+                    {commentSending ? '…' : '➤'}
                   </button>
                 </div>
               </div>
