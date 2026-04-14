@@ -33,22 +33,22 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
 }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
-  const shellRef = useRef(null);
+  const rowRef = useRef(null);
 
   /** Галочки: в комнате — для всех исходящих; в личке — если не «Избранное» */
   const showReadReceipt = mine && ((!!roomId && !savedChat) || (!roomId && !savedChat));
 
   useEffect(() => {
-    const el = shellRef.current;
+    const el = rowRef.current;
     if (!el) return;
     const block = (ev) => {
       ev.preventDefault();
     };
-    el.addEventListener('selectstart', block);
-    el.addEventListener('dragstart', block);
+    el.addEventListener('selectstart', block, true);
+    el.addEventListener('dragstart', block, true);
     return () => {
-      el.removeEventListener('selectstart', block);
-      el.removeEventListener('dragstart', block);
+      el.removeEventListener('selectstart', block, true);
+      el.removeEventListener('dragstart', block, true);
     };
   }, []);
 
@@ -192,12 +192,14 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
 
   return (
     <div
+      ref={rowRef}
       id={m.id ? `chat-msg-${m.id}` : undefined}
       className={mine ? 'chat-message-row chat-message-row--out' : 'chat-message-row chat-message-row--in'}
       style={{
         marginBottom: 0,
         userSelect: 'none',
         WebkitUserSelect: 'none',
+        WebkitTouchCallout: 'none',
       }}
     >
       <SwipeToReplyRow
@@ -215,7 +217,6 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
         }}
       >
         <div
-          ref={shellRef}
           lang="ru"
           className={`chat-message-bubble-shell chat-tg-bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
           {...lp}

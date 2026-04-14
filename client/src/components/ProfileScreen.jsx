@@ -6,7 +6,7 @@ import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { AFFILIATION_EMOJI_CHOICES } from '../affiliationConstants.js';
 import { formatPhoneRu } from '../formatPhone.js';
 import { PROFILE_HERO_TINTS, profileHeroTintBg } from '../profileHeroTints.js';
-import { getChatWallpaperRelPath, setChatWallpaperRelPath } from '../chatWallpaper.js';
+import { getChatWallpaperRelPath, setChatWallpaperRelPath, cssUrlForBackground } from '../chatWallpaper.js';
 
 const MAX_ABOUT = 100;
 
@@ -1090,7 +1090,7 @@ export default function ProfileScreen({
                     <div
                       style={{
                         height: 88,
-                        backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url(${mediaPublicUrl(w.url)})`,
+                        backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), ${cssUrlForBackground(mediaPublicUrl(w.url))}`,
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                       }}

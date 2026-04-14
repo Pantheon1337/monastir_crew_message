@@ -1621,6 +1621,11 @@ video.chat-video-note {
   -webkit-touch-callout: none;
 }
 
+.chat-scaffold-timeline ::selection {
+  background: transparent;
+  color: inherit;
+}
+
 /* Сообщения в чате: без выделения всей страницы при удержании */
 .chat-message-bubble-shell {
   -webkit-user-select: none;
@@ -1802,6 +1807,10 @@ video.chat-video-note {
   unicode-bidi: plaintext;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* Время и галочки: нижний правый край пузыря, как в Telegram */
@@ -1882,6 +1891,10 @@ video.chat-video-note {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .chat-message-row {
@@ -1906,6 +1919,10 @@ video.chat-video-note {
   max-width: 100%;
   box-sizing: border-box;
   min-width: 0;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .chat-message-row--in .chat-swipe-reply-inner {

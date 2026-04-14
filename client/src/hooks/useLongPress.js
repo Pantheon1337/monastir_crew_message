@@ -20,6 +20,12 @@ export function useLongPress(onLongPress, { ms = 450, moveTol = 14 } = {}) {
       timerRef.current = window.setTimeout(() => {
         timerRef.current = null;
         startRef.current = null;
+        try {
+          const sel = typeof window !== 'undefined' ? window.getSelection?.() : null;
+          if (sel?.rangeCount) sel.removeAllRanges();
+        } catch {
+          /* ignore */
+        }
         onLongPress(e.clientX, e.clientY);
       }, ms);
     },

@@ -2,6 +2,13 @@ import { mediaPublicUrl } from './api.js';
 
 const PREFIX = 'chatWallpaper';
 
+/** Фрагмент для CSS background-image: корректный url("…") при пробелах, скобках и т.д. в пути */
+export function cssUrlForBackground(href) {
+  if (href == null || href === '') return 'none';
+  const s = String(href);
+  return `url("${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`;
+}
+
 export function getChatWallpaperRelPath(userId) {
   if (userId == null || typeof localStorage === 'undefined') return null;
   const raw = localStorage.getItem(`${PREFIX}:${userId}`);
@@ -30,7 +37,7 @@ export function getChatWallpaperTimelineStyle(userId) {
   const url = mediaPublicUrl(path);
   return {
     backgroundColor: 'var(--chat-timeline-bg)',
-    backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url(${url})`,
+    backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), ${cssUrlForBackground(url)}`,
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
