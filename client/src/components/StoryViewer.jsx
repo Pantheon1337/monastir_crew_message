@@ -5,10 +5,10 @@ import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
 
 const SLIDE_MS = 4800;
-/** Короче и с transitionend — без лишней задержки после свайпа. */
-const STORY_DISMISS_MS = 200;
-const STORY_DISMISS_EASE = 'cubic-bezier(0.33, 1, 0.32, 1)';
-const STORY_VERTICAL_THRESHOLD = 88;
+/** Закрытие свайпом: чуть дольше и мягче, чем резкие 200ms */
+const STORY_DISMISS_MS = 400;
+const STORY_DISMISS_EASE = 'cubic-bezier(0.25, 0.88, 0.35, 1)';
+const STORY_VERTICAL_THRESHOLD = 72;
 const STORY_AXIS_LOCK_PX = 14;
 
 function formatStoryArchiveEta(expiresAt) {
@@ -49,6 +49,7 @@ export default function StoryViewer({
   onAfterLastItem,
   onBeforeFirstItem,
   onStoryArchived,
+  onOpenAuthorProfile,
 }) {
   const [slide, setSlide] = useState(0);
   const [isHolding, setIsHolding] = useState(false);
@@ -116,7 +117,7 @@ export default function StoryViewer({
       closeFallbackTimerRef.current = window.setTimeout(() => {
         closeFallbackTimerRef.current = null;
         if (closingRef.current) finishClose();
-      }, STORY_DISMISS_MS + 80);
+      }, STORY_DISMISS_MS + 100);
     },
     [finishClose],
   );
@@ -288,9 +289,10 @@ export default function StoryViewer({
     }
     if (stageAxisRef.current === 'vertical') {
       const h = typeof window !== 'undefined' ? window.innerHeight : 600;
-      const rubber = dy * 0.55;
-      const cap = h * 0.42;
-      setSheetY(Math.max(-cap, Math.min(cap, rubber)));
+      const sign = dy >= 0 ? 1 : -1;
+      const ady = Math.abs(dy);
+      const rubber = sign * Math.min(ady * 0.4 + ady * ady * 0.0012, h * 0.36);
+      setSheetY(Math.max(-h * 0.36, Math.min(h * 0.36, rubber)));
     }
   }
 
@@ -319,7 +321,7 @@ export default function StoryViewer({
       axis === 'vertical' ||
       (axis == null && Math.abs(dy) >= 52 && Math.abs(dy) >= Math.abs(dx) * 0.82);
     if (verticalIntent) {
-      const thr = axis === 'vertical' ? Math.max(72, STORY_VERTICAL_THRESHOLD - 16) : STORY_VERTICAL_THRESHOLD;
+      const thr = axis === 'vertical' ? Math.max(64, STORY_VERTICAL_THRESHOLD - 12) : STORY_VERTICAL_THRESHOLD;
       if (Math.abs(dy) >= thr && Math.abs(dy) >= Math.abs(dx) * 0.65) {
         closeAnimated(dy > 0 ? 'down' : 'up');
         return;
@@ -448,10 +450,16 @@ export default function StoryViewer({
 
   const safeBottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
   const hWin = typeof window !== 'undefined' ? window.innerHeight : 640;
-  const sheetOpacity = 1 - Math.min(Math.abs(sheetY) / (hWin * 0.52), 0.22);
+  const dragProgress = Math.min(1, Math.abs(sheetY) / Math.max(hWin * 0.48, 1));
+  const sheetScale = 1 - dragProgress * 0.07;
+  const sheetRadius = Math.min(18, Math.abs(sheetY) * 0.072);
+  const sheetOpacity = 1 - Math.min(Math.abs(sheetY) / (hWin * 0.58), 0.16);
+  /** У своих историй снизу кнопка «Просмотры» — подпись не должна заезжать под неё */
   const captionBottomPad = canInteract
     ? 'max(100px, calc(92px + env(safe-area-inset-bottom, 0px)))'
-    : 'max(28px, env(safe-area-inset-bottom, 0px))';
+    : story.isSelf
+      ? 'max(96px, calc(84px + env(safe-area-inset-bottom, 0px)))'
+      : 'max(28px, env(safe-area-inset-bottom, 0px))';
 
   return (
     <div
@@ -465,11 +473,17 @@ export default function StoryViewer({
         zIndex: 200,
         background: '#000',
         overflow: 'hidden',
-        transform: `translateY(${sheetY}px) translateZ(0)`,
+        transform: `translateY(${sheetY}px) scale(${sheetScale}) translateZ(0)`,
+        transformOrigin: 'center center',
         opacity: sheetOpacity,
+        borderRadius: sheetRadius > 0.5 ? `${sheetRadius}px` : 0,
         transition: sheetDragging
           ? 'none'
-          : `transform ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, opacity ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}`,
+          : `transform ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, opacity ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, border-radius ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}`,
+        boxShadow:
+          sheetRadius > 1
+            ? '0 24px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)'
+            : 'none',
       }}
     >
       <p
@@ -666,16 +680,57 @@ export default function StoryViewer({
             pointerEvents: 'auto',
           }}
         >
-          <UserAvatar src={story.avatarUrl} size={36} borderless />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.25 }}>{story.label}</div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', marginTop: 2 }}>
-              {formatStorySlideTime(cur.createdAt)}
-            </div>
-            {story.isSelf && archiveEta ? (
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>{archiveEta}</div>
-            ) : null}
-          </div>
+          {typeof onOpenAuthorProfile === 'function' && story?.authorId ? (
+            <button
+              type="button"
+              className="story-viewer-profile-hit"
+              aria-label="Открыть профиль"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenAuthorProfile();
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: 0,
+                margin: 0,
+                border: 'none',
+                background: 'transparent',
+                color: 'inherit',
+                cursor: 'pointer',
+                textAlign: 'left',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <UserAvatar src={story.avatarUrl} size={36} borderless />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.25 }}>{story.label}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', marginTop: 2 }}>
+                  {formatStorySlideTime(cur.createdAt)}
+                </div>
+                {story.isSelf && archiveEta ? (
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>{archiveEta}</div>
+                ) : null}
+              </div>
+            </button>
+          ) : (
+            <>
+              <UserAvatar src={story.avatarUrl} size={36} borderless />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#fff', lineHeight: 1.25 }}>{story.label}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.72)', marginTop: 2 }}>
+                  {formatStorySlideTime(cur.createdAt)}
+                </div>
+                {story.isSelf && archiveEta ? (
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.55)', marginTop: 2 }}>{archiveEta}</div>
+                ) : null}
+              </div>
+            </>
+          )}
           {story.isSelf ? (
             <button
               type="button"

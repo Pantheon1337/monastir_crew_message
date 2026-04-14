@@ -981,6 +981,14 @@ export default function App() {
               setStoryViewer(null);
               refreshStories();
             }}
+            onOpenAuthorProfile={() => {
+              const aid = storyViewer?.authorId;
+              if (!aid || !user?.id) return;
+              setStoryViewer(null);
+              void refreshStories();
+              setPeerFullProfileViewerPreview(String(aid) === String(user.id));
+              setPeerFullProfileUserId(aid);
+            }}
             onBeforeFirstItem={storyViewer.profileReel ? undefined : () => void goToPrevStoryAuthor()}
             onAfterLastItem={
               storyViewer.profileReel

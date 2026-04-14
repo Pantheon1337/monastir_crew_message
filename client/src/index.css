@@ -1752,6 +1752,10 @@ video.chat-video-note {
   user-select: none;
 }
 
+.story-viewer-profile-hit:active {
+  opacity: 0.88;
+}
+
 .story-viewer-stage {
   touch-action: none;
   cursor: grab;
