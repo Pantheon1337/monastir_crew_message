@@ -201,6 +201,22 @@ export default function PeerProfileFullScreen({
     await load();
   }
 
+  async function storyHideFromProfile(storyId) {
+    if (!viewerId) return;
+    setStoryBusyId(storyId);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(storyId)}/hide-from-profile`, {
+      method: 'POST',
+      userId: viewerId,
+    });
+    setStoryBusyId(null);
+    if (!ok) {
+      alert(data?.error || 'Не удалось');
+      return;
+    }
+    onStoriesUpdated?.();
+    await load();
+  }
+
   async function storyDeleteForever(storyId) {
     if (!viewerId) return;
     if (!window.confirm('Удалить этот кадр безвозвратно?')) return;
@@ -463,6 +479,19 @@ export default function PeerProfileFullScreen({
                               В архив
                             </button>
                           )}
+                          <button
+                            type="button"
+                            className="btn-outline"
+                            style={{ fontSize: 9, padding: '4px 6px', width: '100%' }}
+                            disabled={storyBusyId === s.id}
+                            title="Скрыть кадр в сетке профиля у гостей (остаётся в ленте до срока, если не в архиве)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void storyHideFromProfile(s.id);
+                            }}
+                          >
+                            Убрать из профиля
+                          </button>
                           <button
                             type="button"
                             className="btn-outline"

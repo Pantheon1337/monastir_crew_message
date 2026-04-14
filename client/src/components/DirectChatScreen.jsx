@@ -19,6 +19,7 @@ import { useLeftEdgeSwipeBack } from '../hooks/useLeftEdgeSwipeBack.js';
 import { releaseCameraStreamNow } from '../cameraSession.js';
 import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
 import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
+import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
@@ -1737,7 +1738,11 @@ export default function DirectChatScreen({
                 opacity: mediaUploading ? 0.55 : 1,
               }}
             >
-              {mediaUploading ? '…' : '📎'}
+              {mediaUploading ? (
+                <span style={{ fontSize: 16, lineHeight: 1 }}>…</span>
+              ) : (
+                <ChatComposerIcon name="attach" fallback="📎" alt="" size={22} />
+              )}
             </button>
             <button
               type="button"
@@ -1749,12 +1754,11 @@ export default function DirectChatScreen({
                 width: 40,
                 height: 40,
                 flexShrink: 0,
-                fontSize: 20,
                 opacity: stickerPanelOpen ? 1 : 0.9,
                 background: stickerPanelOpen ? 'rgba(127,127,127,0.15)' : undefined,
               }}
             >
-              😀
+              <ChatComposerIcon name="stickers" fallback="😀" alt="" size={22} />
             </button>
             <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
               <MentionAutocomplete
@@ -1858,7 +1862,12 @@ export default function DirectChatScreen({
               userSelect: 'none',
             }}
           >
-            <span style={{ lineHeight: 1 }}>{mediaMode === 'video' ? '◉' : '🎤'}</span>
+            <ChatComposerIcon
+              name={mediaMode === 'video' ? 'video' : 'mic'}
+              fallback={mediaMode === 'video' ? '◉' : '🎤'}
+              alt=""
+              size={mediaMode === 'video' ? 22 : 21}
+            />
           </button>
         )}
             </div>

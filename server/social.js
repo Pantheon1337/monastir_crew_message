@@ -1994,16 +1994,17 @@ export function deleteStoryByAuthor(storyId, userId) {
   return { ok: true };
 }
 
-/** Кадры в сетке «мой профиль»: с флагом «в профиле», не снятые с ленты в архив — без лимита 24 ч (пока не удалишь или не уберёшь в архив). */
+/** Кадры в сетке «мой профиль»: пока не истёк срок и не убраны с страницы (show_in_profile). В т.ч. снятые с ленты («в архив») — чтобы кнопка «В ленту» оставалась доступна. */
 export function listOwnStoriesForManagement(userId) {
+  const now = Date.now();
   const rows = getDb()
     .prepare(
       `SELECT id, body, media_path AS mediaPath, created_at AS createdAt, expires_at AS expiresAt, COALESCE(feed_hidden, 0) AS feedHidden,
         COALESCE(show_in_profile, 1) AS showInProfile
-       FROM stories WHERE user_id = ? AND COALESCE(show_in_profile, 1) = 1 AND COALESCE(feed_hidden, 0) = 0
+       FROM stories WHERE user_id = ? AND COALESCE(show_in_profile, 1) = 1 AND expires_at > ?
        ORDER BY created_at DESC`,
     )
-    .all(userId);
+    .all(userId, now);
   return rows.map((s) => ({
     id: s.id,
     body: s.body || '',
@@ -2013,6 +2014,15 @@ export function listOwnStoriesForManagement(userId) {
     feedHidden: Number(s.feedHidden) === 1,
     showInProfile: Number(s.showInProfile) === 1,
   }));
+}
+
+/** Убрать кадр из сетки профиля (у гостей не показывается); запись остаётся до истечения / удаления. */
+export function hideStoryFromProfileGrid(storyId, userId) {
+  const row = getDb().prepare(`SELECT id, user_id AS userId FROM stories WHERE id = ?`).get(storyId);
+  if (!row) return { error: 'История не найдена' };
+  if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
+  getDb().prepare(`UPDATE stories SET show_in_profile = 0 WHERE id = ?`).run(storyId);
+  return { ok: true };
 }
 
 /**
