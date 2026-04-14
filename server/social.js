@@ -2025,14 +2025,11 @@ export function hideStoryFromProfileGrid(storyId, userId) {
   return { ok: true };
 }
 
-/** Снова показывать кадр в сетке профиля у гостей (пока не истёк срок 24 ч). */
+/** Снова показывать кадр в сетке профиля у гостей (в т.ч. после «24 ч в ленте» — истечение не блокирует сетку). */
 export function restoreStoryToProfileGrid(storyId, userId) {
-  const row = getDb()
-    .prepare(`SELECT id, user_id AS userId, expires_at AS expiresAt FROM stories WHERE id = ?`)
-    .get(storyId);
+  const row = getDb().prepare(`SELECT id, user_id AS userId FROM stories WHERE id = ?`).get(storyId);
   if (!row) return { error: 'История не найдена' };
   if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
-  if (row.expiresAt <= Date.now()) return { error: 'Срок истории истёк' };
   getDb().prepare(`UPDATE stories SET show_in_profile = 1 WHERE id = ?`).run(storyId);
   return { ok: true };
 }
@@ -2162,8 +2159,8 @@ export function toggleStoryLike(viewerId, storyId) {
 }
 
 /**
- * Архив: снятые с ленты (feed_hidden), убранные из сетки профиля (show_in_profile = 0, пока не истёк срок),
- * и истёкшие кадры (с учётом ленты/профиля по условию ниже).
+ * Архив: снятые с ленты, убранные из сетки профиля, истёкшие кадры (условия ниже).
+ * Вернуть в ленту — только пока не истёк срок 24 ч; в профиль — в любой момент, пока запись есть.
  */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const now = Date.now();
@@ -2216,7 +2213,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       showInProfile,
       archivedEarly: feedHidden && notExpired,
       canRestoreToFeed: feedHidden && notExpired,
-      canRestoreToProfile: !showInProfile && notExpired,
+      canRestoreToProfile: !showInProfile,
       feedHiddenAt: r.feedHiddenAt ?? null,
       viewerCount: Number(r.viewerCount) || 0,
       authorLabel: r.nickname ? `@${r.nickname}` : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),

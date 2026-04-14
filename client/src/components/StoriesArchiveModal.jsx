@@ -43,19 +43,16 @@ function isHiddenFromProfileGrid(it) {
 }
 
 /**
- * Кнопки восстановления: не опираться только на canRestore* === false (раньше отключала запасную логику).
- * Сервер true ИЛИ явные сырые поля + срок не истёк.
+ * В ленту — только пока не истёк 24 ч; в профиль — и для истёкших (сетка профиля не завязана на этот срок).
  */
 function computeRestoreButtons(it, userId, now) {
   const own = String(it.userId) === String(userId);
+  if (!own) return { feed: false, profile: false };
   const exp = expiresAtMs(it);
   const notExpired = Number.isFinite(exp) && exp > now;
-  if (!own || !notExpired) {
-    return { feed: false, profile: false };
-  }
   const srvFeed = isYes(it.canRestoreToFeed);
   const srvProf = isYes(it.canRestoreToProfile);
-  const feed = srvFeed || isFeedHiddenStory(it);
+  const feed = notExpired && (srvFeed || isFeedHiddenStory(it));
   const profile = srvProf || isHiddenFromProfileGrid(it);
   return { feed, profile };
 }
@@ -201,8 +198,8 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
           </button>
         </div>
         <p className="muted" style={{ fontSize: 11, margin: '0 0 12px' }}>
-          Снятые с ленты, убранные из сетки профиля и истёкшие кадры. Пока не истёк срок — можно вернуть в ленту кружков, в
-          сетку профиля или удалить навсегда.
+          Снятые с ленты, убранные из сетки профиля и истёкшие кадры. В ленту кружков — только в течение 24 ч с публикации; в
+          сетку профиля можно вернуть в любой момент, пока кадр в архиве. Удалить — без ограничений по сроку.
         </p>
         {loading ? (
           <p className="muted" style={{ fontSize: 12 }}>
