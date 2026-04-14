@@ -1632,9 +1632,8 @@ video.chat-video-note {
 }
 
 /*
- * Пузырь во flex-ряду (.chat-swipe-reply-inner): короткие сообщения — по ширине текста,
- * длинные — не шире ленты (max) и с переносами внутри (flex: min-width:0 + shrink).
- * Раньше flex-shrink:0 + width:max-content давали горизонтальный вылет за экран.
+ * Пузырь во flex-ряду: ширина по содержимому до max; без flex-shrink — иначе узкий пузырь
+ * и строки переносятся раньше, чем нужно (напр. «Как твои - дела» в две строки).
  */
 .chat-tg-bubble {
   display: block;
@@ -1642,14 +1641,16 @@ video.chat-video-note {
   width: fit-content;
   max-width: min(var(--chat-bubble-max), 100%);
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  align-self: flex-start;
   font-family: var(--chat-font-family);
   font-size: var(--chat-font-size);
   line-height: var(--chat-line-height);
   letter-spacing: var(--chat-letter-spacing);
   color: var(--chat-bubble-text);
   text-align: start;
-  text-wrap: pretty;
+  /* pretty переразбивает строки ради «типографики» — переносы слишком рано */
+  text-wrap: wrap;
   /* normal: не рвать слово «Здорово» на «Здоров»+«о» — целиком на следующую строку (break-word так ломает) */
   word-wrap: normal;
   overflow-wrap: normal;
@@ -1780,7 +1781,7 @@ video.chat-video-note {
   word-break: normal;
   -webkit-hyphens: none;
   hyphens: none;
-  text-wrap: pretty;
+  text-wrap: wrap;
   line-height: inherit;
   letter-spacing: inherit;
   font-family: var(--chat-font-family);

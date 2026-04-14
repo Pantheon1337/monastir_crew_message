@@ -149,7 +149,7 @@
   word-break: normal;
   -webkit-hyphens: none;
   hyphens: none;
-  text-wrap: pretty;
+  text-wrap: wrap;
 }
 
 /* Поле ввода как в 1.html */
