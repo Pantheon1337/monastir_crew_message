@@ -8,6 +8,7 @@ export default function SettingsModal({
   onNotificationsEnabledChange,
   theme,
   onThemeChange,
+  onOpenTestChat,
 }) {
   if (!open) return null;
 
@@ -105,6 +106,28 @@ export default function SettingsModal({
               </button>
             </div>
           </div>
+
+          {typeof onOpenTestChat === 'function' ? (
+            <div>
+              <p style={{ margin: '0 0 8px', fontSize: 11 }} className="muted">
+                Разработка
+              </p>
+              <button
+                type="button"
+                className="btn-outline"
+                style={{ width: '100%' }}
+                onClick={() => {
+                  onClose();
+                  onOpenTestChat();
+                }}
+              >
+                Тестовый чат
+              </button>
+              <p className="muted" style={{ margin: '8px 0 0', fontSize: 10, lineHeight: 1.4 }}>
+                Новый интерфейс и логика: диалог с собой (тот же поток, что «Избранное»).
+              </p>
+            </div>
+          ) : null}
 
         </div>
       </div>

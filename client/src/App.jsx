@@ -12,6 +12,7 @@ const Feed = lazy(() => import('./components/Feed.jsx'));
 const ProfileScreen = lazy(() => import('./components/ProfileScreen.jsx'));
 const AuthScreen = lazy(() => import('./components/AuthScreen.jsx'));
 const DirectChatScreen = lazy(() => import('./components/DirectChatScreen.jsx'));
+const TestChatScreen = lazy(() => import('./components/newChat/TestChatScreen.jsx'));
 const RoomChatScreen = lazy(() => import('./components/RoomChatScreen.jsx'));
 const StoryViewer = lazy(() => import('./components/StoryViewer.jsx'));
 const StoryCreateModal = lazy(() => import('./components/StoryCreateModal.jsx'));
@@ -92,6 +93,7 @@ export default function App() {
   const [pendingFriendCount, setPendingFriendCount] = useState(0);
   const [chatUnreadTotal, setChatUnreadTotal] = useState(0);
   const [openChat, setOpenChat] = useState(null);
+  const [openTestChat, setOpenTestChat] = useState(false);
   const [openRoomChat, setOpenRoomChat] = useState(null);
   const [storyViewer, setStoryViewer] = useState(null);
   const [storyCreateOpen, setStoryCreateOpen] = useState(false);
@@ -611,6 +613,7 @@ export default function App() {
     setSession('out');
     setNav('home');
     setOpenChat(null);
+    setOpenTestChat(false);
     setOpenRoomChat(null);
     setStoryViewer(null);
     setStoryCreateOpen(false);
@@ -802,7 +805,7 @@ export default function App() {
     );
   }
 
-  const showMainChrome = !openChat && !openRoomChat;
+  const showMainChrome = !openChat && !openRoomChat && !openTestChat;
 
   return (
     <div className="app-shell app-shell--session">
@@ -954,6 +957,20 @@ export default function App() {
           document.body,
         )}
 
+      {openTestChat && user?.id && typeof document !== 'undefined' &&
+        createPortal(
+          <Suspense fallback={<FullScreenFallback label="Тестовый чат…" />}>
+            <TestChatScreen
+              userId={user.id}
+              userNickname={user.nickname}
+              lastEvent={lastEvent}
+              onClose={() => setOpenTestChat(false)}
+              onAfterChange={refreshSocial}
+            />
+          </Suspense>,
+          document.body,
+        )}
+
       {openRoomChat?.id != null &&
         typeof document !== 'undefined' &&
         createPortal(
@@ -1053,6 +1070,7 @@ export default function App() {
               saveTheme(t);
               applyThemeToDocument(t);
             }}
+            onOpenTestChat={() => setOpenTestChat(true)}
           />
         </Suspense>
       ) : menuStub === 'privacy' ? (
