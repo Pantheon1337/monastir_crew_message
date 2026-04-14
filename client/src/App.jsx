@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import Header from './components/Header.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import BottomNav from './components/BottomNav.jsx';
+import PullToRefresh from './components/PullToRefresh.jsx';
 import StubMenuModal from './components/StubMenuModal.jsx';
 import SecuritySettingsPanel from './components/SecuritySettingsPanel.jsx';
 
@@ -179,6 +180,16 @@ export default function App() {
     const s = await api('/api/stories', { userId: user.id });
     if (s.ok) setStoryBuckets(s.data.buckets || []);
   }, [user?.id]);
+
+  /** Потянуть экран вниз на главной и др. вкладках — без перезахода в приложение */
+  const refreshMainTab = useCallback(async () => {
+    if (!user?.id) return;
+    if (nav === 'home') {
+      await Promise.all([refreshFeed(), refreshStories(), refreshSocial()]);
+    } else {
+      await refreshSocial();
+    }
+  }, [user?.id, nav, refreshFeed, refreshStories, refreshSocial]);
 
   /** После смены профиля (в т.ч. смайлика) подтягиваем ленту, сторис и чаты — везде одинаковый ник/эмодзи. */
   const handleUserUpdated = useCallback(
@@ -794,7 +805,7 @@ export default function App() {
   const showMainChrome = !openChat && !openRoomChat;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell app-shell--session">
       {showMainChrome && (
         <Header userId={user.id} onSocialChanged={refreshSocial} onOpenSearch={() => setSearchOpen(true)} nav={nav} />
       )}
@@ -807,94 +818,98 @@ export default function App() {
         </div>
       ) : null}
 
-      {nav === 'home' && showMainChrome && (
-        <Suspense fallback={<AppChunkFallback label="Загрузка ленты…" />}>
-          <StoriesBar
-            user={user}
-            buckets={storyBuckets}
-            presenceOnline={presenceOnline}
-            onAddStory={() => setStoryCreateOpen(true)}
-            onOpenAuthor={openStoryAuthor}
-          />
-          <Feed
-            posts={feed}
-            userId={user.id}
-            presenceOnline={presenceOnline}
-            onPosted={refreshFeed}
-            onViewAuthorAvatar={(url) => setAvatarLightboxUrl(url)}
-            onSwipeOpenStory={() => setStoryCreateOpen(true)}
-            onOpenAuthorProfile={openFeedAuthorProfile}
-          />
-        </Suspense>
-      )}
+      {showMainChrome ? (
+        <PullToRefresh navKey={nav} onRefresh={refreshMainTab}>
+          {nav === 'home' && (
+            <Suspense fallback={<AppChunkFallback label="Загрузка ленты…" />}>
+              <StoriesBar
+                user={user}
+                buckets={storyBuckets}
+                presenceOnline={presenceOnline}
+                onAddStory={() => setStoryCreateOpen(true)}
+                onOpenAuthor={openStoryAuthor}
+              />
+              <Feed
+                posts={feed}
+                userId={user.id}
+                presenceOnline={presenceOnline}
+                onPosted={refreshFeed}
+                onViewAuthorAvatar={(url) => setAvatarLightboxUrl(url)}
+                onSwipeOpenStory={() => setStoryCreateOpen(true)}
+                onOpenAuthorProfile={openFeedAuthorProfile}
+              />
+            </Suspense>
+          )}
 
-      {nav === 'chats' && showMainChrome && (
-        <Suspense fallback={<AppChunkFallback label="Загрузка…" />}>
-          <StoriesBar
-            user={user}
-            buckets={storyBuckets}
-            presenceOnline={presenceOnline}
-            onAddStory={() => setStoryCreateOpen(true)}
-            onOpenAuthor={openStoryAuthor}
-          />
-          <div style={{ padding: '8px 12px 16px' }}>
-            <Dashboard
-              chats={chats}
-              onDeleteChatForMe={handleDeleteChatForMe}
-              rooms={[]}
-              singleColumn="chats"
-              presenceOnline={presenceOnline}
-              onOpenChat={handleOpenChat}
-              chatsBare
-            />
-          </div>
-        </Suspense>
-      )}
+          {nav === 'chats' && (
+            <Suspense fallback={<AppChunkFallback label="Загрузка…" />}>
+              <StoriesBar
+                user={user}
+                buckets={storyBuckets}
+                presenceOnline={presenceOnline}
+                onAddStory={() => setStoryCreateOpen(true)}
+                onOpenAuthor={openStoryAuthor}
+              />
+              <div style={{ padding: '8px 12px 16px' }}>
+                <Dashboard
+                  chats={chats}
+                  onDeleteChatForMe={handleDeleteChatForMe}
+                  rooms={[]}
+                  singleColumn="chats"
+                  presenceOnline={presenceOnline}
+                  onOpenChat={handleOpenChat}
+                  chatsBare
+                />
+              </div>
+            </Suspense>
+          )}
 
-      {nav === 'rooms' && showMainChrome && (
-        <section style={{ padding: '8px 12px 16px' }}>
-          <Dashboard
-            chats={[]}
-            rooms={rooms}
-            singleColumn="rooms"
-            onCreateRoom={() => setCreateRoomOpen(true)}
-            onOpenRoom={handleOpenRoom}
-          />
-        </section>
-      )}
+          {nav === 'rooms' && (
+            <section style={{ padding: '8px 12px 16px' }}>
+              <Dashboard
+                chats={[]}
+                rooms={rooms}
+                singleColumn="rooms"
+                onCreateRoom={() => setCreateRoomOpen(true)}
+                onOpenRoom={handleOpenRoom}
+              />
+            </section>
+          )}
 
-      {nav === 'profile' && showMainChrome && (
-        <Suspense fallback={<AppChunkFallback label="Загрузка профиля…" />}>
-          <ProfileScreen
-            user={user}
-            onLogout={onLogout}
-            socialTick={socialTick}
-            onFriendsChanged={onFriendsChanged}
-            onUserUpdated={handleUserUpdated}
-            onOpenArchive={() => setArchiveOpen(true)}
-            onViewAvatar={(url) => setAvatarLightboxUrl(url)}
-            onPreviewOwnProfile={() => {
-              if (user?.id) {
-                setPeerFullProfileViewerPreview(true);
-                setPeerFullProfileUserId(user.id);
-              }
-            }}
-            presenceOnline={presenceOnline}
-            onOpenChatWithFriend={handleOpenChatWithFriend}
-            onOpenFriendProfile={(id) => {
-              if (!id) return;
-              setPeerFullProfileViewerPreview(false);
-              setPeerFullProfileUserId(id);
-            }}
-            onOpenAppStatus={() => setAppStatusOpen(true)}
-            onOpenPossibleFriends={() => setPossibleFriendsOpen(true)}
-            onOpenSettings={() => setMenuStub('settings')}
-            onOpenPrivacy={() => setMenuStub('privacy')}
-            onOpenSecurity={() => setMenuStub('security')}
-            onOpenBugReport={() => setBugReportOpen(true)}
-          />
-        </Suspense>
-      )}
+          {nav === 'profile' && (
+            <Suspense fallback={<AppChunkFallback label="Загрузка профиля…" />}>
+              <ProfileScreen
+                user={user}
+                onLogout={onLogout}
+                socialTick={socialTick}
+                onFriendsChanged={onFriendsChanged}
+                onUserUpdated={handleUserUpdated}
+                onOpenArchive={() => setArchiveOpen(true)}
+                onViewAvatar={(url) => setAvatarLightboxUrl(url)}
+                onPreviewOwnProfile={() => {
+                  if (user?.id) {
+                    setPeerFullProfileViewerPreview(true);
+                    setPeerFullProfileUserId(user.id);
+                  }
+                }}
+                presenceOnline={presenceOnline}
+                onOpenChatWithFriend={handleOpenChatWithFriend}
+                onOpenFriendProfile={(id) => {
+                  if (!id) return;
+                  setPeerFullProfileViewerPreview(false);
+                  setPeerFullProfileUserId(id);
+                }}
+                onOpenAppStatus={() => setAppStatusOpen(true)}
+                onOpenPossibleFriends={() => setPossibleFriendsOpen(true)}
+                onOpenSettings={() => setMenuStub('settings')}
+                onOpenPrivacy={() => setMenuStub('privacy')}
+                onOpenSecurity={() => setMenuStub('security')}
+                onOpenBugReport={() => setBugReportOpen(true)}
+              />
+            </Suspense>
+          )}
+        </PullToRefresh>
+      ) : null}
 
       {openChatResolved?.id != null &&
         typeof document !== 'undefined' &&
