@@ -1279,16 +1279,7 @@ export default function RoomChatScreen({
         zIndex={80}
         timelineSurfaceStyle={timelineWallpaperStyle}
         top={
-          <header
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              borderBottom: '1px solid var(--border)',
-              flexShrink: 0,
-            }}
-          >
+          <header className="chat-screen-header">
         <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
           ‹
         </button>
@@ -1482,7 +1473,7 @@ export default function RoomChatScreen({
             >
               <ChatComposerIcon name="stickers" fallback="😀" alt="" size={22} />
             </button>
-            <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+            <div className="chat-composer-field-wrap">
               <MentionAutocomplete
                 candidates={mentionCandidates}
                 text={text}
@@ -1527,6 +1518,7 @@ export default function RoomChatScreen({
         {hasTypedText ? (
           <button
             type="button"
+            className="chat-send-btn"
             aria-label="Отправить"
             onMouseDown={(e) => e.preventDefault()}
             onPointerDown={(e) => e.preventDefault()}

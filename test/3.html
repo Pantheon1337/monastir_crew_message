@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Чат • Элегантная типографика</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #08080c;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: system-ui, -apple-system, 'SF Pro Text', 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+        }
+        .chat-ui {
+            width: 100%;
+            max-width: 460px;
+            height: 100%;
+            background: #0f0f13;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 0 0 0 0.5px rgba(255,255,255,0.05);
+        }
+        .top-bar {
+            padding: 18px 20px;
+            background: rgba(20,20,25,0.96);
+            backdrop-filter: blur(8px);
+            border-bottom: 0.5px solid #27272e;
+        }
+        .top-bar h3 {
+            font-size: 19px;
+            font-weight: 590;
+            color: #f2f2f6;
+            letter-spacing: -0.3px;
+        }
+        .top-bar span {
+            font-size: 13px;
+            color: #8e8e98;
+        }
+        /* контейнер сообщений */
+        .chat-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 18px 14px 20px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        /* кастомные баблы с правильной вёрсткой */
+        .msg-row {
+            display: flex;
+            max-width: 92%;
+        }
+        .msg-row.out {
+            align-self: flex-end;
+        }
+        .msg-row.in {
+            align-self: flex-start;
+        }
+        .msg-bubble {
+            background: #202026;
+            border-radius: 20px;
+            padding: 10px 16px;
+            color: #efeff4;
+            font-size: 15px;
+            line-height: 1.48;
+            word-break: break-word;
+            white-space: normal;
+            overflow-wrap: break-word;
+            hyphens: auto;
+            letter-spacing: -0.1px;
+            font-weight: 400;
+            box-shadow: 0 1px 0.2px rgba(0,0,0,0.3);
+        }
+        .out .msg-bubble {
+            background: #2b6ef0;
+            border-bottom-right-radius: 5px;
+            color: white;
+        }
+        .in .msg-bubble {
+            background: #1c1c22;
+            border-bottom-left-radius: 5px;
+        }
+        .timestamp {
+            font-size: 10px;
+            opacity: 0.65;
+            margin-top: 5px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 6px;
+            font-feature-settings: 'tnum';
+        }
+        /* поле ввода без лишних кнопок */
+        .message-composer {
+            background: #101014;
+            border-top: 0.5px solid #292930;
+            padding: 12px 16px 18px 16px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .message-composer textarea {
+            flex: 1;
+            background: #1b1b21;
+            border: none;
+            border-radius: 28px;
+            padding: 10px 18px;
+            font-family: inherit;
+            font-size: 15px;
+            color: #f0f0f5;
+            resize: none;
+            outline: none;
+            line-height: 1.4;
+            max-height: 100px;
+            overflow-y: auto;
+            word-break: break-word;
+        }
+        .message-composer button {
+            background: #2b6ef0;
+            border: none;
+            width: 44px;
+            height: 44px;
+            border-radius: 30px;
+            color: white;
+            font-size: 20px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.1s linear;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        button:active {
+            transform: scale(0.94);
+            background: #1a56c4;
+        }
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="chat-ui">
+    <div class="top-bar">
+        <h3>Дизайн-комната</h3>
+        <span>онлайн · типографика и переносы</span>
+    </div>
+    <div class="chat-scroll" id="scrollArea">
+        <div class="msg-row in">
+            <div class="msg-bubble">
+                📱 В мобильных чатах очень важно корректно отображать длинные слова, например: <strong>метоксидиметилтриптамин</strong> или <em>достопримечательностями</em> — они должны переноситься без разрыва макета.
+                <div class="timestamp">13:15</div>
+            </div>
+        </div>
+        <div class="msg-row out">
+            <div class="msg-bubble">
+                Согласен! «Грамотная типография» — это про мягкие переносы и кавычки-ёлочки. А ещё красивые отступы.
+                <div class="timestamp">13:17 <span>✓✓</span></div>
+            </div>
+        </div>
+        <div class="msg-row in">
+            <div class="msg-bubble">
+                🔥 Идеальный пример: электроэнцефалографический прибор показал аномалию. Слово разбивается аккуратно, даже без дефисов — hyphens: auto творит чудеса.
+                <div class="timestamp">13:19</div>
+            </div>
+        </div>
+    </div>
+    <div class="message-composer">
+        <textarea id="composerText" rows="1" placeholder="Сообщение..."></textarea>
+        <button id="sendChatBtn">➤</button>
+    </div>
+</div>
+<script>
+    const scrollDiv = document.getElementById('scrollArea');
+    const composer = document.getElementById('composerText');
+    const sendChat = document.getElementById('sendChatBtn');
+
+    function nowTime() {
+        const d = new Date();
+        return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+    }
+
+    function addNewMessage(text, isOut) {
+        if (!text.trim()) return;
+        const row = document.createElement('div');
+        row.className = `msg-row ${isOut ? 'out' : 'in'}`;
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-bubble';
+        // сохраняем пробелы, но экранируем HTML для безопасности
+        bubble.innerHTML = `${escapeHtml(text)}<div class="timestamp">${nowTime()}${isOut ? ' ✓✓' : ''}</div>`;
+        row.appendChild(bubble);
+        scrollDiv.appendChild(row);
+        scrollDiv.scrollTop = scrollDiv.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function send() {
+        let message = composer.value.trim();
+        if (message === "") return;
+        addNewMessage(message, true);
+        composer.value = "";
+        composer.style.height = 'auto';
+        // имитация ответа собеседника (демонстрация)
+        setTimeout(() => {
+            addNewMessage("✅ Отлично! Переносы слов и типографика работают безупречно. «Кавычки» и эмодзи тоже на месте.", false);
+        }, 900);
+    }
+
+    sendChat.addEventListener('click', send);
+    composer.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            send();
+        }
+    });
+    composer.addEventListener('input', function () {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+    });
+    scrollDiv.scrollTop = scrollDiv.scrollHeight;
+</script>
+</body>
+</html>

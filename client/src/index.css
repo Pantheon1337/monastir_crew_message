@@ -12,16 +12,22 @@
   /* Чат (тёмная тема по умолчанию): пузыри и фон ленты */
   --chat-timeline-bg: #0f1114;
   --chat-timeline-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Ccircle cx='32' cy='48' r='1.2' fill='%23ffffff' fill-opacity='0.035'/%3E%3Ccircle cx='120' cy='140' r='1' fill='%23ffffff' fill-opacity='0.028'/%3E%3Cpath fill='%23ffffff' fill-opacity='0.025' d='M40 100c8-6 20-4 28 4M130 40c6 10 4 22-4 30'/%3E%3C/svg%3E");
-  /* Входящие / исходящие: ближе к Telegram (тёмная тема) + читаемый контраст */
-  --chat-bubble-incoming: #1e2329;
-  --chat-bubble-outgoing: #2b5278;
+  /* Шапка чата / полка композера — как в референсах test/*.html, в тон приложения */
+  --chat-header-surface: rgba(28, 30, 36, 0.94);
+  --chat-header-divider: rgba(255, 255, 255, 0.08);
+  --chat-composer-surface: #14161b;
+  --chat-composer-field-bg: rgba(46, 48, 54, 0.92);
+  --chat-composer-field-border: rgba(255, 255, 255, 0.08);
+  /* Входящие / исходящие: TG + Element, без смены фирменного акцента в кнопках */
+  --chat-bubble-incoming: #232a33;
+  --chat-bubble-outgoing: #2f5c86;
   --chat-bubble-text: #e9edf2;
   --chat-bubble-time: rgba(180, 192, 208, 0.78);
   --chat-bubble-meta-name: #7eb8ea;
   --chat-bubble-reply-border: #5b9fd6;
   --chat-bubble-reply-bg: rgba(91, 159, 214, 0.12);
   --chat-bubble-shadow: rgba(0, 0, 0, 0.35);
-  --chat-bubble-elevation: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.45);
+  --chat-bubble-elevation: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 1px 1px rgba(0, 0, 0, 0.28);
   --chat-bubble-revoked-in: rgba(30, 35, 41, 0.72);
   --chat-bubble-revoked-out: rgba(43, 82, 120, 0.65);
   /* Галочки на исходящем пузыре: серый = доставлено, голубой = прочитано */
@@ -30,11 +36,11 @@
   --chat-check-read: #5eb0e8;
   --chat-mention-bg: rgba(94, 168, 255, 0.18);
   --chat-mention-fg: #cfe6ff;
-  --chat-bubble-padding: 9px 12px 7px;
+  --chat-bubble-padding: 10px 14px 8px;
   --chat-bubble-max: min(min(560px, 100vw - 28px), 94%);
   --chat-font-size: 15px;
   --chat-line-height: 1.48;
-  --chat-letter-spacing: 0.01em;
+  --chat-letter-spacing: -0.015em;
   --chat-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
   --chat-file-chip-bg: rgba(255, 255, 255, 0.06);
@@ -56,6 +62,11 @@
   --panel: #ffffff;
   --story-avatar-inner: #ffffff;
   --header-bg: #ffffff;
+  --chat-header-surface: rgba(255, 255, 255, 0.96);
+  --chat-header-divider: rgba(15, 23, 42, 0.1);
+  --chat-composer-surface: #eceef2;
+  --chat-composer-field-bg: #ffffff;
+  --chat-composer-field-border: rgba(15, 23, 42, 0.12);
   --chat-timeline-bg: #d1dee8;
   --chat-timeline-pattern: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Ccircle cx='40' cy='60' r='1.2' fill='%23ffffff' fill-opacity='0.35'/%3E%3Ccircle cx='130' cy='130' r='1' fill='%23ffffff' fill-opacity='0.28'/%3E%3Cpath fill='%23ffffff' fill-opacity='0.2' d='M48 108c6 8 16 10 24 6M120 44c4-6 14-8 22-2'/%3E%3C/svg%3E");
   --chat-bubble-incoming: #ffffff;
@@ -76,6 +87,7 @@
   --chat-mention-fg: #1a4d8f;
   --chat-file-chip-bg: rgba(255, 255, 255, 0.92);
   --chat-file-chip-border: rgba(15, 23, 42, 0.1);
+  --chat-letter-spacing: -0.012em;
 }
 
 *,
@@ -1193,11 +1205,25 @@ a:hover {
   padding: 8px 10px;
 }
 
+/* Шапка экрана чата (референсы: blur + тонкая граница) */
+.chat-screen-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+  background: var(--chat-header-surface);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-bottom: 0.5px solid var(--chat-header-divider);
+}
+
 /* Каркас: safe-area у «полки» только без клавиатуры; с IME — без лишнего зазора над клавиатурой */
 .chat-scaffold-composer-host {
   flex-shrink: 0;
-  background: var(--bg);
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.12);
+  background: var(--chat-composer-surface);
+  border-top: 0.5px solid var(--chat-header-divider);
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.14);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -1212,12 +1238,51 @@ a:hover {
 }
 
 .chat-composer-bar {
-  border-top: 1px solid var(--border);
-  padding: 6px 12px;
+  border-top: none;
+  padding: 8px 12px 12px;
   display: flex;
   gap: 8px;
   flex-shrink: 0;
   align-items: flex-end;
+  background: transparent;
+}
+
+/* «Капсула» поля ввода (Telegram / Element) */
+.chat-composer-field-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative; /* якорь для MentionAutocomplete */
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: var(--chat-composer-field-bg);
+  border: 1px solid var(--chat-composer-field-border);
+  border-radius: 22px;
+  padding: 2px 2px 2px 4px;
+}
+
+.chat-composer-field-wrap .chat-composer-textarea.text-input {
+  background: transparent;
+  border: none;
+  border-radius: 18px;
+  padding: 8px 12px;
+  box-shadow: none;
+}
+
+.chat-composer-field-wrap .chat-composer-textarea.text-input:focus {
+  border: none;
+  box-shadow: none;
+}
+
+/* Кнопка отправки: лёгкий отклик как в макетах */
+.chat-send-btn {
+  transition: transform 0.12s ease, opacity 0.12s ease, filter 0.12s ease;
+}
+
+.chat-send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+  opacity: 0.92;
 }
 
 /* Картинки в ленте: отрисовка вне экрана дешевле, без лишних декодов при скролле */
@@ -1513,7 +1578,7 @@ video.chat-video-note {
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 10px 12px 14px;
+  padding: 14px 12px 18px;
   -webkit-user-select: none;
   user-select: none;
   -moz-user-select: none;
@@ -1521,6 +1586,19 @@ video.chat-video-note {
   background-color: var(--chat-timeline-bg);
   background-image: var(--chat-timeline-pattern);
   background-size: 360px 360px;
+}
+
+.chat-scaffold-timeline::-webkit-scrollbar {
+  width: 4px;
+}
+
+.chat-scaffold-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scaffold-timeline::-webkit-scrollbar-thumb {
+  background: rgba(127, 135, 145, 0.45);
+  border-radius: 10px;
 }
 
 /* Потомки таймлайна: user-select не наследуется надёжно; явно отключаем (в т.ч. у @упоминаний раньше было text) */
@@ -1688,7 +1766,7 @@ video.chat-video-note {
   justify-content: flex-end;
   flex-wrap: nowrap;
   gap: 5px;
-  margin-top: 5px;
+  margin-top: 4px;
   line-height: 1;
   user-select: none;
 }

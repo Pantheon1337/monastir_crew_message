@@ -15,9 +15,9 @@ export function messageGroupFlags(messages, index) {
 
 /** CSS border-radius в порядке TL, TR, BR, BL (как в Telegram: хвост у нижнего угла к краю экрана). */
 export function telegramBubbleRadius(mine, isFirstInGroup, isLastInGroup) {
-  const R = 17;
-  /** «Стыки» в группе — чуть больше радиус, меньше артефактов кромки */
-  const j = 5;
+  /** Ближе к TG / iOS: крупный радиус + «хвост» 4px у края экрана */
+  const R = 19;
+  const j = 4;
   const first = isFirstInGroup;
   const last = isLastInGroup;
   if (mine) {
