@@ -846,10 +846,25 @@ a:hover {
 .friend-mini-action-btn__label {
   opacity: 0.95;
 }
+/* Один ряд: Чат / Медиа / Профиль — равные колонки, без переноса */
 .friend-mini-actions--compact {
-  max-width: 200px;
-  gap: 6px;
-  padding: 0 12px 4px;
+  width: 100%;
+  max-width: 340px;
+  gap: 10px;
+  padding: 0 16px 6px;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+.friend-mini-actions--compact .friend-mini-action-btn--sm {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: none;
+  padding: 8px 6px;
+  gap: 3px;
+  border-radius: 12px;
+  font-size: 10px;
 }
 .friend-mini-action-btn--sm {
   flex: 0 1 auto;
@@ -859,6 +874,9 @@ a:hover {
   gap: 2px;
   border-radius: 11px;
   font-size: 10px;
+}
+.friend-mini-actions--compact .friend-mini-action-btn--sm .friend-mini-action-btn__icon {
+  font-size: 16px;
 }
 .friend-mini-action-btn--sm .friend-mini-action-btn__icon {
   font-size: 15px;
