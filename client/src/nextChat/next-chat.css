@@ -80,9 +80,9 @@
   margin-top: 2px !important;
 }
 
-/* Ряд сообщения: не шире 85% */
+/* Ряд почти на всю ширину ленты — пузырь может быть длинным (как в мессенджерах) */
 .next-chat-root--tg-html .chat-message-row {
-  max-width: 85%;
+  max-width: 96%;
 }
 .next-chat-root--tg-html .chat-message-row--out {
   align-self: flex-end;
@@ -102,7 +102,8 @@
   --chat-bubble-reply-bg: rgba(0, 0, 0, 0.2);
   --chat-bubble-elevation: 0 1px 0.5px rgba(0, 0, 0, 0.1);
   --chat-bubble-padding: 10px 14px 8px;
-  --chat-bubble-max: min(min(85vw, 100% - 24px), 400px);
+  /* Не сужать пузырь до 400px — как в основном чате */
+  --chat-bubble-max: min(min(560px, 100vw - 28px), 94%);
 }
 
 .next-chat-root--tg-html .chat-message-row--out .chat-tg-bubble.chat-message-bubble--solid {
@@ -142,12 +143,12 @@
   opacity: 0.9;
 }
 
-/* Типографика тела сообщения — тот же принцип, что в test/1.html (.bubble) */
+/* Без автодефисов — только перенос целых слов и крайний случай длинной строки */
 .next-chat-root--tg-html .chat-message-text {
   overflow-wrap: break-word;
   word-break: normal;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  -webkit-hyphens: none;
+  hyphens: none;
   text-wrap: pretty;
 }
 

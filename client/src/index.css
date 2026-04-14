@@ -1316,9 +1316,9 @@ textarea.chat-composer-textarea {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-wrap: break-word;
-  word-break: break-word;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  word-break: normal;
+  -webkit-hyphens: none;
+  hyphens: none;
   tab-size: 4;
 }
 
@@ -1655,9 +1655,9 @@ video.chat-video-note {
   /* break-word: перенос по границам слов; длинные токены ломаются только при переполнении (не как anywhere) */
   overflow-wrap: break-word;
   word-break: normal;
-  /* С lang="ru" на пузыре — нормальная расстановка переносов для русского */
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  /* Без автодефисов: иначе слова вроде «здорово» режутся как «здо-рово» */
+  -webkit-hyphens: none;
+  hyphens: none;
   line-break: auto;
   outline: none;
   -webkit-backface-visibility: hidden;
@@ -1710,8 +1710,8 @@ video.chat-video-note {
   overflow: hidden;
   overflow-wrap: break-word;
   word-break: normal;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  -webkit-hyphens: none;
+  hyphens: none;
 }
 
 .chat-sender-name {
@@ -1721,7 +1721,7 @@ video.chat-video-note {
   line-height: 1.25;
   color: var(--chat-bubble-meta-name);
   overflow-wrap: break-word;
-  word-break: break-word;
+  word-break: normal;
 }
 
 /* Вложение-файл в пузыре */
@@ -1761,9 +1761,9 @@ video.chat-video-note {
 .chat-image-caption {
   margin-top: 8px;
   overflow-wrap: break-word;
-  word-break: break-word;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  word-break: normal;
+  -webkit-hyphens: none;
+  hyphens: none;
 }
 
 /*
@@ -1780,8 +1780,8 @@ video.chat-video-note {
   word-wrap: break-word;
   overflow-wrap: break-word;
   word-break: normal;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  -webkit-hyphens: none;
+  hyphens: none;
   text-wrap: pretty;
   line-height: inherit;
   letter-spacing: inherit;
