@@ -65,15 +65,15 @@ header.chat-header {
 }
 
 /* Лента сообщений (как .messages-area в примере) — перебиваем index.css (.chat-scaffold-timeline один класс) */
+/* Не делаем таймлайн flex-контейнером: один потомок + overflow ломает скролл в части браузеров (flex min-height:auto). */
 .chat-scaffold.chat-container .chat-scaffold-timeline.messages-area {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
   padding: 16px 12px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
   /* в примере плоский фон #0e0e10, без паттерна из темы приложения */
   background-color: #0e0e10;
   background-image: none;
