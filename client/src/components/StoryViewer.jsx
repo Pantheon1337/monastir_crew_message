@@ -5,9 +5,9 @@ import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
 
 const SLIDE_MS = 4800;
-/** Закрытие свайпом: чуть дольше и мягче, чем резкие 200ms */
-const STORY_DISMISS_MS = 400;
-const STORY_DISMISS_EASE = 'cubic-bezier(0.25, 0.88, 0.35, 1)';
+/** Закрытие как в Telegram: уезд вниз + лёгкое сжатие от верхнего края */
+const STORY_DISMISS_MS = 360;
+const STORY_DISMISS_EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
 const STORY_VERTICAL_THRESHOLD = 72;
 const STORY_AXIS_LOCK_PX = 14;
 
@@ -450,13 +450,13 @@ export default function StoryViewer({
 
   const safeBottom = 'max(12px, env(safe-area-inset-bottom, 0px))';
   const hWin = typeof window !== 'undefined' ? window.innerHeight : 640;
-  const dragProgress = Math.min(1, Math.abs(sheetY) / Math.max(hWin * 0.48, 1));
-  const sheetScale = 1 - dragProgress * 0.07;
-  const sheetRadius = Math.min(18, Math.abs(sheetY) * 0.072);
-  const sheetOpacity = 1 - Math.min(Math.abs(sheetY) / (hWin * 0.58), 0.16);
+  const dragProgress = Math.min(1, Math.abs(sheetY) / Math.max(hWin * 0.42, 1));
+  const sheetScale = 1 - dragProgress * 0.14;
+  const sheetRadius = Math.min(14, 8 + Math.abs(sheetY) * 0.055);
+  const sheetOpacity = 1 - Math.min(Math.abs(sheetY) / (hWin * 0.5), 0.28);
   /** У своих историй снизу кнопка «Просмотры» — подпись не должна заезжать под неё */
   const captionBottomPad = canInteract
-    ? 'max(100px, calc(92px + env(safe-area-inset-bottom, 0px)))'
+    ? 'max(90px, calc(80px + env(safe-area-inset-bottom, 0px)))'
     : story.isSelf
       ? 'max(96px, calc(84px + env(safe-area-inset-bottom, 0px)))'
       : 'max(28px, env(safe-area-inset-bottom, 0px))';
@@ -474,7 +474,7 @@ export default function StoryViewer({
         background: '#000',
         overflow: 'hidden',
         transform: `translateY(${sheetY}px) scale(${sheetScale}) translateZ(0)`,
-        transformOrigin: 'center center',
+        transformOrigin: 'center top',
         opacity: sheetOpacity,
         borderRadius: sheetRadius > 0.5 ? `${sheetRadius}px` : 0,
         transition: sheetDragging
@@ -482,7 +482,7 @@ export default function StoryViewer({
           : `transform ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, opacity ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, border-radius ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}`,
         boxShadow:
           sheetRadius > 1
-            ? '0 24px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06)'
+            ? '0 32px 100px rgba(0,0,0,0.65), 0 0 0 0.5px rgba(255,255,255,0.08)'
             : 'none',
       }}
     >
@@ -816,7 +816,7 @@ export default function StoryViewer({
 
       {canInteract ? (
         <div
-          className="story-viewer-chrome"
+          className="story-viewer-chrome story-viewer-reply-dock"
           onPointerDown={(e) => e.stopPropagation()}
           style={{
             position: 'absolute',
@@ -824,9 +824,10 @@ export default function StoryViewer({
             right: 0,
             bottom: 0,
             zIndex: 45,
-            borderTop: '1px solid rgba(255,255,255,0.12)',
-            paddingBottom: safeBottom,
-            background: 'linear-gradient(to top, rgba(8,10,14,0.98) 0%, rgba(8,10,14,0.9) 55%, rgba(8,10,14,0.55) 100%)',
+            paddingTop: 4,
+            paddingBottom: `max(10px, env(safe-area-inset-bottom, 0px))`,
+            background:
+              'linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.35) 35%, rgba(0,0,0,0.82) 70%, rgba(0,0,0,0.94) 100%)',
             color: '#fff',
           }}
         >
@@ -874,7 +875,7 @@ export default function StoryViewer({
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              padding: '10px 12px',
+              padding: '6px 12px 4px',
             }}
           >
             <input
@@ -976,18 +977,6 @@ export default function StoryViewer({
               ☺
             </button>
           </div>
-          <p
-            className="muted"
-            style={{
-              margin: '0 12px 10px',
-              fontSize: 10,
-              textAlign: 'center',
-              lineHeight: 1.35,
-              opacity: 0.75,
-            }}
-          >
-            Ответ и реакция уходят в личный чат автору
-          </p>
         </div>
       ) : null}
 

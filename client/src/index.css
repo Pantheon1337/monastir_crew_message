@@ -1756,6 +1756,11 @@ video.chat-video-note {
   opacity: 0.88;
 }
 
+/* Нижний док: поле + лайк + реакции у нижнего края, без лишней «шторки» */
+.story-viewer-reply-dock {
+  pointer-events: auto;
+}
+
 .story-viewer-stage {
   touch-action: none;
   cursor: grab;
