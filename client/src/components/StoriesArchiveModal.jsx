@@ -11,6 +11,20 @@ function formatViewerCount(n) {
   return `${n} просмотров`;
 }
 
+/** API может отдать boolean или 0/1; `0 !== false` в JS — true, из‑за этого кнопка «в профиль» пропадала. */
+function storyShownInProfile(it) {
+  const v = it?.showInProfile;
+  if (v === false || v === 0) return false;
+  if (v === true || v === 1) return true;
+  return true;
+}
+
+function storyArchivedEarlyFromFeed(it) {
+  const v = it?.archivedEarly;
+  if (v === true || v === 1) return true;
+  return false;
+}
+
 export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -170,9 +184,8 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
             {items.map((it) => {
               const own = String(it.userId) === String(userId);
               const notExpired = Number(it.expiresAt) > now;
-              const inProfile = it.showInProfile !== false;
-              const canRestoreFeed = own && it.archivedEarly && notExpired;
-              const canRestoreProfile = own && !inProfile && notExpired;
+              const canRestoreFeed = own && storyArchivedEarlyFromFeed(it) && notExpired;
+              const canRestoreProfile = own && !storyShownInProfile(it) && notExpired;
               const canDelete = own;
               const vc = typeof it.viewerCount === 'number' ? it.viewerCount : 0;
               return (
