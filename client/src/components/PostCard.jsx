@@ -695,9 +695,6 @@ export default function PostCard({
             onClick={() => setCommentsOpen((v) => !v)}
           >
             <span className="feed-post-comments-strip__label">
-              <span className="feed-post-comments-strip__icon" aria-hidden>
-                💬
-              </span>
               {commentsOpen ? 'Скрыть комментарии' : commentCountRu(commentCount)}
             </span>
             <span className="feed-post-comments-strip__chev" aria-hidden />
@@ -712,12 +709,31 @@ export default function PostCard({
                     const isCommentMine = String(c.authorId) === String(viewerId);
                     return (
                       <li key={c.id} className="feed-post-comment">
-                        <UserAvatar src={c.authorAvatarUrl} size={38} />
+                        <UserAvatar
+                          src={c.authorAvatarUrl}
+                          size={38}
+                          onOpen={
+                            typeof onOpenAuthorProfile === 'function' && c.authorId
+                              ? () => onOpenAuthorProfile(c.authorId)
+                              : undefined
+                          }
+                          ariaLabel="Открыть профиль"
+                        />
                         <div className="feed-post-comment__main">
                           <div className="feed-post-comment__header">
-                            <span className="feed-post-comment__author">
-                              <NicknameWithBadge nickname={c.authorNickname || 'user'} affiliationEmoji={c.authorAffiliationEmoji} />
-                            </span>
+                            {typeof onOpenAuthorProfile === 'function' && c.authorId ? (
+                              <button
+                                type="button"
+                                className="feed-post-comment__author feed-post-comment__author-btn"
+                                onClick={() => onOpenAuthorProfile(c.authorId)}
+                              >
+                                <NicknameWithBadge nickname={c.authorNickname || 'user'} affiliationEmoji={c.authorAffiliationEmoji} />
+                              </button>
+                            ) : (
+                              <span className="feed-post-comment__author">
+                                <NicknameWithBadge nickname={c.authorNickname || 'user'} affiliationEmoji={c.authorAffiliationEmoji} />
+                              </span>
+                            )}
                             <time className="feed-post-comment__time" dateTime={c.createdAt != null ? new Date(Number(c.createdAt)).toISOString() : undefined}>
                               {formatCommentTime(c.createdAt)}
                             </time>
