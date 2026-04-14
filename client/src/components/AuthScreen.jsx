@@ -13,7 +13,8 @@ export default function AuthScreen({ onAuthSuccess }) {
   const [nickInput, setNickInput] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotPhoneDigits, setForgotPhoneDigits] = useState('');
+  const [forgotNickInput, setForgotNickInput] = useState('');
   const [forgotPassword, setForgotPassword] = useState('');
   const [forgotPassword2, setForgotPassword2] = useState('');
   const [loading, setLoading] = useState(false);
@@ -102,9 +103,13 @@ export default function AuthScreen({ onAuthSuccess }) {
   async function handleResetPassword(e) {
     e.preventDefault();
     setError(null);
-    const id = forgotIdentifier.trim();
-    if (!id) {
-      setError('Укажите телефон или никнейм');
+    const nick = forgotNickInput.trim().replace(/^@+/, '');
+    if (nick.length < 3) {
+      setError('Укажите никнейм (от 3 символов)');
+      return;
+    }
+    if (!forgotPhoneDigits || forgotPhoneDigits.length < 10) {
+      setError('Укажите номер телефона, как при регистрации');
       return;
     }
     if (forgotPassword !== forgotPassword2) {
@@ -121,7 +126,8 @@ export default function AuthScreen({ onAuthSuccess }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          identifier: id,
+          phone: forgotPhoneDigits,
+          username: `@${nick}`,
           password: forgotPassword,
           passwordConfirm: forgotPassword2,
         }),
@@ -131,7 +137,8 @@ export default function AuthScreen({ onAuthSuccess }) {
         setError(data.error || 'Не удалось сменить пароль');
         return;
       }
-      setForgotIdentifier('');
+      setForgotPhoneDigits('');
+      setForgotNickInput('');
       setForgotPassword('');
       setForgotPassword2('');
       setMode('login');
@@ -243,22 +250,63 @@ export default function AuthScreen({ onAuthSuccess }) {
       {mode === 'reset' ? (
         <form className="block" style={{ padding: 16 }} onSubmit={handleResetPassword}>
           <p className="muted" style={{ margin: '0 0 12px', fontSize: 11, lineHeight: 1.45 }}>
-            Укажите номер телефона (как при регистрации) или никнейм. Задайте новый пароль дважды. Подтверждение по почте
-            позже.
+            Укажите номер телефона и ник одного аккаунта. Оба значения должны совпадать с учётной записью. Подтверждение по
+            почте можно будет добавить позже.
           </p>
           <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
-            Телефон или никнейм
+            Телефон
           </label>
           <input
             className="text-input"
-            type="text"
-            autoComplete="username"
-            placeholder="+7 … или @nickname"
-            value={forgotIdentifier}
-            onChange={(e) => setForgotIdentifier(e.target.value)}
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="+7 999 123 45 67"
+            value={formatPhoneRuTyping(forgotPhoneDigits)}
+            onChange={(e) => {
+              const d0 = e.target.value.replace(/\D/g, '');
+              if (d0.length === 0) {
+                setForgotPhoneDigits('');
+                return;
+              }
+              let d = d0;
+              if (d[0] === '8') d = '7' + d.slice(1);
+              else if (d[0] !== '7') d = '7' + d;
+              setForgotPhoneDigits(d.slice(0, 11));
+            }}
             style={{ width: '100%', marginBottom: 12 }}
             required
           />
+          <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
+            Никнейм
+          </label>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              marginBottom: 12,
+              paddingLeft: 12,
+              background: 'var(--bg)',
+            }}
+          >
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>@</span>
+            <input
+              className="text-input"
+              style={{ border: 'none', flex: 1, paddingLeft: 0 }}
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              autoComplete="username"
+              placeholder="username"
+              value={forgotNickInput}
+              onChange={(e) => setForgotNickInput(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase())}
+              required
+            />
+          </div>
           <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
             Новый пароль
           </label>

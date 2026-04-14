@@ -381,30 +381,16 @@ app.post('/api/auth/register', registerLimiter, (req, res) => {
   }
 });
 
-/** Восстановление пароля по телефону или нику (без e-mail/SMS — временная схема). */
-function findUserForPasswordReset(identifierRaw) {
-  const trimmed = String(identifierRaw ?? '').trim();
-  if (!trimmed) return null;
-  const digits = trimmed.replace(/\D/g, '');
-  if (digits.length >= 10) {
-    let d = digits;
-    if (d[0] === '8') d = '7' + d.slice(1);
-    if (d.length === 10 && d[0] !== '7') d = '7' + d;
-    const phone = normalizePhone(d.slice(0, 15));
-    if (phone) {
-      const u = findUserByPhone(phone);
-      if (u) return u;
-    }
-  }
-  const nick = normalizeNickname(trimmed.startsWith('@') ? trimmed : `@${trimmed}`);
-  if (nick) return findUserByNickname(nick);
-  return null;
-}
-
+/** Сброс пароля: нужны и телефон, и ник одного аккаунта (номер не светится в профиле). */
 app.post('/api/auth/reset-password', registerLimiter, (req, res) => {
-  const { identifier, password, passwordConfirm } = req.body || {};
-  if (typeof identifier !== 'string' || !identifier.trim()) {
-    res.status(400).json({ error: 'Укажите телефон или никнейм' });
+  const { phone: rawPhone, username: rawUsername, nickname: rawNick, password, passwordConfirm } = req.body || {};
+  const rawUser = typeof rawUsername === 'string' && rawUsername.trim() ? rawUsername : rawNick;
+  if (typeof rawPhone !== 'string' || !String(rawPhone).trim()) {
+    res.status(400).json({ error: 'Укажите номер телефона' });
+    return;
+  }
+  if (typeof rawUser !== 'string' || !String(rawUser).trim()) {
+    res.status(400).json({ error: 'Укажите никнейм' });
     return;
   }
   if (typeof password !== 'string' || !password) {
@@ -420,12 +406,30 @@ app.post('/api/auth/reset-password', registerLimiter, (req, res) => {
     res.status(400).json({ error: pwdErr });
     return;
   }
-  const user = findUserForPasswordReset(identifier);
-  if (!user) {
-    res.status(404).json({ error: 'Пользователь с таким номером или ником не найден' });
+  let digits = String(rawPhone).replace(/\D/g, '');
+  if (digits.length >= 10) {
+    if (digits[0] === '8') digits = '7' + digits.slice(1);
+    if (digits.length === 10 && digits[0] !== '7') digits = '7' + digits;
+  }
+  const phone = normalizePhone(digits.slice(0, 15));
+  if (!phone) {
+    res.status(400).json({ error: 'Некорректный номер телефона' });
     return;
   }
-  setUserPasswordHash(user.id, hashPassword(password));
+  const nick = normalizeNickname(String(rawUser).trim().startsWith('@') ? String(rawUser).trim() : `@${String(rawUser).trim()}`);
+  if (!nick) {
+    res.status(400).json({ error: 'Некорректный никнейм' });
+    return;
+  }
+  const byPhone = findUserByPhone(phone);
+  const byNick = findUserByNickname(nick);
+  if (!byPhone || !byNick || String(byPhone.id) !== String(byNick.id)) {
+    res.status(400).json({
+      error: 'Номер телефона и ник не относятся к одному аккаунту или данные неверны',
+    });
+    return;
+  }
+  setUserPasswordHash(byPhone.id, hashPassword(password));
   res.json({ ok: true });
 });
 

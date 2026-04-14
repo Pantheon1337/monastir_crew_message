@@ -95,12 +95,6 @@ export default function StoryViewer({
     });
   }, [onAfterLastItem, onClose, total]);
 
-  const dismissStoryNow = useCallback(() => {
-    setSheetDragging(false);
-    setSheetY(0);
-    onClose();
-  }, [onClose]);
-
   const goPrev = useCallback(() => {
     setSlide((s) => {
       if (total === 0) return 0;
@@ -269,9 +263,11 @@ export default function StoryViewer({
   function onStagePointerUp(e) {
     const start = stagePtrStart.current;
     stagePtrStart.current = null;
-    setIsHolding(false);
-    setSheetDragging(false);
-    if (start == null || e.pointerId !== start.pointerId) return;
+    if (start == null || e.pointerId !== start.pointerId) {
+      setIsHolding(false);
+      setSheetDragging(false);
+      return;
+    }
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
@@ -293,12 +289,17 @@ export default function StoryViewer({
     if (verticalIntent) {
       const thr = axis === 'vertical' ? Math.max(64, STORY_VERTICAL_THRESHOLD - 12) : STORY_VERTICAL_THRESHOLD;
       if (Math.abs(dy) >= thr && Math.abs(dy) >= Math.abs(dx) * 0.65) {
-        dismissStoryNow();
+        onClose();
         return;
       }
+      setIsHolding(false);
+      setSheetDragging(false);
       setSheetY(0);
       return;
     }
+
+    setIsHolding(false);
+    setSheetDragging(false);
 
     if (Math.abs(dx) >= swipeTh && Math.abs(dx) >= Math.abs(dy) * 0.55) {
       if (dx < 0) goNext();
