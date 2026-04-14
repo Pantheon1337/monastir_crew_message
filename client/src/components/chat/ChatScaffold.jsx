@@ -27,7 +27,6 @@ export default function ChatScaffold({
   const shellStyle = useMemo(() => {
     const base = {
       zIndex,
-      background: 'var(--bg)',
       display: 'flex',
       flexDirection: 'column',
       minHeight: 0,
@@ -62,11 +61,11 @@ export default function ChatScaffold({
   }, [vvRect]);
 
   return (
-    <div className="chat-scaffold" style={shellStyle}>
+    <div className="chat-scaffold chat-container" style={shellStyle}>
       {top}
       <div
         ref={timelineRef}
-        className="chat-scaffold-timeline"
+        className="chat-scaffold-timeline messages-area"
         role="region"
         aria-label="Сообщения чата"
         lang="ru"
@@ -76,7 +75,7 @@ export default function ChatScaffold({
       </div>
       {errorBanner}
       <div
-        className={`chat-scaffold-composer-host${imeTight ? ' chat-scaffold-composer-host--ime' : ''}`}
+        className={`chat-scaffold-composer-host input-area${imeTight ? ' chat-scaffold-composer-host--ime' : ''}`}
       >
         {footer}
       </div>

@@ -18,7 +18,7 @@ import { releaseCameraStreamNow } from '../cameraSession.js';
 import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
 import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
 import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
-import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
+import { messageGroupFlags } from '../chat/messageGrouping.js';
 import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
@@ -316,7 +316,6 @@ function MessageBubble({
 
   const isMediaShell = kind === 'video_note' || kind === 'sticker';
   const isRevoked = kind === 'revoked' || m.revokedForAll;
-  const bubbleRadius = telegramBubbleRadius(mine, isFirstInGroup, isLastInGroup);
   const bubbleBg = isRevoked
     ? mine
       ? 'var(--chat-bubble-revoked-out)'
@@ -448,7 +447,7 @@ function MessageBubble({
 
   return (
     <div
-      className={mine ? 'chat-message-row chat-message-row--out' : 'chat-message-row chat-message-row--in'}
+      className={mine ? 'message outgoing' : 'message incoming'}
       style={{
         marginBottom: isLastInGroup ? 12 : 3,
         userSelect: 'none',
@@ -471,16 +470,16 @@ function MessageBubble({
       >
         <div
           ref={shellRef}
-          className={`chat-message-bubble-shell chat-tg-bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
+          className={`chat-message-bubble-shell chat-tg-bubble bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
           {...lp}
           onContextMenu={(e) => {
             e.preventDefault();
             onOpenActionMenu?.(m, e.clientX, e.clientY);
           }}
           style={{
-            borderRadius: isMediaShell ? 0 : bubbleRadius,
+            borderRadius: isMediaShell ? 0 : undefined,
             padding: isMediaShell ? 0 : undefined,
-            background: isMediaShell ? 'transparent' : bubbleBg,
+            background: isMediaShell ? 'transparent' : isRevoked ? bubbleBg : undefined,
             overflow: isMediaShell ? 'visible' : 'hidden',
             maxWidth: isMediaShell ? 'var(--chat-bubble-max)' : undefined,
             userSelect: 'none',
@@ -517,8 +516,8 @@ function MessageBubble({
           onUpdate={(r) => onReactionsLocalUpdate?.(m.id, r)}
         />
         ) : null}
-        <div className="chat-bubble-meta-row">
-          <span className="chat-bubble-time">
+        <div className="chat-bubble-meta-row meta">
+          <span className="chat-bubble-time time">
             {formatTime(m.createdAt)}
             {kind === 'text' && m.editedAt != null ? (
               <span title="Сообщение изменено" style={{ opacity: 0.9 }}>
@@ -1269,15 +1268,15 @@ export default function RoomChatScreen({
         zIndex={80}
         timelineSurfaceStyle={timelineWallpaperStyle}
         top={
-          <header className="chat-screen-header">
+          <header className="chat-header chat-tg-header">
         <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
           ‹
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className="chat-header__title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             <span style={{ color: 'var(--accent)' }}>#</span> {roomTitle || 'Комната'}
           </div>
-          <div className="muted" style={{ fontSize: 10, marginTop: 2 }}>
+          <div className="chat-header__subtitle muted">
             Групповой чат
           </div>
         </div>
@@ -1415,7 +1414,7 @@ export default function RoomChatScreen({
                 </button>
               </div>
             ) : null}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, width: '100%' }}>
+            <div className="chat-tg-composer-row">
             <input
               ref={chatFileInputRef}
               type="file"
@@ -1463,7 +1462,7 @@ export default function RoomChatScreen({
             >
               <ChatComposerIcon name="stickers" fallback="😀" alt="" size={22} />
             </button>
-            <div className="chat-composer-field-wrap">
+            <div className="chat-composer-field-wrap input-wrapper">
               <MentionAutocomplete
                 candidates={mentionCandidates}
                 text={text}
@@ -1509,26 +1508,18 @@ export default function RoomChatScreen({
         {hasTypedText ? (
           <button
             type="button"
-            className="chat-send-btn"
+            className="chat-send-btn send-btn"
             aria-label="Отправить"
             onMouseDown={(e) => e.preventDefault()}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => void sendTextMessage()}
             style={{
-              width: 44,
-              height: 44,
               flexShrink: 0,
-              borderRadius: '50%',
-              border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--bg)',
-              fontSize: 20,
               lineHeight: 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              padding: 0,
               touchAction: 'manipulation',
             }}
           >

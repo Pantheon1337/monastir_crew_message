@@ -20,7 +20,7 @@ import { releaseCameraStreamNow } from '../cameraSession.js';
 import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
 import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
 import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
-import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
+import { messageGroupFlags } from '../chat/messageGrouping.js';
 import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
@@ -354,7 +354,6 @@ const MessageBubble = memo(function MessageBubble({
 
   const isMediaShell = kind === 'video_note' || kind === 'sticker';
   const isRevoked = kind === 'revoked' || m.revokedForAll;
-  const bubbleRadius = telegramBubbleRadius(mine, isFirstInGroup, isLastInGroup);
   const bubbleBg = isRevoked
     ? mine
       ? 'var(--chat-bubble-revoked-out)'
@@ -487,7 +486,7 @@ const MessageBubble = memo(function MessageBubble({
   return (
     <div
       id={m.id ? `chat-msg-${m.id}` : undefined}
-      className={mine ? 'chat-message-row chat-message-row--out' : 'chat-message-row chat-message-row--in'}
+      className={mine ? 'message outgoing' : 'message incoming'}
       style={{
         marginBottom: isLastInGroup ? 12 : 3,
         userSelect: 'none',
@@ -510,16 +509,16 @@ const MessageBubble = memo(function MessageBubble({
       >
         <div
           ref={shellRef}
-          className={`chat-message-bubble-shell chat-tg-bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
+          className={`chat-message-bubble-shell chat-tg-bubble bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
           {...lp}
           onContextMenu={(e) => {
             e.preventDefault();
             onOpenActionMenu?.(m, e.clientX, e.clientY);
           }}
           style={{
-            borderRadius: isMediaShell ? 0 : bubbleRadius,
+            borderRadius: isMediaShell ? 0 : undefined,
             padding: isMediaShell ? 0 : undefined,
-            background: isMediaShell ? 'transparent' : bubbleBg,
+            background: isMediaShell ? 'transparent' : isRevoked ? bubbleBg : undefined,
             overflow: isMediaShell ? 'visible' : 'hidden',
             maxWidth: isMediaShell ? 'var(--chat-bubble-max)' : undefined,
             userSelect: 'none',
@@ -557,7 +556,7 @@ const MessageBubble = memo(function MessageBubble({
           onUpdate={(r) => onReactionsLocalUpdate?.(m.id, r)}
         />
         ) : null}
-        <div className="chat-bubble-meta-row">
+        <div className="chat-bubble-meta-row meta">
           {m.pinnedForMe ? (
             <span
               title={m.pinnedShared ? 'Закреплено для обоих' : 'Закреплено у вас'}
@@ -567,7 +566,7 @@ const MessageBubble = memo(function MessageBubble({
               📌
             </span>
           ) : null}
-          <span className="chat-bubble-time">
+          <span className="chat-bubble-time time">
             {formatTime(m.createdAt)}
             {kind === 'text' && m.editedAt != null ? (
               <span title="Сообщение изменено" style={{ opacity: 0.9 }}>
@@ -1419,7 +1418,7 @@ export default function DirectChatScreen({
         zIndex={80}
         timelineSurfaceStyle={timelineWallpaperStyle}
         top={
-          <header className="chat-screen-header">
+          <header className="chat-header chat-tg-header">
         <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} onClick={onClose} aria-label="Назад">
           ‹
         </button>
@@ -1440,7 +1439,7 @@ export default function DirectChatScreen({
         >
           <div style={{ minWidth: 0 }}>
             {isSavedMessages ? (
-              <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div className="chat-header__title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 Избранное
               </div>
             ) : (() => {
@@ -1448,19 +1447,11 @@ export default function DirectChatScreen({
                 if (full) {
                   return (
                     <>
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 600,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
+                      <div className="chat-header__title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {full}
                       </div>
                       {peerNickname ? (
-                        <div className="muted" style={{ fontSize: 12, marginTop: 2, lineHeight: 1.25, color: 'var(--muted)' }}>
+                        <div className="chat-header__subtitle muted">
                           <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
                         </div>
                       ) : null}
@@ -1469,20 +1460,20 @@ export default function DirectChatScreen({
                 }
                 if (peerNickname) {
                   return (
-                    <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div className="chat-header__title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <NicknameWithBadge nickname={peerNickname} affiliationEmoji={peerAffiliationEmoji} />
                     </div>
                   );
                 }
                 return (
-                  <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div className="chat-header__title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {peerLabel || 'Чат'}
                   </div>
                 );
               })()}
           </div>
           {peerPresenceLine != null ? (
-            <div className="muted" style={{ fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>
+            <div className="muted chat-header__subtitle" style={{ fontSize: 10, marginTop: 3, lineHeight: 1.35 }}>
               {peerPresenceLine}
             </div>
           ) : null}
@@ -1661,7 +1652,7 @@ export default function DirectChatScreen({
                 </button>
               </div>
             ) : null}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, width: '100%' }}>
+            <div className="chat-tg-composer-row">
             <input
               ref={chatFileInputRef}
               type="file"
@@ -1709,7 +1700,7 @@ export default function DirectChatScreen({
             >
               <ChatComposerIcon name="stickers" fallback="😀" alt="" size={22} />
             </button>
-            <div className="chat-composer-field-wrap">
+            <div className="chat-composer-field-wrap input-wrapper">
               <MentionAutocomplete
                 candidates={mentionCandidates}
                 text={text}
@@ -1756,27 +1747,19 @@ export default function DirectChatScreen({
         {hasTypedText ? (
           <button
             type="button"
-            className="chat-send-btn"
+            className="chat-send-btn send-btn"
             aria-label="Отправить"
             disabled={canMessage === false}
             onMouseDown={(e) => e.preventDefault()}
             onPointerDown={(e) => e.preventDefault()}
             onClick={() => void sendTextMessage()}
             style={{
-              width: 44,
-              height: 44,
               flexShrink: 0,
-              borderRadius: '50%',
-              border: 'none',
-              background: 'var(--accent)',
-              color: 'var(--bg)',
-              fontSize: 20,
               lineHeight: 1,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              padding: 0,
               touchAction: 'manipulation',
             }}
           >
