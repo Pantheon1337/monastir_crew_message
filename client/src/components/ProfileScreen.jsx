@@ -6,6 +6,7 @@ import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { AFFILIATION_EMOJI_CHOICES } from '../affiliationConstants.js';
 import { formatPhoneRu } from '../formatPhone.js';
 import { PROFILE_HERO_TINTS, profileHeroTintBg } from '../profileHeroTints.js';
+import { getChatWallpaperRelPath, setChatWallpaperRelPath } from '../chatWallpaper.js';
 
 const MAX_ABOUT = 100;
 
@@ -214,6 +215,9 @@ export default function ProfileScreen({
   const [peersLoading, setPeersLoading] = useState(false);
   const [friendMenuId, setFriendMenuId] = useState(null);
   const friendMenuRef = useRef(null);
+  const [chatSettingsOpen, setChatSettingsOpen] = useState(false);
+  const [chatWallpaperList, setChatWallpaperList] = useState([]);
+  const [chatWallpaperLoading, setChatWallpaperLoading] = useState(false);
 
   const loadPeers = useCallback(async () => {
     if (!user?.id) return;
@@ -235,6 +239,20 @@ export default function ProfileScreen({
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [friendMenuId]);
+
+  useEffect(() => {
+    if (!chatSettingsOpen || !user?.id) return;
+    let cancelled = false;
+    (async () => {
+      setChatWallpaperLoading(true);
+      const { ok, data } = await api('/api/chat/wallpapers', { userId: user.id });
+      if (!cancelled && ok) setChatWallpaperList(data.wallpapers || []);
+      if (!cancelled) setChatWallpaperLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [chatSettingsOpen, user?.id]);
 
   const loadIncoming = useCallback(async () => {
     if (!user?.id) return;
@@ -710,6 +728,12 @@ export default function ProfileScreen({
               ›
             </span>
           </button>
+          <button type="button" className="profile-service-row" onClick={() => setChatSettingsOpen(true)}>
+            <span>Настройка чата</span>
+            <span className="profile-service-row__chev" aria-hidden>
+              ›
+            </span>
+          </button>
           <button type="button" className="profile-service-row" onClick={() => onOpenSettings?.()}>
             <span>Настройки</span>
             <span className="profile-service-row__chev" aria-hidden>
@@ -959,6 +983,135 @@ export default function ProfileScreen({
               </button>
             ))}
           </div>
+        </div>
+      </div>
+    ) : null}
+
+    {chatSettingsOpen ? (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-chat-settings-title"
+        className="modal-overlay profile-field-modal-overlay"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 200,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+          paddingTop: 'max(48px, env(safe-area-inset-top))',
+        }}
+        onClick={() => setChatSettingsOpen(false)}
+        onKeyDown={(e) => e.key === 'Escape' && setChatSettingsOpen(false)}
+      >
+        <div
+          className="block modal-panel"
+          style={{ width: '100%', maxWidth: 400, padding: 16, maxHeight: 'min(88vh, 560px)', overflow: 'auto' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span id="profile-chat-settings-title" style={{ fontSize: 15, fontWeight: 700 }}>
+              Настройка чата
+            </span>
+            <button
+              type="button"
+              className="icon-btn"
+              style={{ width: 36, height: 36 }}
+              onClick={() => setChatSettingsOpen(false)}
+              aria-label="Закрыть"
+            >
+              ×
+            </button>
+          </div>
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.45 }}>
+            Фон области сообщений в личных чатах и комнатах. Картинки лежат на сервере в{' '}
+            <code style={{ fontSize: 10 }}>uploads/fon_chat</code>.
+          </p>
+          <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 600 }}>Фон по умолчанию</p>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{
+              width: '100%',
+              marginBottom: 14,
+              padding: 0,
+              overflow: 'hidden',
+              borderColor: !getChatWallpaperRelPath(user?.id) ? 'var(--accent)' : undefined,
+            }}
+            onClick={() => {
+              setChatWallpaperRelPath(user?.id, null);
+            }}
+          >
+            <div
+              style={{
+                height: 72,
+                backgroundColor: 'var(--chat-timeline-bg)',
+                backgroundImage: 'var(--chat-timeline-pattern)',
+                backgroundSize: '360px 360px',
+              }}
+            />
+            <div style={{ padding: '8px 10px', fontSize: 12, textAlign: 'left' }}>Стандартный (тема приложения)</div>
+          </button>
+          <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 600 }}>Свои фоны</p>
+          {chatWallpaperLoading ? (
+            <p className="muted" style={{ margin: 0, fontSize: 11 }}>
+              Загрузка списка…
+            </p>
+          ) : chatWallpaperList.length === 0 ? (
+            <p className="muted" style={{ margin: 0, fontSize: 11, lineHeight: 1.4 }}>
+              На сервере пока нет файлов в папке fon_chat. Добавьте изображения (jpg, png, webp) и обновите экран.
+            </p>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: 10,
+              }}
+            >
+              {chatWallpaperList.map((w) => {
+                const cur = getChatWallpaperRelPath(user?.id);
+                const active = cur === w.relPath;
+                return (
+                  <button
+                    key={w.id}
+                    type="button"
+                    className="btn-outline"
+                    title={w.id}
+                    style={{
+                      padding: 0,
+                      overflow: 'hidden',
+                      borderColor: active ? 'var(--accent)' : undefined,
+                    }}
+                    onClick={() => setChatWallpaperRelPath(user?.id, w.relPath)}
+                  >
+                    <div
+                      style={{
+                        height: 88,
+                        backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url(${w.url})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }}
+                    />
+                    <div
+                      style={{
+                        padding: '6px 8px',
+                        fontSize: 10,
+                        textAlign: 'left',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {w.id}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     ) : null}

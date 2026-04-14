@@ -14,7 +14,16 @@ function visualViewportUsable(rect) {
  * Каркас экрана чата по схеме Element / Matrix: шапка → таймлайн (flex:1) → композер.
  * Область совпадает с visualViewport, safe-area только у «полки» композера (без дубля с полем).
  */
-export default function ChatScaffold({ vvRect, zIndex = 60, top, timelineRef, timeline, footer, errorBanner }) {
+export default function ChatScaffold({
+  vvRect,
+  zIndex = 60,
+  top,
+  timelineRef,
+  timeline,
+  timelineSurfaceStyle,
+  footer,
+  errorBanner,
+}) {
   const shellStyle = useMemo(() => {
     const base = {
       zIndex,
@@ -60,6 +69,7 @@ export default function ChatScaffold({ vvRect, zIndex = 60, top, timelineRef, ti
         className="chat-scaffold-timeline"
         role="region"
         aria-label="Сообщения чата"
+        style={timelineSurfaceStyle}
       >
         {timeline}
       </div>

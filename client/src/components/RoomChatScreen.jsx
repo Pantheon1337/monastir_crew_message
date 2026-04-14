@@ -20,6 +20,7 @@ import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
 import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
+import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 
 const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 
@@ -1262,6 +1263,8 @@ export default function RoomChatScreen({
     [text],
   );
 
+  const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
+
   useLayoutEffect(() => {
     const el = composerInputRef.current;
     if (!el || el.tagName !== 'TEXTAREA') return;
@@ -1274,6 +1277,7 @@ export default function RoomChatScreen({
       <ChatScaffold
         vvRect={vvRect}
         zIndex={80}
+        timelineSurfaceStyle={timelineWallpaperStyle}
         top={
           <header
             style={{

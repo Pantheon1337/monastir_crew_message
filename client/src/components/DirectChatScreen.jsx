@@ -23,6 +23,7 @@ import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
+import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 
 const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 
@@ -1413,6 +1414,8 @@ export default function DirectChatScreen({
         )
       : null;
 
+  const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
+
   useLayoutEffect(() => {
     const el = composerInputRef.current;
     if (!el || el.tagName !== 'TEXTAREA') return;
@@ -1425,6 +1428,7 @@ export default function DirectChatScreen({
       <ChatScaffold
         vvRect={vvRect}
         zIndex={80}
+        timelineSurfaceStyle={timelineWallpaperStyle}
         top={
           <header
             style={{

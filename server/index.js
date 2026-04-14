@@ -124,6 +124,7 @@ import {
   tryMarkDirectMessageDeliveredByWs,
 } from './social.js';
 import { listStickerPacks } from './stickers.js';
+import { listChatWallpapers } from './chatWallpapers.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
 import { enforceVideoMaxSize } from './uploadLimits.js';
@@ -1020,6 +1021,12 @@ app.get('/api/stickers/packs', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   res.json(listStickerPacks());
+});
+
+app.get('/api/chat/wallpapers', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  res.json({ wallpapers: listChatWallpapers() });
 });
 
 app.get('/api/chats/:chatId/messages', (req, res) => {

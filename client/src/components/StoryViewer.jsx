@@ -936,6 +936,32 @@ export default function StoryViewer({
             />
             <button
               type="button"
+              aria-label="Отправить ответ в чат"
+              disabled={replyBusy || !replyText.trim()}
+              onClick={() => void sendReply()}
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: '50%',
+                border: 'none',
+                background: replyText.trim() ? 'var(--accent, #5b9fd6)' : 'rgba(255,255,255,0.12)',
+                color: replyText.trim() ? 'var(--bg, #0f1114)' : 'rgba(255,255,255,0.45)',
+                fontSize: 18,
+                lineHeight: 1,
+                cursor: replyBusy || !replyText.trim() ? 'default' : 'pointer',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 0,
+                touchAction: 'manipulation',
+                opacity: replyBusy ? 0.65 : 1,
+              }}
+            >
+              ➤
+            </button>
+            <button
+              type="button"
               aria-pressed={liked}
               aria-label={liked ? 'Убрать лайк' : 'Лайкнуть историю'}
               disabled={likeBusy}
