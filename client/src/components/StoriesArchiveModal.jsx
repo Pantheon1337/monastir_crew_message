@@ -80,6 +80,22 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
     await load();
   }
 
+  async function restoreToProfile(storyId) {
+    if (!userId) return;
+    setBusyId(storyId);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(storyId)}/show-in-profile`, {
+      method: 'POST',
+      userId,
+    });
+    setBusyId(null);
+    if (!ok) {
+      alert(data?.error || 'Не удалось вернуть в профиль');
+      return;
+    }
+    onChanged?.();
+    await load();
+  }
+
   async function removeForever(storyId) {
     if (!userId) return;
     if (!window.confirm('Удалить эту историю безвозвратно?')) return;
@@ -136,7 +152,8 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
           </button>
         </div>
         <p className="muted" style={{ fontSize: 11, margin: '0 0 12px' }}>
-          Истёкшие по времени и кадры, убранные из ленты. Свои кадры можно вернуть в ленту (пока не истёк 24 ч) или удалить.
+          Снятые с ленты, убранные из сетки профиля и истёкшие кадры. Пока не истёк срок — можно вернуть в ленту кружков, в
+          сетку профиля или удалить навсегда.
         </p>
         {loading ? (
           <p className="muted" style={{ fontSize: 12 }}>
@@ -153,7 +170,9 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
             {items.map((it) => {
               const own = String(it.userId) === String(userId);
               const notExpired = Number(it.expiresAt) > now;
-              const canRestore = own && it.archivedEarly && notExpired;
+              const inProfile = it.showInProfile !== false;
+              const canRestoreFeed = own && it.archivedEarly && notExpired;
+              const canRestoreProfile = own && !inProfile && notExpired;
               const canDelete = own;
               const vc = typeof it.viewerCount === 'number' ? it.viewerCount : 0;
               return (
@@ -208,7 +227,7 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
                     ) : null}
                     {own ? (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                        {canRestore ? (
+                        {canRestoreFeed ? (
                           <button
                             type="button"
                             className="btn-outline"
@@ -217,6 +236,17 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
                             onClick={() => void restoreToFeed(it.id)}
                           >
                             Вернуть в ленту
+                          </button>
+                        ) : null}
+                        {canRestoreProfile ? (
+                          <button
+                            type="button"
+                            className="btn-outline"
+                            style={{ fontSize: 11, padding: '4px 10px', width: 'auto' }}
+                            disabled={busyId === it.id}
+                            onClick={() => void restoreToProfile(it.id)}
+                          >
+                            Вернуть в профиль
                           </button>
                         ) : null}
                         {canDelete ? (

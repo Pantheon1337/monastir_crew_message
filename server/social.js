@@ -2025,6 +2025,18 @@ export function hideStoryFromProfileGrid(storyId, userId) {
   return { ok: true };
 }
 
+/** Снова показывать кадр в сетке профиля у гостей (пока не истёк срок 24 ч). */
+export function restoreStoryToProfileGrid(storyId, userId) {
+  const row = getDb()
+    .prepare(`SELECT id, user_id AS userId, expires_at AS expiresAt FROM stories WHERE id = ?`)
+    .get(storyId);
+  if (!row) return { error: 'История не найдена' };
+  if (String(row.userId) !== String(userId)) return { error: 'Нет доступа' };
+  if (row.expiresAt <= Date.now()) return { error: 'Срок истории истёк' };
+  getDb().prepare(`UPDATE stories SET show_in_profile = 1 WHERE id = ?`).run(storyId);
+  return { ok: true };
+}
+
 /**
  * Истории видны только себе и друзьям (активный личный чат с friends_active = 1).
  * Лента постов по-прежнему общая, если у поста не включено «только для друзей».
@@ -2150,8 +2162,8 @@ export function toggleStoryLike(viewerId, storyId) {
 }
 
 /**
- * Архив: снятые с ленты (feed_hidden) и истёкшие без удержания в профиле.
- * Кадр с «в профиле» и не убранный в архив с ленты не попадает сюда по одному только истечению 24 ч — он остаётся в сетке профиля.
+ * Архив: снятые с ленты (feed_hidden), убранные из сетки профиля (show_in_profile = 0, пока не истёк срок),
+ * и истёкшие кадры (с учётом ленты/профиля по условию ниже).
  */
 export function listArchivedStoriesForViewer(viewerId, limit = 80) {
   const now = Date.now();
@@ -2159,6 +2171,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
     .prepare(
       `SELECT s.id, s.user_id AS userId, s.body, s.media_path AS mediaPath, s.created_at AS createdAt, s.expires_at AS expiresAt,
         COALESCE(s.feed_hidden, 0) AS feedHidden, s.feed_hidden_at AS feedHiddenAt,
+        COALESCE(s.show_in_profile, 1) AS showInProfile,
         u.nickname AS nickname, u.first_name AS firstName, u.last_name AS lastName, u.avatar_path AS avatarPath,
         u.display_role AS authorRole, u.display_role_emoji AS authorEmoji,
         (SELECT COUNT(1) FROM story_views sv WHERE sv.story_id = s.id AND sv.viewer_id != s.user_id) AS viewerCount
@@ -2167,6 +2180,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       WHERE s.user_id = ?
       AND (
         COALESCE(s.feed_hidden, 0) = 1
+        OR (COALESCE(s.show_in_profile, 1) = 0 AND s.expires_at > ?)
         OR (
           s.expires_at <= ?
           AND (COALESCE(s.feed_hidden, 0) = 1 OR COALESCE(s.show_in_profile, 1) = 0)
@@ -2175,7 +2189,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       ORDER BY COALESCE(s.feed_hidden_at, s.expires_at) DESC
       LIMIT ?`
     )
-    .all(viewerId, now, limit);
+    .all(viewerId, now, now, limit);
   return rows.map((r) => ({
     id: r.id,
     userId: r.userId,
@@ -2183,6 +2197,7 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
     mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
+    showInProfile: Number(r.showInProfile) === 1,
     archivedEarly: Number(r.feedHidden) === 1 && r.expiresAt > now,
     feedHiddenAt: r.feedHiddenAt ?? null,
     viewerCount: Number(r.viewerCount) || 0,

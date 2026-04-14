@@ -71,6 +71,7 @@ import {
   deleteStoryByAuthor,
   listOwnStoriesForManagement,
   hideStoryFromProfileGrid,
+  restoreStoryToProfileGrid,
   createStory,
   areFriends,
   haveDirectChatLink,
@@ -1878,6 +1879,19 @@ app.post('/api/stories/:storyId/hide-from-profile', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   const out = hideStoryFromProfileGrid(req.params.storyId, userId);
+  if (out.error) {
+    const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
+    res.status(st).json({ error: out.error });
+    return;
+  }
+  broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
+  res.json({ ok: true });
+});
+
+app.post('/api/stories/:storyId/show-in-profile', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = restoreStoryToProfileGrid(req.params.storyId, userId);
   if (out.error) {
     const st = out.error.includes('Нет доступа') ? 403 : out.error.includes('не найден') ? 404 : 400;
     res.status(st).json({ error: out.error });
