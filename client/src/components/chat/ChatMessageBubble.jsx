@@ -216,6 +216,7 @@ const ChatMessageBubble = memo(function ChatMessageBubble({
       >
         <div
           ref={shellRef}
+          lang="ru"
           className={`chat-message-bubble-shell chat-tg-bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
           {...lp}
           onContextMenu={(e) => {

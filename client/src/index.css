@@ -39,8 +39,9 @@
   --chat-bubble-padding: 10px 14px 8px;
   --chat-bubble-max: min(min(560px, 100vw - 28px), 94%);
   --chat-font-size: 15px;
-  --chat-line-height: 1.48;
-  --chat-letter-spacing: -0.015em;
+  /* 1.45 как в test/1.html — чуть плотнее, читаемее в узком пузыре */
+  --chat-line-height: 1.45;
+  --chat-letter-spacing: -0.02em;
   --chat-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
   --chat-file-chip-bg: rgba(255, 255, 255, 0.06);
@@ -1648,13 +1649,15 @@ video.chat-video-note {
   letter-spacing: var(--chat-letter-spacing);
   color: var(--chat-bubble-text);
   text-align: start;
-  text-wrap: wrap;
+  /* «Умные» концы строк там, где движок умеет (как в современных мессенджерах) */
+  text-wrap: pretty;
   word-wrap: break-word;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  /* auto даёт случайные переносы в русском; manual + переносы в .chat-message-text */
-  -webkit-hyphens: manual;
-  hyphens: manual;
+  /* break-word: перенос по границам слов; длинные токены ломаются только при переполнении (не как anywhere) */
+  overflow-wrap: break-word;
+  word-break: normal;
+  /* С lang="ru" на пузыре — нормальная расстановка переносов для русского */
+  -webkit-hyphens: auto;
+  hyphens: auto;
   line-break: auto;
   outline: none;
   -webkit-backface-visibility: hidden;
@@ -1705,8 +1708,8 @@ video.chat-video-note {
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
   -webkit-hyphens: auto;
   hyphens: auto;
 }
@@ -1764,8 +1767,8 @@ video.chat-video-note {
 }
 
 /*
- * Тело сообщения: pre-wrap — явные переводы строк из сообщения (как в композере);
- * перенос длинных слов и URL (как test/1.html .message: break-word + overflow-wrap).
+ * Тело сообщения: pre-wrap — явные переводы строк из сообщения (как в композере).
+ * Переносы слов как в test/1.html: сначала границы слов, не «ломать посередине» без нужды.
  */
 .chat-message-text {
   display: block;
@@ -1775,17 +1778,19 @@ video.chat-video-note {
   box-sizing: border-box;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  -webkit-hyphens: manual;
-  hyphens: manual;
-  text-wrap: wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  text-wrap: pretty;
   line-height: inherit;
   letter-spacing: inherit;
   font-family: var(--chat-font-family);
   font-size: inherit;
   font-weight: 400;
   unicode-bidi: plaintext;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Время и галочки: нижний правый край пузыря, как в Telegram */

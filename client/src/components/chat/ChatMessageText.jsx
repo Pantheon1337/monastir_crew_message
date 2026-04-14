@@ -7,7 +7,12 @@ import { splitMentions } from '../../chat/mentionParts.js';
  * С @ — фрагменты текста и inline-кнопки упоминаний без лишней обёртки вокруг всей строки.
  */
 function ChatMessageTextInner({ text, onMentionClick }) {
-  const s = text == null ? '' : String(text);
+  const s =
+    text == null
+      ? ''
+      : String(text)
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n');
   const parts = splitMentions(s);
 
   if (parts.length === 0) {
