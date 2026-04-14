@@ -1,19 +1,15 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, memo } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api, apiUpload } from '../api.js';
-import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
-import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
-import ChatMessageText from './chat/ChatMessageText.jsx';
 import MentionAutocomplete from './chat/MentionAutocomplete.jsx';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
 import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
-import SwipeToReplyRow from './chat/SwipeToReplyRow.jsx';
-import ChatReadReceipt from './chat/ChatReadReceipt.jsx';
+import ChatMessageBubble from './chat/ChatMessageBubble.jsx';
 import AvatarLightbox from './AvatarLightbox.jsx';
 import ForwardMessageModal from './ForwardMessageModal.jsx';
 import ReactionUsersModal from './ReactionUsersModal.jsx';
-import { REACTION_KEYS, REACTION_ICONS, emptyReactionCounts, normalizeReactionMine } from '../reactionConstants.js';
+import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 import { useLeftEdgeSwipeBack } from '../hooks/useLeftEdgeSwipeBack.js';
 import { releaseCameraStreamNow } from '../cameraSession.js';
@@ -25,27 +21,20 @@ import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
+import {
+  CHAT_TIMELINE_STACK_STYLE,
+  POST_LOAD_STICK_MS,
+  normalizeChatMessage,
+  getCopyTextForMessage,
+  formatChatMessageTime,
+  clampChatMenuPosition,
+  pinChipPreview,
+} from '../chat/chatPrimitives.js';
 
 const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 
 const MAX_MS = 15000;
 const MIN_MS = 400;
-
-/** После загрузки истории не доверяем gap; короткое окно — без лишних скроллов и дёрганий. */
-const POST_LOAD_STICK_MS = 320;
-
-/** Лента «прижата» к низу при малом числе сообщений — иначе жест и колесо ощущаются перевёрнутыми. */
-const CHAT_TIMELINE_STACK_STYLE = {
-  flex: '1 1 auto',
-  width: '100%',
-  minHeight: '100%',
-  display: 'flex',
-  flexDirection: 'column',
-  justifyContent: 'flex-end',
-  boxSizing: 'border-box',
-  /* как gap в test/1.html .messages-area — между строками сообщений */
-  gap: 12,
-};
 
 function pickAudioMime() {
   if (typeof MediaRecorder === 'undefined') return '';
@@ -63,532 +52,12 @@ function formatDur(ms) {
   return m > 0 ? `${m}:${String(rs).padStart(2, '0')}` : `0:${String(rs).padStart(2, '0')}`;
 }
 
-function formatChatMessageTime(ts) {
-  if (ts == null) return '';
-  const d = new Date(ts);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
 function newClientMessageId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
-
-/** Единый формат для API и WS (mediaUrl, kind, durationMs). */
-function normalizeChatMessage(m) {
-  if (!m || typeof m !== 'object') return m;
-  const durationMs = m.durationMs != null ? m.durationMs : m.duration_ms ?? null;
-  const rawPath = m.media_path ?? m.mediaPath;
-  let mediaUrl = m.mediaUrl;
-  if (!mediaUrl && rawPath) {
-    const p = String(rawPath).replace(/^\/+/, '');
-    mediaUrl = p.startsWith('uploads/') ? `/${p}` : `/uploads/${p}`;
-  }
-  if (mediaUrl && typeof window !== 'undefined' && !/^https?:\/\//i.test(String(mediaUrl))) {
-    try {
-      mediaUrl = new URL(String(mediaUrl), window.location.origin).href;
-    } catch {
-      /* */
-    }
-  }
-  const kind = m.kind || 'text';
-  let refStoryPreviewUrl = m.refStoryPreviewUrl;
-  if (refStoryPreviewUrl && typeof window !== 'undefined' && !/^https?:\/\//i.test(String(refStoryPreviewUrl))) {
-    try {
-      refStoryPreviewUrl = new URL(String(refStoryPreviewUrl), window.location.origin).href;
-    } catch {
-      /* */
-    }
-  }
-  return {
-    ...m,
-    kind,
-    mediaUrl: mediaUrl ?? null,
-    durationMs,
-    refStoryId: m.refStoryId ?? null,
-    refStoryPreviewUrl: refStoryPreviewUrl ?? null,
-    storyReactionKey: m.storyReactionKey ?? null,
-    reactions: m.reactions ?? null,
-    readByPeer: m.readByPeer === true,
-    /** Для исходящих: две серые галочки, если не явно false (совместимость со старым кэшем). */
-    deliveredToPeer: m.readByPeer === true || m.deliveredToPeer !== false,
-    pending: m.pending === true,
-    senderAffiliationEmoji: m.senderAffiliationEmoji ?? null,
-    revokedForAll: m.revokedForAll === true,
-    replyTo: m.replyTo ?? null,
-    forwardFrom: m.forwardFrom ?? null,
-    editedAt: m.editedAt != null ? m.editedAt : null,
-    pinnedForMe: m.pinnedForMe === true,
-    pinnedShared: m.pinnedShared === true,
-  };
-}
-
-function looksLikeVideoFileName(name) {
-  if (!name || typeof name !== 'string') return false;
-  return /\.(mp4|webm|mov|m4v|mkv|ogv)$/i.test(name.trim());
-}
-
-function useLongPress(onLongPress, { ms = 450, moveTol = 14 } = {}) {
-  const timerRef = useRef(null);
-  const startRef = useRef(null);
-
-  const clearTimer = () => {
-    if (timerRef.current != null) {
-      window.clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  return {
-    onPointerDown(e) {
-      if (e.button !== 0) return;
-      startRef.current = { x: e.clientX, y: e.clientY };
-      clearTimer();
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        startRef.current = null;
-        onLongPress(e.clientX, e.clientY);
-      }, ms);
-    },
-    onPointerMove(e) {
-      const s = startRef.current;
-      if (!s || timerRef.current == null) return;
-      const dx = e.clientX - s.x;
-      const dy = e.clientY - s.y;
-      if (dx * dx + dy * dy > moveTol * moveTol) {
-        clearTimer();
-        startRef.current = null;
-      }
-    },
-    onPointerUp() {
-      clearTimer();
-      startRef.current = null;
-    },
-    onPointerCancel() {
-      clearTimer();
-      startRef.current = null;
-    },
-  };
-}
-
-function getCopyTextForMessage(m) {
-  const k = m.kind || 'text';
-  if (k === 'revoked') return 'Сообщение удалено';
-  if (k === 'text') return m.body || '';
-  if (k === 'voice') return 'Голосовое сообщение';
-  if (k === 'video_note') return 'Видеосообщение';
-  if (k === 'image') return m.body?.trim() ? `Фото: ${m.body}` : 'Фото';
-  if (k === 'file') return m.body?.trim() ? `Файл: ${m.body}` : 'Файл';
-  if (k === 'story_reaction') return m.body || 'Реакция на историю';
-  if (k === 'sticker') return m.body?.trim() ? `Стикер ${m.body}` : 'Стикер';
-  return m.body || '';
-}
-
-/** Меню слева от точки касания (палец не попадает на первую кнопку). opts — доп. отступ от пальца. */
-function clampMenuPosition(x, y, w, h, opts = {}) {
-  const gapX = opts.gapX ?? 32;
-  const gapY = opts.gapY ?? 22;
-  if (typeof window === 'undefined') return { left: x - w - gapX, top: y - h - gapY };
-  const vv = window.visualViewport;
-  if (!vv) {
-    const left = Math.max(8, Math.min(x - w - gapX, window.innerWidth - w - 8));
-    const top = Math.max(8, Math.min(y - h - gapY, window.innerHeight - h - 8));
-    return { left, top };
-  }
-  const ox = vv.offsetLeft;
-  const oy = vv.offsetTop;
-  const vw = vv.width;
-  const vh = vv.height;
-  const left = Math.max(ox + 8, Math.min(x - w - gapX, ox + vw - w - 8));
-  let top = y - h - gapY;
-  if (top < oy + 8) top = y + gapY;
-  return { left, top: Math.max(oy + 8, Math.min(top, oy + vh - h - 8)) };
-}
-
-const ChatMessageReactions = memo(function ChatMessageReactions({
-  chatId,
-  roomId,
-  messageId,
-  userId,
-  reactions,
-  onUpdate,
-  align = 'flex-start',
-}) {
-  const [whoOpen, setWhoOpen] = useState(false);
-  const [whoList, setWhoList] = useState([]);
-  const counts = { ...emptyReactionCounts(), ...(reactions?.counts || {}) };
-  for (const k of REACTION_KEYS) counts[k] = Number(counts[k]) || 0;
-  const mineList = normalizeReactionMine(reactions?.mine);
-  const keysToShow = REACTION_KEYS.filter((k) => (counts[k] ?? 0) > 0);
-  if (keysToShow.length === 0) return null;
-  const totalReactions = REACTION_KEYS.reduce((a, k) => a + (counts[k] ?? 0), 0);
-
-  async function pick(key) {
-    const path = roomId
-      ? `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reaction`
-      : `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reaction`;
-    const { ok, data } = await api(path, {
-      method: 'POST',
-      body: { reaction: key },
-      userId,
-    });
-    if (!ok) {
-      if (data?.error) alert(data.error);
-      return;
-    }
-    if (data?.reactions) onUpdate?.(data.reactions);
-  }
-
-  async function openWho() {
-    const path = roomId
-      ? `/api/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}/reactions`
-      : `/api/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}/reactions`;
-    const { ok, data } = await api(path, { userId });
-    if (ok) setWhoList(data?.users || []);
-    setWhoOpen(true);
-  }
-
-  return (
-    <>
-      <div
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{
-          display: 'flex',
-          gap: 4,
-          marginTop: 6,
-          flexWrap: 'wrap',
-          justifyContent: align,
-          alignItems: 'center',
-        }}
-      >
-        {keysToShow.map((key) => {
-          const n = counts[key] ?? 0;
-          const active = mineList.includes(key);
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => void pick(key)}
-              style={{
-                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 999,
-                background: active ? 'rgba(193, 123, 75, 0.2)' : 'transparent',
-                padding: '2px 8px',
-                fontSize: 13,
-                cursor: 'pointer',
-                color: 'inherit',
-                lineHeight: 1.3,
-              }}
-            >
-              {REACTION_ICONS[key]}
-              {n > 0 ? <span className="muted" style={{ fontSize: 10, marginLeft: 2 }}>{n}</span> : null}
-            </button>
-          );
-        })}
-        {totalReactions > 0 ? (
-          <button
-            type="button"
-            className="btn-outline"
-            style={{ fontSize: 10, padding: '2px 8px', minHeight: 0 }}
-            onClick={() => void openWho()}
-          >
-            Кто
-          </button>
-        ) : null}
-      </div>
-      <ReactionUsersModal open={whoOpen} users={whoList} onClose={() => setWhoOpen(false)} />
-    </>
-  );
-});
-
-function pinChipPreview(m) {
-  const k = m.kind || 'text';
-  if (k === 'voice') return '🎤 Голосовое';
-  if (k === 'video_note') return '🎬 Видео';
-  if (k === 'image') return '🖼 Фото';
-  if (k === 'file') return '📎 Файл';
-  if (k === 'story_reaction') return 'История';
-  return (m.body || '').trim().slice(0, 36) || '…';
-}
-
-const MessageBubble = memo(function MessageBubble({
-  m,
-  userId,
-  chatId,
-  roomId,
-  formatTime,
-  onReactionsLocalUpdate,
-  onOpenActionMenu,
-  onMentionProfile,
-  allowSwipeReply = true,
-  onSwipeReply,
-  onOpenImagePreview,
-  savedChat = false,
-  isFirstInGroup = true,
-}) {
-  const mine = m.senderId === userId;
-  const kind = m.kind || 'text';
-  const shellRef = useRef(null);
-
-  useEffect(() => {
-    const el = shellRef.current;
-    if (!el) return;
-    const block = (ev) => {
-      ev.preventDefault();
-    };
-    el.addEventListener('selectstart', block);
-    el.addEventListener('dragstart', block);
-    return () => {
-      el.removeEventListener('selectstart', block);
-      el.removeEventListener('dragstart', block);
-    };
-  }, []);
-
-  const lp = useLongPress(
-    (x, y) => {
-      onOpenActionMenu?.(m, x, y);
-    },
-    { ms: 480, moveTol: 12 },
-  );
-
-  const isMediaShell = kind === 'video_note' || kind === 'sticker';
-  const isRevoked = kind === 'revoked' || m.revokedForAll;
-  const bubbleBg = isRevoked
-    ? mine
-      ? 'var(--chat-bubble-revoked-out)'
-      : 'var(--chat-bubble-revoked-in)'
-    : mine
-      ? 'var(--chat-bubble-outgoing)'
-      : 'var(--chat-bubble-incoming)';
-
-  let inner = null;
-  if (isRevoked) {
-    inner = (
-      <p style={{ margin: 0, fontSize: 12, fontStyle: 'italic', opacity: 0.8 }}>Сообщение удалено</p>
-    );
-  } else if (kind === 'voice' && m.mediaUrl) {
-    inner = <VoiceMessagePlayer src={m.mediaUrl} durationMs={m.durationMs} mine={mine} />;
-  } else if (kind === 'video_note' && m.mediaUrl) {
-    inner = (
-      <div onPointerDown={(e) => e.stopPropagation()}>
-        <VideoNoteInChat src={m.mediaUrl} durationMs={m.durationMs} />
-      </div>
-    );
-  } else if (kind === 'sticker' && m.mediaUrl) {
-    inner = (
-      <div onPointerDown={(e) => e.stopPropagation()} style={{ lineHeight: 0 }}>
-        <img
-          src={m.mediaUrl}
-          alt={m.body?.trim() ? m.body : ''}
-          draggable={false}
-          loading="lazy"
-          decoding="async"
-          style={{
-            display: 'block',
-            maxWidth: 180,
-            maxHeight: 180,
-            width: 'auto',
-            height: 'auto',
-            objectFit: 'contain',
-            verticalAlign: 'bottom',
-          }}
-        />
-      </div>
-    );
-  } else if (kind === 'image' && m.mediaUrl) {
-    inner = (
-      <div style={{ minWidth: 0, maxWidth: '100%' }}>
-        <img
-          className="chat-media-inline-img"
-          src={m.mediaUrl}
-          alt={m.body?.trim() ? m.body : 'Фото'}
-          title="Открыть полностью"
-          loading="lazy"
-          decoding="async"
-          sizes="280px"
-          style={{ display: 'block', verticalAlign: 'top' }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenImagePreview?.(m.mediaUrl);
-          }}
-        />
-        {m.body?.trim() ? (
-          <div className="chat-image-caption">
-            <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />
-          </div>
-        ) : null}
-      </div>
-    );
-  } else if (kind === 'file' && m.mediaUrl && looksLikeVideoFileName(m.body)) {
-    const cap = m.body?.trim() || '';
-    inner = (
-      <div style={{ minWidth: 0, maxWidth: 'var(--chat-bubble-max)' }} onPointerDown={(e) => e.stopPropagation()}>
-        <video
-          src={m.mediaUrl}
-          controls
-          playsInline
-          preload="metadata"
-          style={{ width: '100%', maxHeight: 360, borderRadius: 12, display: 'block', background: '#000' }}
-        />
-        {cap ? (
-          <div className="chat-image-caption">
-            <ChatMessageText text={cap} onMentionClick={onMentionProfile} />
-          </div>
-        ) : null}
-      </div>
-    );
-  } else if (kind === 'file' && m.mediaUrl) {
-    const name = m.body?.trim() || 'Скачать файл';
-    inner = (
-      <a
-        className="chat-file-chip"
-        href={m.mediaUrl}
-        download={name}
-        target="_blank"
-        rel="noopener noreferrer"
-        onPointerDown={(e) => e.stopPropagation()}
-      >
-        <span className="chat-file-chip__icon" aria-hidden>
-          📎
-        </span>
-        <span className="chat-file-chip__name">{name}</span>
-      </a>
-    );
-  } else if (kind === 'story_reaction') {
-    const rk = m.storyReactionKey;
-    inner = (
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        {m.refStoryPreviewUrl ? (
-          <img
-            src={m.refStoryPreviewUrl}
-            alt=""
-            style={{ width: 64, height: 64, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--border)' }}
-          />
-        ) : (
-          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--border)', flexShrink: 0 }} />
-        )}
-        <div style={{ textAlign: 'left' }}>
-          <div style={{ fontSize: 22, lineHeight: 1.2 }}>{rk && REACTION_ICONS[rk] ? REACTION_ICONS[rk] : '💬'}</div>
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-            Реакция на историю
-          </div>
-        </div>
-      </div>
-    );
-  } else {
-    inner = <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />;
-  }
-
-  const swipeReplyDisabled = isRevoked || allowSwipeReply === false;
-
-  return (
-    <div
-      id={m.id ? `chat-msg-${m.id}` : undefined}
-      className={mine ? 'chat-message-row chat-message-row--out' : 'chat-message-row chat-message-row--in'}
-      style={{
-        marginBottom: 0,
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
-      }}
-    >
-      <SwipeToReplyRow
-        disabled={swipeReplyDisabled || !onSwipeReply}
-        onReply={() => {
-          const preview =
-            m.kind === 'text'
-              ? (m.body || '').trim().slice(0, 120)
-              : getCopyTextForMessage(m).slice(0, 120);
-          onSwipeReply?.({
-            id: m.id,
-            senderNickname: m.senderNickname || 'user',
-            preview: preview || '·',
-          });
-        }}
-      >
-        <div
-          ref={shellRef}
-          className={`chat-message-bubble-shell chat-tg-bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
-          {...lp}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            onOpenActionMenu?.(m, e.clientX, e.clientY);
-          }}
-          style={{
-            borderRadius: isMediaShell ? 0 : undefined,
-            padding: isMediaShell ? 0 : undefined,
-            background: isMediaShell ? 'transparent' : bubbleBg,
-            overflow: isMediaShell ? 'visible' : 'hidden',
-            maxWidth: isMediaShell ? 'var(--chat-bubble-max)' : undefined,
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            WebkitTouchCallout: 'none',
-            touchAction: 'manipulation',
-          }}
-        >
-        {m.forwardFrom?.originalAuthorNickname ? (
-          <div className="chat-bubble-forward-label muted">
-            Переслано от @{m.forwardFrom.originalAuthorNickname}
-          </div>
-        ) : null}
-        {m.replyTo ? (
-          <div className="chat-bubble-reply">
-            <div className="chat-bubble-reply__author">@{m.replyTo.senderNickname || 'user'}</div>
-            <div className="chat-bubble-reply__preview">{m.replyTo.preview}</div>
-          </div>
-        ) : null}
-        {!mine && !isRevoked && roomId && isFirstInGroup ? (
-          <div className="chat-sender-name">
-            @{m.senderNickname || 'user'}
-            {m.senderAffiliationEmoji ? <span aria-hidden> {m.senderAffiliationEmoji}</span> : null}
-          </div>
-        ) : null}
-        {inner}
-        {!isRevoked ? (
-        <ChatMessageReactions
-          chatId={chatId}
-          roomId={roomId}
-          messageId={m.id}
-          userId={userId}
-          reactions={m.reactions}
-          align={mine ? 'flex-end' : 'flex-start'}
-          onUpdate={(r) => onReactionsLocalUpdate?.(m.id, r)}
-        />
-        ) : null}
-        <div className="chat-bubble-meta-row">
-          {m.pinnedForMe ? (
-            <span
-              title={m.pinnedShared ? 'Закреплено для обоих' : 'Закреплено у вас'}
-              aria-hidden
-              style={{ fontSize: 11, lineHeight: 1, marginRight: 'auto', opacity: 0.85 }}
-            >
-              📌
-            </span>
-          ) : null}
-          <span className="chat-bubble-time">
-            {formatTime(m.createdAt)}
-            {kind === 'text' && m.editedAt != null ? (
-              <span title="Сообщение изменено" style={{ opacity: 0.9 }}>
-                {' '}
-                · изм.
-              </span>
-            ) : null}
-          </span>
-          {mine && !roomId && !savedChat ? (
-            <ChatReadReceipt
-              readByPeer={m.readByPeer}
-              deliveredToPeer={m.deliveredToPeer}
-              pending={m.pending}
-            />
-          ) : null}
-        </div>
-        </div>
-      </SwipeToReplyRow>
-    </div>
-  );
-});
 
 export default function DirectChatScreen({
   userId,
@@ -906,14 +375,14 @@ export default function DirectChatScreen({
     if (!messageMenu) return null;
     const sm = messageMenu.submenu ?? 'actions';
     if (sm === 'quick') {
-      return clampMenuPosition(messageMenu.x, messageMenu.y, 304, 54, { gapX: 34, gapY: 26 });
+      return clampChatMenuPosition(messageMenu.x, messageMenu.y, 304, 54, { gapX: 34, gapY: 26 });
     }
     if (sm === 'reactions') {
       const h =
         typeof window !== 'undefined' ? Math.min(280, Math.max(200, window.innerHeight * 0.38)) : 260;
-      return clampMenuPosition(messageMenu.x, messageMenu.y, 300, h, { gapX: 34, gapY: 26 });
+      return clampChatMenuPosition(messageMenu.x, messageMenu.y, 300, h, { gapX: 34, gapY: 26 });
     }
-    return clampMenuPosition(messageMenu.x, messageMenu.y, 268, 440, { gapX: 36, gapY: 28 });
+    return clampChatMenuPosition(messageMenu.x, messageMenu.y, 268, 440, { gapX: 36, gapY: 28 });
   }, [messageMenu, vvRect]);
 
   const pinnedChips = useMemo(() => {
@@ -1544,7 +1013,7 @@ export default function DirectChatScreen({
                 {messages.map((m, i) => {
                   const g = messageGroupFlags(messages, i);
                   return (
-                  <MessageBubble
+                  <ChatMessageBubble
                     key={m.id}
                     m={m}
                     userId={userId}

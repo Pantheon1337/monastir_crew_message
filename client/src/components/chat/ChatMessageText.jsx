@@ -15,11 +15,15 @@ function ChatMessageTextInner({ text, onMentionClick }) {
   }
 
   if (parts.length === 1 && parts[0].type === 'text') {
-    return <span className="chat-message-text">{parts[0].value}</span>;
+    return (
+      <span className="chat-message-text" data-chat-body="plain">
+        {parts[0].value}
+      </span>
+    );
   }
 
   return (
-    <span className="chat-message-text">
+    <span className="chat-message-text" data-chat-body="mentions">
       {parts.map((p, i) =>
         p.type === 'text' ? (
           <Fragment key={`t-${i}`}>{p.value}</Fragment>
