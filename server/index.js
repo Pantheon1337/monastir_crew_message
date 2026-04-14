@@ -941,12 +941,12 @@ app.patch('/api/users/me', (req, res) => {
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'profileHeroTint')) {
     const raw = req.body?.profileHeroTint;
     if (raw !== null && raw !== undefined && typeof raw !== 'number' && typeof raw !== 'string') {
-      res.status(400).json({ error: 'Цвет шапки профиля — число 0–4' });
+      res.status(400).json({ error: 'Цвет шапки профиля — число 0–9' });
       return;
     }
     const n = raw === null || raw === '' ? 0 : typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
-    if (!Number.isFinite(n) || n < 0 || n > 4) {
-      res.status(400).json({ error: 'Цвет шапки: от 0 до 4' });
+    if (!Number.isFinite(n) || n < 0 || n > 9) {
+      res.status(400).json({ error: 'Цвет шапки: от 0 до 9' });
       return;
     }
     setUserProfileHeroTint(userId, n);

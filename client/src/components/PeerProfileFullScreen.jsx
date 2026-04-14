@@ -3,7 +3,7 @@ import { api, mediaPublicUrl } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import FriendMiniActionIcon from './FriendMiniActionIcon.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
-import { profileHeroTintBg } from '../profileHeroTints.js';
+import { profileHeroBackground } from '../profileHeroTints.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 
 function formatJoined(ts) {
@@ -101,7 +101,10 @@ export default function PeerProfileFullScreen({
 
   const hasStoriesGrid = gridStories.length > 0;
 
-  const heroBg = useMemo(() => profileHeroTintBg(profile?.profileHeroTint ?? 0), [profile?.profileHeroTint]);
+  const heroBg = useMemo(
+    () => profileHeroBackground(profile?.profileHeroTint ?? 0, profile?.affiliationEmoji),
+    [profile?.profileHeroTint, profile?.affiliationEmoji],
+  );
 
   const displayName = profile
     ? [profile.firstName, profile.lastName].filter((x) => x && String(x).trim()).join(' ').trim() || '—'

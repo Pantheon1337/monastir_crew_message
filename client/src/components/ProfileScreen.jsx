@@ -5,7 +5,7 @@ import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { AFFILIATION_EMOJI_CHOICES } from '../affiliationConstants.js';
 import { formatPhoneRu } from '../formatPhone.js';
-import { PROFILE_HERO_TINTS, profileHeroTintBg } from '../profileHeroTints.js';
+import { PROFILE_HERO_TINTS, profileHeroBackground, RUSSIAN_FLAG_AFFILIATION_EMOJI } from '../profileHeroTints.js';
 import { getChatWallpaperRelPath, setChatWallpaperRelPath, cssUrlForBackground } from '../chatWallpaper.js';
 
 const MAX_ABOUT = 100;
@@ -456,7 +456,7 @@ export default function ProfileScreen({
     (user && !nicknameChangeAllowed(user) && (user.nicknameChangesRemaining ?? 0) > 0);
 
   const displayNameLine = [user?.firstName, user?.lastName].filter((x) => x && String(x).trim()).join(' ').trim() || '—';
-  const heroBg = profileHeroTintBg(heroTintIndex);
+  const heroBg = profileHeroBackground(heroTintIndex, user?.affiliationEmoji);
   const incomingCount = incoming.length;
 
   return (
@@ -951,6 +951,11 @@ export default function ProfileScreen({
           </div>
           <p className="muted" style={{ margin: '0 0 14px', fontSize: 12, lineHeight: 1.45 }}>
             Фон шапки профиля и в мини-профиле у других пользователей.
+            {user?.affiliationEmoji === RUSSIAN_FLAG_AFFILIATION_EMOJI ? (
+              <span style={{ display: 'block', marginTop: 8 }}>
+                При этом смайлике шапка — триколор; ниже цвета пригодятся, если смените смайлик.
+              </span>
+            ) : null}
           </p>
           <div className="profile-hero-tint-grid">
             {PROFILE_HERO_TINTS.map((t, i) => (

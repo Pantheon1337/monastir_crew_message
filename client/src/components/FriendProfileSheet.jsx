@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import ChatMediaSheet from './ChatMediaSheet.jsx';
 import UserAvatar from './UserAvatar.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
-import { profileHeroTintBg } from '../profileHeroTints.js';
+import { profileHeroBackground } from '../profileHeroTints.js';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 import FriendMiniActionIcon from './FriendMiniActionIcon.jsx';
 
@@ -75,7 +75,10 @@ export default function FriendProfileSheet({
     };
   }, [load]);
 
-  const heroBg = useMemo(() => profileHeroTintBg(profile?.profileHeroTint ?? 0), [profile?.profileHeroTint]);
+  const heroBg = useMemo(
+    () => profileHeroBackground(profile?.profileHeroTint ?? 0, profile?.affiliationEmoji),
+    [profile?.profileHeroTint, profile?.affiliationEmoji],
+  );
 
   const presenceText = useMemo(
     () => presenceLineForPeer(targetUserId, presenceOnline, presenceLastSeen, presenceLastSeenHidden),

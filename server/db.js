@@ -772,7 +772,8 @@ export function mapPublicUser(row) {
   const nls = row.nicknameLastChangedAt ?? row.nickname_last_changed_at;
   const nicknameLastChangedAt = nls != null && nls !== '' ? Number(nls) : null;
   const pht = Number(row.profileHeroTint ?? row.profile_hero_tint ?? 0);
-  const profileHeroTint = Number.isFinite(pht) && pht >= 0 && pht <= 4 ? Math.floor(pht) : 0;
+  /** Синхронно с client PROFILE_HERO_TINTS (сейчас 0–9). */
+  const profileHeroTint = Number.isFinite(pht) && pht >= 0 && pht <= 9 ? Math.floor(pht) : 0;
   return {
     id: row.id,
     phone: row.phone,
@@ -952,9 +953,9 @@ export function setUserAffiliationEmoji(userId, emojiOrNull) {
   }
 }
 
-/** Индекс градиента шапки профиля (0–4), синхронизируется с клиентом. */
+/** Индекс градиента шапки профиля (0–9), синхронизируется с client PROFILE_HERO_TINTS. */
 export function setUserProfileHeroTint(userId, index) {
-  const n = Math.min(4, Math.max(0, Math.floor(Number(index) || 0)));
+  const n = Math.min(9, Math.max(0, Math.floor(Number(index) || 0)));
   getDb().prepare(`UPDATE users SET profile_hero_tint = ? WHERE id = ?`).run(n, userId);
 }
 
