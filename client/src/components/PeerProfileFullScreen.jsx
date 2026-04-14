@@ -175,32 +175,6 @@ export default function PeerProfileFullScreen({
     await load();
   }
 
-  async function storyToArchive(storyId) {
-    if (!viewerId) return;
-    setStoryBusyId(storyId);
-    const { ok, data } = await api(`/api/stories/${encodeURIComponent(storyId)}/archive`, { method: 'POST', userId: viewerId });
-    setStoryBusyId(null);
-    if (!ok) {
-      alert(data?.error || 'Не удалось');
-      return;
-    }
-    onStoriesUpdated?.();
-    await load();
-  }
-
-  async function storyFromArchive(storyId) {
-    if (!viewerId) return;
-    setStoryBusyId(storyId);
-    const { ok, data } = await api(`/api/stories/${encodeURIComponent(storyId)}/unarchive`, { method: 'POST', userId: viewerId });
-    setStoryBusyId(null);
-    if (!ok) {
-      alert(data?.error || 'Не удалось');
-      return;
-    }
-    onStoriesUpdated?.();
-    await load();
-  }
-
   async function storyHideFromProfile(storyId) {
     if (!viewerId) return;
     setStoryBusyId(storyId);
@@ -414,22 +388,6 @@ export default function PeerProfileFullScreen({
                               {s.body || ' '}
                             </div>
                           )}
-                          {s.feedHidden ? (
-                            <span
-                              style={{
-                                position: 'absolute',
-                                top: 6,
-                                left: 6,
-                                fontSize: 9,
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: 'rgba(0,0,0,0.55)',
-                                color: '#fff',
-                              }}
-                            >
-                              Архив
-                            </span>
-                          ) : null}
                         </div>
                         {s.mediaUrl && s.body ? (
                           <div
@@ -452,45 +410,18 @@ export default function PeerProfileFullScreen({
                       </button>
                       {isSelf && !viewerPreview ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          {s.feedHidden ? (
-                            <button
-                              type="button"
-                              className="btn-outline"
-                              style={{ fontSize: 9, padding: '4px 6px', width: '100%' }}
-                              disabled={storyBusyId === s.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void storyFromArchive(s.id);
-                              }}
-                            >
-                              В ленту
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="btn-outline"
-                              style={{ fontSize: 9, padding: '4px 6px', width: '100%' }}
-                              disabled={storyBusyId === s.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void storyToArchive(s.id);
-                              }}
-                            >
-                              В архив
-                            </button>
-                          )}
                           <button
                             type="button"
                             className="btn-outline"
                             style={{ fontSize: 9, padding: '4px 6px', width: '100%' }}
                             disabled={storyBusyId === s.id}
-                            title="Скрыть кадр в сетке профиля у гостей (остаётся в ленте до срока, если не в архиве)"
+                            title="Кадр исчезнет из сетки на вашей странице у гостей; в приложении останется в ленте/архиве по общим правилам"
                             onClick={(e) => {
                               e.stopPropagation();
                               void storyHideFromProfile(s.id);
                             }}
                           >
-                            Убрать из профиля
+                            Убрать с профиля
                           </button>
                           <button
                             type="button"
