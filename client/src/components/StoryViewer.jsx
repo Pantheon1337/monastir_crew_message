@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { api } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
@@ -59,6 +59,7 @@ export default function StoryViewer({
   const [replyText, setReplyText] = useState('');
   const [replyBusy, setReplyBusy] = useState(false);
   const [hidingFromProfile, setHidingFromProfile] = useState(false);
+  const [archivingFeed, setArchivingFeed] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
   const [viewersLoading, setViewersLoading] = useState(false);
   const [viewersList, setViewersList] = useState([]);
@@ -70,6 +71,8 @@ export default function StoryViewer({
   const sessionKeyRef = useRef('');
   const items = story?.items ?? [];
   const total = items.length;
+  /** После удаления кадра из списка slide может указывать вне диапазона — без этого чёрный кадр. */
+  const safeSlide = total > 0 ? Math.min(Math.max(0, slide), total - 1) : 0;
   const stagePtrStart = useRef(null);
   /** null | 'vertical' | 'horizontal' — после порога движения */
   const stageAxisRef = useRef(null);
@@ -117,7 +120,7 @@ export default function StoryViewer({
     if (isHolding) return undefined;
     const t = window.setTimeout(goNext, SLIDE_MS);
     return () => window.clearTimeout(t);
-  }, [slide, goNext, story, total, isHolding]);
+  }, [safeSlide, goNext, story, total, isHolding]);
 
   /** Стартовый слайд только при смене сеанса (автор / режим / стартовый индекс), не при обновлении списка кадров. */
   useEffect(() => {
@@ -134,12 +137,17 @@ export default function StoryViewer({
     }
   }, [sessionKey, story?.items?.length]);
 
-  /** Сжать индекс, если кадров стало меньше (архив и т.д.). */
-  useEffect(() => {
-    const n = story?.items?.length ?? 0;
+  /** Сразу поджать индекс при смене списка кадров (убрали из профиля / архив). */
+  useLayoutEffect(() => {
+    const n = items.length;
     if (n === 0) return;
     setSlide((s) => Math.min(Math.max(0, s), n - 1));
-  }, [story?.items?.length]);
+  }, [items]);
+
+  /** Пустой список — закрываем просмотр (иначе родитель держит state, а здесь return null). */
+  useEffect(() => {
+    if (total === 0 && story) onClose();
+  }, [total, story, onClose]);
 
   useEffect(() => {
     return () => {
@@ -164,7 +172,7 @@ export default function StoryViewer({
 
   useEffect(() => {
     if (!viewersOpen || !userId || !story.isSelf) return undefined;
-    const id = items[slide]?.id;
+    const id = items[safeSlide]?.id;
     if (!id) return undefined;
     let cancelled = false;
     setViewersLoading(true);
@@ -181,17 +189,17 @@ export default function StoryViewer({
     return () => {
       cancelled = true;
     };
-  }, [viewersOpen, slide, items, story.isSelf, userId]);
+  }, [viewersOpen, safeSlide, items, story.isSelf, userId]);
 
   useEffect(() => {
-    const cur = items[slide];
+    const curItem = items[safeSlide];
     onProgress?.({
       authorId: story?.authorId,
-      itemId: cur?.id,
-      index: slide,
+      itemId: curItem?.id,
+      index: safeSlide,
       total,
     });
-  }, [slide, items, onProgress, story?.authorId, total]);
+  }, [safeSlide, items, onProgress, story?.authorId, total]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -333,12 +341,36 @@ export default function StoryViewer({
 
   if (!story || total === 0) return null;
 
-  const cur = items[slide];
+  const cur = items[safeSlide];
+  if (!cur) return null;
+
+  const profileReel = story.profileReel === true;
   const archiveEta = cur?.expiresAt != null ? formatStoryArchiveEta(cur.expiresAt) : null;
   const canInteract = Boolean(userId) && !story.isSelf;
-  const pct = total > 0 ? (slide / total) * 100 : 0;
+  const pct = total > 0 ? (safeSlide / total) * 100 : 0;
+  const feedExpired = Boolean(cur.expiresAt != null && cur.expiresAt <= Date.now());
 
-  /** Убрать кадр из сетки профиля (не зависит от 24 ч ленты — в отличие от старого «Архивировать»). */
+  /** Убрать из ленты кружков (пока не истёк срок кадра). */
+  async function archiveCurrentToFeed() {
+    if (!userId || !cur?.id || !story?.isSelf) return;
+    if (feedExpired) {
+      alert('Срок истории истёк — нельзя отправить в архив ленты');
+      return;
+    }
+    setArchivingFeed(true);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(cur.id)}/archive`, {
+      method: 'POST',
+      userId,
+    });
+    setArchivingFeed(false);
+    if (!ok) {
+      alert(data?.error || 'Не удалось архивировать');
+      return;
+    }
+    onStoryArchived?.(story.authorId, profileReel);
+  }
+
+  /** Убрать кадр из сетки профиля у гостей. */
   async function removeCurrentFromProfile() {
     if (!userId || !cur?.id || !story?.isSelf) return;
     setHidingFromProfile(true);
@@ -351,7 +383,7 @@ export default function StoryViewer({
       alert(data?.error || 'Не удалось убрать из профиля');
       return;
     }
-    onStoryArchived?.(story.authorId, story.profileReel === true);
+    onStoryArchived?.(story.authorId, profileReel);
   }
 
   async function sendReact(k) {
@@ -628,12 +660,12 @@ export default function StoryViewer({
                 <div
                   style={{
                     height: '100%',
-                    width: i < slide ? '100%' : i === slide ? '100%' : '0%',
+                    width: i < safeSlide ? '100%' : i === safeSlide ? '100%' : '0%',
                     background: 'var(--accent)',
                     transformOrigin: 'left',
-                    transform: i === slide ? 'scaleX(0)' : i < slide ? 'scaleX(1)' : 'scaleX(0)',
-                    animation: i === slide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
-                    animationPlayState: i === slide && isHolding ? 'paused' : 'running',
+                    transform: i === safeSlide ? 'scaleX(0)' : i < safeSlide ? 'scaleX(1)' : 'scaleX(0)',
+                    animation: i === safeSlide ? `storySeg ${SLIDE_MS}ms linear forwards` : undefined,
+                    animationPlayState: i === safeSlide && isHolding ? 'paused' : 'running',
                   }}
                 />
               </div>
@@ -703,24 +735,52 @@ export default function StoryViewer({
             </>
           )}
           {story.isSelf ? (
-            <button
-              type="button"
-              disabled={hidingFromProfile}
-              onClick={() => void removeCurrentFromProfile()}
-              style={{
-                border: '1px solid rgba(255,255,255,0.25)',
-                borderRadius: 'var(--radius)',
-                padding: '6px 10px',
-                fontSize: 11,
-                background: 'rgba(0,0,0,0.35)',
-                color: '#fff',
-                opacity: hidingFromProfile ? 0.6 : 1,
-                flexShrink: 0,
-              }}
-              title="Убрать этот кадр из сетки публикаций на вашей странице у гостей"
-            >
-              {hidingFromProfile ? '…' : 'Убрать из профиля'}
-            </button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', flexShrink: 0, maxWidth: '52vw' }}>
+              <button
+                type="button"
+                disabled={archivingFeed || feedExpired}
+                onClick={() => void archiveCurrentToFeed()}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  borderRadius: 'var(--radius)',
+                  padding: '6px 8px',
+                  fontSize: 10,
+                  background: 'rgba(0,0,0,0.35)',
+                  color: '#fff',
+                  opacity: archivingFeed || feedExpired ? 0.55 : 1,
+                  flexShrink: 0,
+                }}
+                title={
+                  feedExpired
+                    ? 'Срок кадра истёк'
+                    : 'Убрать кадр из ленты кружков у друзей (остаётся в профиле, пока не уберёте отдельно)'
+                }
+              >
+                {archivingFeed ? '…' : 'Архивировать'}
+              </button>
+              <button
+                type="button"
+                disabled={hidingFromProfile || !profileReel}
+                onClick={() => void removeCurrentFromProfile()}
+                style={{
+                  border: '1px solid rgba(255,255,255,0.25)',
+                  borderRadius: 'var(--radius)',
+                  padding: '6px 8px',
+                  fontSize: 10,
+                  background: 'rgba(0,0,0,0.35)',
+                  color: '#fff',
+                  opacity: hidingFromProfile ? 0.6 : !profileReel ? 0.45 : 1,
+                  flexShrink: 0,
+                }}
+                title={
+                  !profileReel
+                    ? 'Доступно при открытии истории из профиля (сетка публикаций)'
+                    : 'Убрать кадр из сетки профиля у гостей'
+                }
+              >
+                {hidingFromProfile ? '…' : 'Убрать из профиля'}
+              </button>
+            </div>
           ) : null}
           <button
             type="button"
