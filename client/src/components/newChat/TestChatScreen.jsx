@@ -3,8 +3,9 @@ import { api } from '../../api.js';
 import DirectChatScreen from '../DirectChatScreen.jsx';
 
 /**
- * Тестовый полноэкранный чат: тот же движок и UI, что у обычного DirectChatScreen,
- * поток данных — чат «Избранное» (диалог с собой). Заголовок подчёркивает экспериментальный режим.
+ * Тестовый полноэкранный чат: полный DirectChatScreen (медиа, реакции, меню, композер),
+ * поток — «Избранное». Отображение текста — те же глобальные классы, что и везде;
+ * правки переносов делаются в index.css / chatPrimitives, а не здесь.
  */
 export default function TestChatScreen({
   userId,

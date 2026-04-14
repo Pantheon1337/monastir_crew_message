@@ -1585,7 +1585,10 @@ video.chat-video-note {
 .chat-scaffold-timeline {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* Иначе flex-ребёнок не сужается → пузырь с width:fit-content уезжает за край экрана */
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 14px 12px 18px;
@@ -1647,10 +1650,11 @@ video.chat-video-note {
   text-align: start;
   text-wrap: wrap;
   word-wrap: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: break-word;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  /* auto даёт случайные переносы в русском; manual + переносы в .chat-message-text */
+  -webkit-hyphens: manual;
+  hyphens: manual;
   line-break: auto;
   outline: none;
   -webkit-backface-visibility: hidden;
@@ -1773,8 +1777,8 @@ video.chat-video-note {
   word-wrap: break-word;
   overflow-wrap: anywhere;
   word-break: break-word;
-  -webkit-hyphens: auto;
-  hyphens: auto;
+  -webkit-hyphens: manual;
+  hyphens: manual;
   text-wrap: wrap;
   line-height: inherit;
   letter-spacing: inherit;

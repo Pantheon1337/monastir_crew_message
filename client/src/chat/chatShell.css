@@ -1,6 +1,9 @@
 /**
  * Визуальный слой экранов чата (после сброса example1).
  * Подключается после index.css. Разметка: ChatScaffold + DirectChatScreen / RoomChatScreen.
+ *
+ * Типографика сообщений задаётся в index.css (.chat-tg-bubble, .chat-message-text) и
+ * CHAT_TIMELINE_STACK_STYLE в chatPrimitives.js — одна цель для лички, комнаты и тестового чата.
  */
 
 /* Оболочка: фон за фиксированным слоем (подложка при прозрачных краях) */

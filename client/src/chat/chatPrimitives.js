@@ -6,6 +6,8 @@ export const POST_LOAD_STICK_MS = 320;
 export const CHAT_TIMELINE_STACK_STYLE = {
   flex: '1 1 auto',
   width: '100%',
+  maxWidth: '100%',
+  minWidth: 0,
   minHeight: '100%',
   display: 'flex',
   flexDirection: 'column',
