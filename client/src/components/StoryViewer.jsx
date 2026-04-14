@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { api } from '../api.js';
+import { api, mediaPublicUrl } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
@@ -557,7 +557,7 @@ export default function StoryViewer({
                   }}
                 >
                   <img
-                    src={it.mediaUrl}
+                    src={mediaPublicUrl(it.mediaUrl)}
                     alt=""
                     loading="eager"
                     decoding="async"

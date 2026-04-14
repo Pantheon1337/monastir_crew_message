@@ -11,6 +11,20 @@ export function apiPath(path) {
 }
 
 /**
+ * URL для отображения файлов из `/uploads/...` в UI (img, video).
+ * Если задан `VITE_API_ORIGIN`, относительные пути ведут на тот же origin, что и API.
+ */
+export function mediaPublicUrl(pathOrUrl) {
+  if (pathOrUrl == null) return null;
+  const s = String(pathOrUrl).trim();
+  if (!s) return null;
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^blob:/i.test(s)) return s;
+  const p = s.startsWith('/') ? s : `/${s}`;
+  return apiPath(p);
+}
+
+/**
  * Запросы к API с идентификатором текущего пользователя.
  */
 export async function api(path, { method = 'GET', body, userId } = {}) {

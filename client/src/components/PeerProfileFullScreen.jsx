@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { api } from '../api.js';
+import { api, mediaPublicUrl } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
 import { profileHeroTintBg } from '../profileHeroTints.js';
@@ -366,7 +366,7 @@ export default function PeerProfileFullScreen({
                         >
                           {s.mediaUrl ? (
                             <img
-                              src={s.mediaUrl}
+                              src={mediaPublicUrl(s.mediaUrl)}
                               alt=""
                               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                             />

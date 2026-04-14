@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api } from '../api.js';
+import { api, mediaPublicUrl } from '../api.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
 
 function formatViewerCount(n) {
@@ -169,7 +169,11 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
                   }}
                 >
                   {it.mediaUrl ? (
-                    <img src={it.mediaUrl} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }} />
+                    <img
+                      src={mediaPublicUrl(it.mediaUrl)}
+                      alt=""
+                      style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'cover' }}
+                    />
                   ) : null}
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 500 }}>
