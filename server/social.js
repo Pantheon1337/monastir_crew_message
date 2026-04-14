@@ -859,7 +859,7 @@ export function listMessagesForChat(chatId, userId, options = {}) {
 const MEDIA_PAGE_DEFAULT = 48;
 const MEDIA_PAGE_MAX = 120;
 
-/** Сообщения с вложениями для сетки «Медиа» (фото, видео, стикеры, голос, файлы с медиа). */
+/** Сообщения для сетки «Медиа»: только фото и видео (в т.ч. видеофайл как вложение), без стикеров и голоса. */
 export function listMediaMessagesForChat(chatId, userId, options = {}) {
   if (!userInDirectChat(chatId, userId)) return null;
   let limit = Number(options.limit);
@@ -891,7 +891,20 @@ export function listMediaMessagesForChat(chatId, userId, options = {}) {
       AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
       AND COALESCE(m.revoked_for_all,0)=0
       AND m.media_path IS NOT NULL AND TRIM(m.media_path) <> ''
-      AND m.kind IN ('image', 'video_note', 'sticker', 'voice', 'file')`;
+      AND (
+        m.kind IN ('image', 'video_note')
+        OR (
+          m.kind = 'file'
+          AND (
+            LOWER(TRIM(COALESCE(m.body, ''))) LIKE '%.mp4'
+            OR LOWER(TRIM(COALESCE(m.body, ''))) LIKE '%.webm'
+            OR LOWER(TRIM(COALESCE(m.body, ''))) LIKE '%.mov'
+            OR LOWER(TRIM(COALESCE(m.body, ''))) LIKE '%.m4v'
+            OR LOWER(TRIM(COALESCE(m.body, ''))) LIKE '%.mkv'
+            OR LOWER(TRIM(COALESCE(m.body, ''))) LIKE '%.ogv'
+          )
+        )
+      )`;
   const params = [chatId, userId];
   if (useCursor) {
     sql += ` AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))`;

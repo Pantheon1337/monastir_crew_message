@@ -3,15 +3,7 @@ import { api, mediaPublicUrl } from '../api.js';
 import AvatarLightbox from './AvatarLightbox.jsx';
 import { looksLikeVideoFileName } from '../chat/chatPrimitives.js';
 
-function formatVoiceDur(ms) {
-  if (ms == null || !Number.isFinite(ms)) return '';
-  const s = Math.round(ms / 1000);
-  const m = Math.floor(s / 60);
-  const r = s % 60;
-  return `${m}:${String(r).padStart(2, '0')}`;
-}
-
-/** Сетка вложений личного чата (мини-профиль и т.п.) */
+/** Сетка вложений личного чата (мини-профиль и т.п.): только фото и видео, без стикеров. */
 export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title = 'Медиа' }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -20,7 +12,6 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
   const [err, setErr] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
-  const [audioPreviewUrl, setAudioPreviewUrl] = useState(null);
   const sentinelRef = useRef(null);
 
   useEffect(() => {
@@ -30,7 +21,6 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
     setErr(null);
     setImagePreviewUrl(null);
     setVideoPreviewUrl(null);
-    setAudioPreviewUrl(null);
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -53,7 +43,15 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
     };
   }, [open, chatId, viewerId]);
 
-  const gridItems = useMemo(() => [...items].reverse(), [items]);
+  const gridItems = useMemo(() => {
+    const isPhotoOrVideo = (m) => {
+      const k = m.kind || 'text';
+      if (k === 'image' || k === 'video_note') return true;
+      if (k === 'file' && looksLikeVideoFileName(m.body)) return true;
+      return false;
+    };
+    return [...items].filter(isPhotoOrVideo).reverse();
+  }, [items]);
 
   const tryLoadMore = useCallback(() => {
     if (!hasMore || loading || loadingMore || items.length === 0) return;
@@ -97,16 +95,12 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
     const url = raw ? mediaPublicUrl(raw) : null;
     if (!url) return;
     const k = m.kind || 'text';
-    if (k === 'image' || k === 'sticker') {
+    if (k === 'image') {
       setImagePreviewUrl(url);
       return;
     }
     if (k === 'video_note' || (k === 'file' && looksLikeVideoFileName(m.body))) {
       setVideoPreviewUrl(url);
-      return;
-    }
-    if (k === 'voice') {
-      setAudioPreviewUrl(url);
       return;
     }
     if (k === 'file') {
@@ -204,7 +198,7 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
                         background: 'var(--panel, rgba(127,127,127,0.12))',
                       }}
                     >
-                      {k === 'image' || k === 'sticker' ? (
+                      {k === 'image' ? (
                         url ? (
                           <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
                         ) : null
@@ -212,21 +206,6 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
                         url ? (
                           <video src={url} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : null
-                      ) : k === 'voice' ? (
-                        <span
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            height: '100%',
-                            fontSize: 22,
-                            gap: 4,
-                          }}
-                        >
-                          🎤
-                          <span style={{ fontSize: 10, opacity: 0.85 }}>{formatVoiceDur(m.durationMs)}</span>
-                        </span>
                       ) : (
                         <span
                           style={{
@@ -301,46 +280,6 @@ export default function ChatMediaSheet({ open, onClose, chatId, viewerId, title 
             style={{ maxWidth: 'min(98vw, 960px)', maxHeight: 'min(90dvh, 92vh)', borderRadius: 8 }}
             onClick={(e) => e.stopPropagation()}
           />
-        </div>
-      ) : null}
-      {audioPreviewUrl ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Аудио"
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 200,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-            background: 'rgba(0,0,0,0.88)',
-          }}
-          onClick={() => setAudioPreviewUrl(null)}
-        >
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Закрыть"
-            onClick={() => setAudioPreviewUrl(null)}
-            style={{
-              position: 'absolute',
-              top: 'max(12px, env(safe-area-inset-top))',
-              right: 12,
-              width: 40,
-              height: 40,
-              zIndex: 1,
-              color: '#fff',
-              borderColor: 'rgba(255,255,255,0.35)',
-              background: 'rgba(0,0,0,0.35)',
-            }}
-          >
-            ×
-          </button>
-          <audio src={audioPreviewUrl} controls style={{ width: 'min(92vw, 400px)' }} onClick={(e) => e.stopPropagation()} />
         </div>
       ) : null}
     </>
