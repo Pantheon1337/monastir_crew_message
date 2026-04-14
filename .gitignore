@@ -1,5 +1,8 @@
 node_modules
 dist
+
+# Локальный второй клон того же репо — не коммитить в корень (иначе ломается история / субмодуль).
+monastir_crew_message/
 client/dist
 .DS_Store
 *.log
