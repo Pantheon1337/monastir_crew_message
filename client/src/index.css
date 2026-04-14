@@ -1079,6 +1079,9 @@ a:hover {
   color: var(--muted);
   font-family: inherit;
 }
+.chat-actions-sheet-overlay .chat-actions-sheet-panel {
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.28);
+}
 .dashboard-chat-scroll {
   border-radius: 0 0 10px 10px;
 }

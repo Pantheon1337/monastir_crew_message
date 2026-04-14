@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 
@@ -168,12 +169,43 @@ function useLongPress(onLongPress, { ms = LONG_PRESS_MS } = {}) {
   };
 }
 
-/** Удаление только через удержание → нижнее меню (без горизонтального свайпа — не мешает скроллу списка). */
+/** Позиция меню у зажатой строки: по центру по X, по Y — у середины строки (ограничение, чтобы панель не вылезла за экран). */
+function chatActionSheetPosition(rowEl) {
+  const base = {
+    position: 'fixed',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: 'min(400px, calc(100vw - 24px))',
+    zIndex: 141,
+  };
+  if (typeof window === 'undefined' || !rowEl) {
+    return { ...base, top: '50%' };
+  }
+  const rect = rowEl.getBoundingClientRect();
+  const vh = window.innerHeight;
+  const approxPanelH = 220;
+  const rowCenterY = rect.top + rect.height / 2;
+  const m = 16;
+  const minY = m + approxPanelH / 2;
+  const maxY = vh - m - approxPanelH / 2;
+  const topPx = Math.min(Math.max(rowCenterY, minY), maxY);
+  return { ...base, top: `${topPx}px` };
+}
+
+/** Удаление только через удержание → меню у строки (без горизонтального свайпа — не мешает скроллу списка). */
 function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe, onTogglePin }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const skipNextOpenChat = useRef(false);
+  const rowRef = useRef(null);
+  const [sheetStyle, setSheetStyle] = useState(null);
+
+  const closeSheet = useCallback(() => {
+    setSheetOpen(false);
+    setSheetStyle(null);
+  }, []);
 
   const openActionSheet = useCallback(() => {
+    setSheetStyle(chatActionSheetPosition(rowRef.current));
     setSheetOpen(true);
     skipNextOpenChat.current = true;
   }, []);
@@ -191,6 +223,7 @@ function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe, onTogglePin }) {
   return (
     <>
       <div
+        ref={rowRef}
         className="chat-list-row"
         {...lp}
         onSelectStart={(e) => e.preventDefault()}
@@ -199,62 +232,60 @@ function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe, onTogglePin }) {
         <ChatRowInner chat={chat} peerOnline={peerOnline} onActivate={openChat} />
       </div>
 
-      {sheetOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Действия с чатом"
-          className="modal-overlay chat-actions-sheet-overlay"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 140,
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            padding: 12,
-            paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
-            background: 'rgba(0,0,0,0.45)',
-          }}
-          onClick={() => setSheetOpen(false)}
-        >
-          <div
-            className="block chat-actions-sheet-panel"
-            style={{
-              width: '100%',
-              maxWidth: 400,
-              borderRadius: 16,
-              padding: 8,
-              marginBottom: 4,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="chat-actions-sheet-item"
-              onClick={() => {
-                setSheetOpen(false);
-                onTogglePin?.(chat, !chat.pinned);
+      {sheetOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Действия с чатом"
+              className="modal-overlay chat-actions-sheet-overlay"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 140,
+                background: 'rgba(0,0,0,0.45)',
               }}
+              onClick={closeSheet}
             >
-              {chat.pinned ? 'Открепить' : 'Закрепить'}
-            </button>
-            <button
-              type="button"
-              className="chat-actions-sheet-item chat-actions-sheet-item--danger"
-              onClick={() => {
-                setSheetOpen(false);
-                onDeleteForMe?.(chat);
-              }}
-            >
-              Удалить из списка…
-            </button>
-            <button type="button" className="chat-actions-sheet-cancel" onClick={() => setSheetOpen(false)}>
-              Отмена
-            </button>
-          </div>
-        </div>
-      ) : null}
+              <div
+                className="block chat-actions-sheet-panel"
+                style={{
+                  ...sheetStyle,
+                  borderRadius: 16,
+                  padding: 8,
+                  maxWidth: 400,
+                  boxSizing: 'border-box',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="chat-actions-sheet-item"
+                  onClick={() => {
+                    closeSheet();
+                    onTogglePin?.(chat, !chat.pinned);
+                  }}
+                >
+                  {chat.pinned ? 'Открепить' : 'Закрепить'}
+                </button>
+                <button
+                  type="button"
+                  className="chat-actions-sheet-item chat-actions-sheet-item--danger"
+                  onClick={() => {
+                    closeSheet();
+                    onDeleteForMe?.(chat);
+                  }}
+                >
+                  Удалить из списка…
+                </button>
+                <button type="button" className="chat-actions-sheet-cancel" onClick={closeSheet}>
+                  Отмена
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }
