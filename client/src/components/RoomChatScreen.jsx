@@ -16,6 +16,7 @@ import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 import { useLeftEdgeSwipeBack } from '../hooks/useLeftEdgeSwipeBack.js';
 import { releaseCameraStreamNow } from '../cameraSession.js';
 import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
+import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
 import { messageGroupFlags, telegramBubbleRadius } from '../chat/messageGrouping.js';
 import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
 
@@ -170,6 +171,7 @@ function getCopyTextForMessage(m) {
   if (k === 'image') return m.body?.trim() ? `Фото: ${m.body}` : 'Фото';
   if (k === 'file') return m.body?.trim() ? `Файл: ${m.body}` : 'Файл';
   if (k === 'story_reaction') return m.body || 'Реакция на историю';
+  if (k === 'sticker') return m.body?.trim() ? `Стикер ${m.body}` : 'Стикер';
   return m.body || '';
 }
 
@@ -317,7 +319,7 @@ function MessageBubble({
     { ms: 480, moveTol: 12 },
   );
 
-  const isMediaShell = kind === 'video_note';
+  const isMediaShell = kind === 'video_note' || kind === 'sticker';
   const isRevoked = kind === 'revoked' || m.revokedForAll;
   const bubbleRadius = telegramBubbleRadius(mine, isFirstInGroup, isLastInGroup);
   const bubbleBg = isRevoked
@@ -339,6 +341,27 @@ function MessageBubble({
     inner = (
       <div onPointerDown={(e) => e.stopPropagation()}>
         <VideoNoteInChat src={m.mediaUrl} durationMs={m.durationMs} />
+      </div>
+    );
+  } else if (kind === 'sticker' && m.mediaUrl) {
+    inner = (
+      <div onPointerDown={(e) => e.stopPropagation()} style={{ lineHeight: 0 }}>
+        <img
+          src={m.mediaUrl}
+          alt={m.body?.trim() ? m.body : ''}
+          draggable={false}
+          loading="lazy"
+          decoding="async"
+          style={{
+            display: 'block',
+            maxWidth: 180,
+            maxHeight: 180,
+            width: 'auto',
+            height: 'auto',
+            objectFit: 'contain',
+            verticalAlign: 'bottom',
+          }}
+        />
       </div>
     );
   } else if (kind === 'image' && m.mediaUrl) {
@@ -567,6 +590,7 @@ export default function RoomChatScreen({
   const [caretPos, setCaretPos] = useState(0);
   const [roomMembers, setRoomMembers] = useState([]);
   const [mediaUploading, setMediaUploading] = useState(false);
+  const [stickerPanelOpen, setStickerPanelOpen] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
   const [hasMoreOlder, setHasMoreOlder] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -602,7 +626,13 @@ export default function RoomChatScreen({
   }, [mediaMode]);
 
   useLeftEdgeSwipeBack(onClose, {
-    disabled: videoModal || voiceRecording || messageMenu != null || forwardOpen || imagePreviewUrl != null,
+    disabled:
+      videoModal ||
+      voiceRecording ||
+      messageMenu != null ||
+      forwardOpen ||
+      imagePreviewUrl != null ||
+      stickerPanelOpen,
   });
 
   const onMentionProfile = useCallback(
@@ -924,6 +954,49 @@ export default function RoomChatScreen({
       }
     },
     [roomId, userId, text, appendMessage, onAfterChange],
+  );
+
+  const insertEmojiAtCaret = useCallback((ch) => {
+    const el = composerInputRef.current;
+    if (!el || !ch) return;
+    const cur = text;
+    const start = el.selectionStart ?? cur.length;
+    const end = el.selectionEnd ?? cur.length;
+    const next = cur.slice(0, start) + ch + cur.slice(end);
+    setText(next);
+    queueMicrotask(() => {
+      el.focus();
+      const pos = start + ch.length;
+      el.setSelectionRange(pos, pos);
+      setCaretPos(pos);
+    });
+  }, [text]);
+
+  const sendStickerMessage = useCallback(
+    async (packDir, file) => {
+      if (!packDir || !file) return;
+      setErr(null);
+      setStickerPanelOpen(false);
+      const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages/sticker`, {
+        method: 'POST',
+        userId,
+        body: {
+          packDir,
+          file,
+          replyToId: replyDraft?.id,
+          clientMessageId: newClientMessageId(),
+        },
+      });
+      if (!ok) {
+        setErr(data?.error || 'Не отправлено');
+        return;
+      }
+      setReplyDraft(null);
+      appendMessage(data.message);
+      await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
+      onAfterChange?.();
+    },
+    [roomId, userId, replyDraft?.id, appendMessage, onAfterChange],
   );
 
   const stopVoiceGlobal = useRef(null);
@@ -1419,6 +1492,23 @@ export default function RoomChatScreen({
             >
               {mediaUploading ? '…' : '📎'}
             </button>
+            <button
+              type="button"
+              className="icon-btn"
+              disabled={mediaUploading || voiceRecording || videoModal}
+              aria-label="Стикеры и эмодзи"
+              onClick={() => setStickerPanelOpen((v) => !v)}
+              style={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                fontSize: 20,
+                opacity: stickerPanelOpen ? 1 : 0.9,
+                background: stickerPanelOpen ? 'rgba(127,127,127,0.15)' : undefined,
+              }}
+            >
+              😀
+            </button>
             <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
               <MentionAutocomplete
                 candidates={mentionCandidates}
@@ -1531,6 +1621,17 @@ export default function RoomChatScreen({
         onJumpToBottom={() => {
           stickToBottomRef.current = true;
         }}
+      />
+
+      <ChatStickerPanel
+        open={stickerPanelOpen}
+        onClose={() => setStickerPanelOpen(false)}
+        userId={userId}
+        disabled={mediaUploading || voiceRecording || Boolean(videoModal)}
+        onEmojiPick={(em) => {
+          insertEmojiAtCaret(em);
+        }}
+        onSendSticker={sendStickerMessage}
       />
 
       {voiceRecording && !videoModal ? (

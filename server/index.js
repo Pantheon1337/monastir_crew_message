@@ -101,6 +101,8 @@ import {
   updateRoomMessage,
   insertRoomMediaMessage,
   insertChatAttachmentMessage,
+  insertDirectStickerMessage,
+  insertRoomStickerMessage,
   insertRoomAttachmentMessage,
   getMessageByIdForRoom,
   markRoomRead,
@@ -119,6 +121,7 @@ import {
   ackDirectMessagesDelivered,
   tryMarkDirectMessageDeliveredByWs,
 } from './social.js';
+import { listStickerPacks } from './stickers.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
 import { enforceVideoMaxSize } from './uploadLimits.js';
@@ -992,6 +995,12 @@ app.post('/api/users/me/avatar', (req, res) => {
   });
 });
 
+app.get('/api/stickers/packs', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  res.json(listStickerPacks());
+});
+
 app.get('/api/chats/:chatId/messages', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -1232,6 +1241,30 @@ app.post('/api/chats/:chatId/messages/media', uploadLimiter, (req, res) => {
     pushDirectChatNewMessage(chatId, result.peerId, msgOut);
     res.status(201).json({ message: msgOut });
   });
+});
+
+app.post('/api/chats/:chatId/messages/sticker', messageWriteLimiter, (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const packDir = req.body?.packDir ?? req.body?.pack;
+  const file = req.body?.file;
+  const result = insertDirectStickerMessage(req.params.chatId, userId, packDir, file, {
+    replyToId: req.body?.replyToId,
+    clientMessageId: req.body?.clientMessageId,
+  });
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const chatId = req.params.chatId;
+  const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+  if (result.duplicate) {
+    res.status(200).json({ duplicate: true, message: msgOut });
+    return;
+  }
+  pushDirectChatNewMessage(chatId, result.peerId, msgOut);
+  res.status(201).json({ message: msgOut });
 });
 
 app.post('/api/chats/:chatId/messages/:messageId/reaction', (req, res) => {
@@ -1614,6 +1647,33 @@ app.post('/api/rooms/:roomId/messages/media', uploadLimiter, (req, res) => {
     });
     res.status(201).json({ message: msgOut });
   });
+});
+
+app.post('/api/rooms/:roomId/messages/sticker', messageWriteLimiter, (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const packDir = req.body?.packDir ?? req.body?.pack;
+  const file = req.body?.file;
+  const result = insertRoomStickerMessage(req.params.roomId, userId, packDir, file, {
+    replyToId: req.body?.replyToId,
+    clientMessageId: req.body?.clientMessageId,
+  });
+  if (result.error) {
+    const code = result.error.includes('доступ') ? 403 : 400;
+    res.status(code).json({ error: result.error });
+    return;
+  }
+  const roomId = req.params.roomId;
+  const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+  if (result.duplicate) {
+    res.status(200).json({ duplicate: true, message: msgOut });
+    return;
+  }
+  broadcastRoom(roomId, {
+    type: 'room:message:new',
+    payload: { roomId, message: msgOut },
+  });
+  res.status(201).json({ message: msgOut });
 });
 
 app.post('/api/rooms/:roomId/messages/:messageId/reaction', (req, res) => {

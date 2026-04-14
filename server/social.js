@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { getDb } from './db.js';
+import { validateStickerFile } from './stickers.js';
 import {
   normalizePhone,
   normalizeNickname,
@@ -292,6 +293,7 @@ function formatLastMessagePreview(last) {
   if (k === 'video_note') return 'Видеосообщение';
   if (k === 'image') return 'Фото';
   if (k === 'file') return 'Файл';
+  if (k === 'sticker') return 'Стикер';
   if (k === 'story_reaction') return 'Реакция на историю';
   if (k === 'revoked') return 'Сообщение удалено';
   return String(last.body ?? '').trim() || 'Сообщение';
@@ -581,6 +583,10 @@ function previewLineForMessage(kind, body) {
   if (k === 'image') return body?.trim() ? `🖼 ${String(body).slice(0, 60)}` : '🖼 Фото';
   if (k === 'file') return body?.trim() ? `📎 ${String(body).slice(0, 60)}` : '📎 Файл';
   if (k === 'story_reaction') return 'Реакция на историю';
+  if (k === 'sticker') {
+    const em = String(body ?? '').trim();
+    return em ? `${em} Стикер` : '🎨 Стикер';
+  }
   return 'Сообщение';
 }
 
@@ -1043,6 +1049,117 @@ export function insertChatMediaMessage(chatId, userId, kind, mediaRelativePath, 
       senderNickname: sn?.nickname ?? null,
     },
     peerId,
+  };
+}
+
+/** Стикер из заранее загруженного набора (uploads/stickers/<pack>/manifest.json). */
+export function insertDirectStickerMessage(chatId, userId, packDir, fileName, options = {}) {
+  const v = validateStickerFile(packDir, fileName);
+  if (!v) return { error: 'Стикер не найден' };
+  const gate = assertCanSendDirectMessage(chatId, userId);
+  if (gate.error) return gate;
+  const peerId = gate.peerId;
+
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM messages WHERE chat_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(chatId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForChat(chatId, dup.id, userId);
+      return { duplicate: true, message: existing, peerId };
+    }
+  }
+
+  let replyToId = null;
+  if (options.replyToId != null && String(options.replyToId).trim()) {
+    replyToId = String(options.replyToId).trim();
+    const rp = getDb()
+      .prepare(`SELECT id FROM messages WHERE id = ? AND chat_id = ? AND COALESCE(revoked_for_all,0) = 0`)
+      .get(replyToId, chatId);
+    if (!rp) return { error: 'Ответ: исходное сообщение не найдено' };
+  }
+
+  const bodyText = v.emoji || '';
+  const id = randomUUID();
+  const createdAt = Date.now();
+  getDb()
+    .prepare(
+      `INSERT INTO messages (id, chat_id, sender_id, body, created_at, kind, media_path, duration_ms, reply_to_id, client_message_id) VALUES (?, ?, ?, ?, ?, 'sticker', ?, NULL, ?, ?)`,
+    )
+    .run(id, chatId, userId, bodyText, createdAt, v.relPath, replyToId, nonce);
+
+  const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
+
+  return {
+    message: {
+      id,
+      chatId,
+      senderId: userId,
+      body: bodyText,
+      kind: 'sticker',
+      mediaUrl: `/uploads/${v.relPath}`,
+      durationMs: null,
+      createdAt,
+      senderNickname: sn?.nickname ?? null,
+    },
+    peerId,
+  };
+}
+
+export function insertRoomStickerMessage(roomId, userId, packDir, fileName, options = {}) {
+  const v = validateStickerFile(packDir, fileName);
+  if (!v) return { error: 'Стикер не найден' };
+  if (!userInRoom(roomId, userId)) return { error: 'Нет доступа к комнате' };
+
+  const nonce = normalizeClientMessageId(options.clientMessageId);
+  if (nonce) {
+    const dup = getDb()
+      .prepare(
+        `SELECT id FROM room_messages WHERE room_id = ? AND sender_id = ? AND client_message_id = ?`,
+      )
+      .get(roomId, userId, nonce);
+    if (dup?.id) {
+      const existing = getMessageByIdForRoom(roomId, dup.id, userId);
+      return { duplicate: true, message: existing, memberIds: listRoomMemberUserIds(roomId) };
+    }
+  }
+
+  let replyToId = null;
+  if (options.replyToId != null && String(options.replyToId).trim()) {
+    replyToId = String(options.replyToId).trim();
+    const rp = getDb()
+      .prepare(`SELECT id FROM room_messages WHERE id = ? AND room_id = ? AND COALESCE(revoked_for_all,0) = 0`)
+      .get(replyToId, roomId);
+    if (!rp) return { error: 'Ответ: исходное сообщение не найдено' };
+  }
+
+  const bodyText = v.emoji || '';
+  const id = randomUUID();
+  const createdAt = Date.now();
+  getDb()
+    .prepare(
+      `INSERT INTO room_messages (id, room_id, sender_id, body, created_at, kind, media_path, duration_ms, reply_to_id, client_message_id) VALUES (?, ?, ?, ?, ?, 'sticker', ?, NULL, ?, ?)`,
+    )
+    .run(id, roomId, userId, bodyText, createdAt, v.relPath, replyToId, nonce);
+
+  const sn = getDb().prepare(`SELECT nickname FROM users WHERE id = ?`).get(userId);
+
+  return {
+    message: {
+      id,
+      roomId,
+      senderId: userId,
+      body: bodyText,
+      kind: 'sticker',
+      mediaUrl: `/uploads/${v.relPath}`,
+      durationMs: null,
+      createdAt,
+      senderNickname: sn?.nickname ?? null,
+    },
+    memberIds: listRoomMemberUserIds(roomId),
   };
 }
 
