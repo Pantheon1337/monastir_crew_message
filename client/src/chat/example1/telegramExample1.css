@@ -127,16 +127,15 @@ header.chat-header {
 }
 
 /*
- * Пузырёк: базовые стили примера; перебиваем .chat-tg-bubble из index.css.
- * Важно: не использовать width:max-content — в связке с flex и word-break даёт «по слову на строку».
- * Как в обычных мессенджерах: ограничиваем только max-width, ширина по содержимому до этого предела.
+ * Пузырёк внутри flex (.chat-swipe-reply-inner): класс .chat-tg-bubble задаёт display:inline-block.
+ * Для flex-элемента min-width:auto даёт минимальную ширину ≈ min-content (по сути одно слово) —
+ * текст ломается «по слову на строку» (как на скрине «Ну / и / че»).
+ * Лечение: block + width:max-content (естественная ширина строки), плюс потолок max-width.
  */
-.chat-scaffold.chat-container .chat-message-bubble-shell.bubble,
-.chat-scaffold.chat-container .bubble.chat-message-bubble-shell {
-  display: block;
-  width: auto;
-  min-width: 0;
-  max-width: min(85%, var(--chat-bubble-max, 100%));
+.chat-scaffold.chat-container .message .chat-message-bubble-shell.chat-tg-bubble.bubble {
+  display: block !important;
+  width: max-content !important;
+  max-width: min(85%, var(--chat-bubble-max, 100%)) !important;
   padding: 10px 14px;
   border-radius: 18px;
   font-size: 15px;
@@ -146,7 +145,6 @@ header.chat-header {
   transition: background 0.1s ease, transform 0.1s ease;
   text-wrap: wrap;
   box-sizing: border-box;
-  /* наследуется на детей; убираем агрессивный break-word / hyphens из index для нормальных переносов по словам */
   word-break: normal;
   overflow-wrap: break-word;
   hyphens: none;
