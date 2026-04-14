@@ -1548,10 +1548,11 @@ video.chat-video-note {
  * по всей доступной ширине до лимита; короткие сообщения не растягиваются на всю полосу.
  */
 .chat-tg-bubble {
-  display: block;
+  display: inline-block;
   box-sizing: border-box;
-  width: fit-content;
+  width: auto;
   max-width: var(--chat-bubble-max);
+  vertical-align: top;
   flex-shrink: 0;
   min-width: 0;
   font-family: var(--chat-font-family);
@@ -1570,7 +1571,6 @@ video.chat-video-note {
   backface-visibility: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  contain: layout;
 }
 
 /* Пузырь с фоном (не стикер/видеонота): отступы и «карточная» тень как в TG / Element */
@@ -1666,11 +1666,12 @@ video.chat-video-note {
 /* Тело текстового сообщения: длинные URL/токены без горизонтального рывка; смешанный RTL */
 .chat-message-text {
   display: block;
-  width: 100%;
+  width: auto;
+  max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
   white-space: pre-line;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
   line-height: inherit;
   letter-spacing: inherit;

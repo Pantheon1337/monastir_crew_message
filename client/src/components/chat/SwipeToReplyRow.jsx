@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
-/** Умеренный сдвиг, чтобы пузырь не уезжал за край скролла и не «пропадал» */
-const MAX_DRAG = 44;
-const COMMIT_PX = 32;
+/** Короткий жест: быстрее срабатывает ответ, меньше «тяни резинку» */
+const MAX_DRAG = 36;
+const COMMIT_PX = 22;
 const AXIS_LOCK_PX = 10;
 
 /**
@@ -108,7 +108,7 @@ export default function SwipeToReplyRow({ children, disabled, onReply }) {
         className="chat-swipe-reply-inner"
         style={{
           transform: `translateX(${tx}px)`,
-          transition: smooth ? 'transform 0.22s cubic-bezier(0.25, 0.82, 0.2, 1)' : 'none',
+          transition: smooth ? 'transform 0.09s cubic-bezier(0.33, 1, 0.68, 1)' : 'none',
           willChange: smooth ? 'auto' : 'transform',
         }}
       >

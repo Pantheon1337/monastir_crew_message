@@ -29,8 +29,8 @@ const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 const MAX_MS = 15000;
 const MIN_MS = 400;
 
-/** После загрузки истории не доверяем gap и держим низ, пока не уляжется вёрстка и медиа. */
-const POST_LOAD_STICK_MS = 650;
+/** После загрузки истории не доверяем gap; короткое окно — без лишних скроллов и дёрганий. */
+const POST_LOAD_STICK_MS = 320;
 
 /** Надёжный скролл к последним сообщениям (scrollHeight без clientHeight даёт лишнее в некоторых браузерах). */
 function scrollTimelineToBottom(el) {
@@ -764,20 +764,6 @@ export default function DirectChatScreen({
     stickToBottomRef.current = true;
   }, [chatId]);
 
-  const prevLoadingRef = useRef(loading);
-  useEffect(() => {
-    const wasLoading = prevLoadingRef.current;
-    prevLoadingRef.current = loading;
-    if (!wasLoading || loading || messages.length === 0) return;
-    let frames = 0;
-    const tick = () => {
-      scrollTimelineToBottom(scrollRef.current);
-      frames += 1;
-      if (frames < 10) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, [loading, messages.length]);
-
   useEffect(() => {
     if (!chatId || !userId) return undefined;
     let cancelled = false;
@@ -966,7 +952,8 @@ export default function DirectChatScreen({
     if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < POST_LOAD_STICK_MS) {
       stickToBottomRef.current = true;
       setShowScrollDownFab(false);
-      scrollTimelineToBottom(el);
+      const gapStick = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gapStick > 6) scrollTimelineToBottom(el);
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;

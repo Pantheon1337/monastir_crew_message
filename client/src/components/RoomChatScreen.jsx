@@ -26,7 +26,7 @@ const QUICK_REACTION_KEYS = REACTION_KEYS.slice(0, 4);
 const MAX_MS = 15000;
 const MIN_MS = 400;
 
-const POST_LOAD_STICK_MS = 1200;
+const POST_LOAD_STICK_MS = 320;
 
 function scrollTimelineToBottom(el) {
   if (!el) return;
@@ -690,20 +690,6 @@ export default function RoomChatScreen({
     stickToBottomRef.current = true;
   }, [roomId]);
 
-  const prevLoadingRef = useRef(loading);
-  useEffect(() => {
-    const wasLoading = prevLoadingRef.current;
-    prevLoadingRef.current = loading;
-    if (!wasLoading || loading || messages.length === 0) return;
-    let frames = 0;
-    const tick = () => {
-      scrollTimelineToBottom(scrollRef.current);
-      frames += 1;
-      if (frames < 10) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, [loading, messages.length]);
-
   useEffect(() => {
     if (!roomId || !userId) return undefined;
     let cancelled = false;
@@ -840,7 +826,8 @@ export default function RoomChatScreen({
     if (loadEndedAtRef.current && Date.now() - loadEndedAtRef.current < POST_LOAD_STICK_MS) {
       stickToBottomRef.current = true;
       setShowScrollDownFab(false);
-      scrollTimelineToBottom(el);
+      const gapStick = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (gapStick > 6) scrollTimelineToBottom(el);
       return;
     }
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
