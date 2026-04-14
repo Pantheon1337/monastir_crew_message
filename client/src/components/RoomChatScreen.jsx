@@ -15,7 +15,7 @@ import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
 import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
 import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
 import { messageGroupFlags } from '../chat/messageGrouping.js';
-import { loadRoomThreadCache, saveRoomThreadCache } from '../chatThreadCache.js';
+import { useRoomChatMessageChannel } from '../nextChat/hooks/useRoomChatMessageChannel.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
 import {
@@ -65,10 +65,7 @@ export default function RoomChatScreen({
   onOpenRoomInfo,
   onOpenProfileByUserId,
 }) {
-  const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(null);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [videoModal, setVideoModal] = useState(false);
   /** Пустое поле: «кружок» (видео) ↔ микрофон (аудио) */
@@ -83,8 +80,6 @@ export default function RoomChatScreen({
   const [mediaUploading, setMediaUploading] = useState(false);
   const [stickerPanelOpen, setStickerPanelOpen] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
-  const [hasMoreOlder, setHasMoreOlder] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
   /** Не скроллить ленту сразу после отправки — иначе iOS снимает фокус с поля и закрывает клавиатуру. */
@@ -95,6 +90,21 @@ export default function RoomChatScreen({
   const stickScrollRafRef = useRef(0);
 
   const scrollRef = useRef(null);
+
+  const {
+    messages,
+    setMessages,
+    loading,
+    err,
+    setErr,
+    hasMoreOlder,
+    loadingOlder,
+    load,
+    loadOlder,
+    appendMessage,
+    handleReactionLocalUpdate,
+  } = useRoomChatMessageChannel({ roomId, userId, lastEvent, onAfterChange, scrollRef });
+
   const messagesEndRef = useRef(null);
   const voiceCtxRef = useRef(null);
   const voiceStreamRef = useRef(null);
@@ -138,65 +148,10 @@ export default function RoomChatScreen({
     [userId, onOpenProfileByUserId],
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    loadEndedAtRef.current = 0;
-    setHasMoreOlder(false);
-    const cached = loadRoomThreadCache(userId, roomId);
-    setMessages(cached?.length ? cached.map(normalizeChatMessage) : []);
-    const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages?limit=200`, { userId });
-    if (!ok) {
-      setErr(data?.error || 'Не удалось загрузить чат');
-      setLoading(false);
-      return;
-    }
-    const raw = data.messages || [];
-    setMessages(raw.map(normalizeChatMessage));
-    setHasMoreOlder(data.hasMore === true);
-    saveRoomThreadCache(userId, roomId, raw);
-    setErr(null);
-    loadEndedAtRef.current = Date.now();
-    setLoading(false);
-  }, [roomId, userId]);
-
-  const loadOlder = useCallback(async () => {
-    if (!roomId || !userId || loadingOlder || !hasMoreOlder) return;
-    const oldest = messages[0];
-    if (!oldest?.id || oldest.createdAt == null) return;
-    const el = scrollRef.current;
-    const prevScrollHeight = el?.scrollHeight ?? 0;
-    const prevScrollTop = el?.scrollTop ?? 0;
-    setLoadingOlder(true);
-    try {
-      const q = new URLSearchParams({
-        limit: '100',
-        beforeCreatedAt: String(oldest.createdAt),
-        beforeId: String(oldest.id),
-      });
-      const { ok, data } = await api(`/api/rooms/${encodeURIComponent(roomId)}/messages?${q.toString()}`, {
-        userId,
-      });
-      if (!ok) return;
-      const raw = data.messages || [];
-      const batch = raw.map(normalizeChatMessage);
-      setMessages((prev) => {
-        const seen = new Set(prev.map((m) => m.id));
-        return [...batch.filter((m) => m.id && !seen.has(m.id)), ...prev];
-      });
-      setHasMoreOlder(data.hasMore === true);
-      requestAnimationFrame(() => {
-        const root = scrollRef.current;
-        if (!root) return;
-        root.scrollTop = prevScrollTop + (root.scrollHeight - prevScrollHeight);
-      });
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [roomId, userId, loadingOlder, hasMoreOlder, messages]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (loading) loadEndedAtRef.current = 0;
+    else loadEndedAtRef.current = Date.now();
+  }, [loading]);
 
   useLayoutEffect(() => {
     stickToBottomRef.current = true;
@@ -214,50 +169,6 @@ export default function RoomChatScreen({
       cancelled = true;
     };
   }, [roomId, userId]);
-
-  useEffect(() => {
-    if (!roomId || !userId) return undefined;
-    let cancelled = false;
-    (async () => {
-      await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
-      if (!cancelled) onAfterChange?.();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [roomId, userId, onAfterChange]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'room:message:new') return;
-    if (lastEvent.payload?.roomId !== roomId) return;
-    const m = normalizeChatMessage(lastEvent.payload?.message);
-    if (!m?.id) return;
-    setMessages((prev) => {
-      if (prev.some((x) => x.id === m.id)) return prev;
-      return [...prev, m];
-    });
-    (async () => {
-      await api(`/api/rooms/${encodeURIComponent(roomId)}/read`, { method: 'POST', userId });
-      onAfterChange?.();
-    })();
-  }, [lastEvent, roomId, userId, onAfterChange]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'room:message:reaction') return;
-    if (lastEvent.payload?.roomId !== roomId) return;
-    const { messageId, reactions } = lastEvent.payload || {};
-    if (!messageId || !reactions) return;
-    setMessages((prev) => prev.map((x) => (x.id === messageId ? { ...x, reactions } : x)));
-  }, [lastEvent, roomId]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'room:message:updated') return;
-    if (lastEvent.payload?.roomId !== roomId) return;
-    const m = normalizeChatMessage(lastEvent.payload?.message);
-    if (!m?.id) return;
-    setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-    onAfterChange?.();
-  }, [lastEvent, roomId, onAfterChange]);
 
   useEffect(() => {
     if (!messageMenu) return undefined;
@@ -392,14 +303,6 @@ export default function RoomChatScreen({
   useEffect(() => {
     syncScrollDownFab();
   }, [scrollLayoutKey, loading, syncScrollDownFab]);
-
-  const appendMessage = useCallback((m) => {
-    const row = normalizeChatMessage(m);
-    setMessages((prev) => {
-      if (prev.some((x) => x.id === row.id)) return prev;
-      return [...prev, row];
-    });
-  }, []);
 
   const sendChatAttachment = useCallback(
     async (file) => {
@@ -835,9 +738,7 @@ export default function RoomChatScreen({
                     setReplyDraft(draft);
                     queueMicrotask(() => refocusComposer());
                   }}
-                  onReactionsLocalUpdate={(id, reactions) =>
-                    setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)))
-                  }
+                  onReactionsLocalUpdate={handleReactionLocalUpdate}
                   onOpenActionMenu={(msg, x, y) => setMessageMenu({ m: msg, x, y, submenu: 'quick' })}
                   onMentionProfile={onMentionProfile}
                   onOpenImagePreview={(url) => setImagePreviewUrl(url)}

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
-import DirectChatScreen from '../DirectChatScreen.jsx';
+import NextDirectChatScreen from '../../nextChat/NextDirectChatScreen.jsx';
 
 /**
- * Тестовый полноэкранный чат: полный DirectChatScreen (медиа, реакции, меню, композер),
- * поток — «Избранное». Отображение текста — те же глобальные классы, что и везде;
- * правки переносов делаются в index.css / chatPrimitives, а не здесь.
+ * Тестовый полноэкранный чат: новая оболочка (next-chat.css) + тот же DirectChatScreen внутри.
+ * Поток — «Избранное».
  */
 export default function TestChatScreen({
   userId,
@@ -89,7 +88,7 @@ export default function TestChatScreen({
   }
 
   return (
-    <DirectChatScreen
+    <NextDirectChatScreen
       userId={userId}
       chatId={chatId}
       isSavedMessages
@@ -116,3 +115,4 @@ export default function TestChatScreen({
     />
   );
 }
+

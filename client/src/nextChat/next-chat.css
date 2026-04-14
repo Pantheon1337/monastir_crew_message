@@ -1,0 +1,56 @@
+/**
+ * Оболочка «нового» чата: те же узлы DOM, что у DirectChatScreen,
+ * стили переопределяются по контексту .next-chat-root (без правок разметки старого экрана).
+ */
+
+.next-chat-root {
+  position: relative;
+}
+
+/* Мягкий фон за лентой (поверх обоев из ChatScaffold) */
+.next-chat-root .chat-scaffold-timeline {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 22, 28, 0.35) 0%,
+    rgba(12, 14, 18, 0.2) 40%,
+    transparent 100%
+  );
+}
+
+.next-chat-root .chat-screen-header {
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  background: rgba(18, 20, 26, 0.72) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.next-chat-root .chat-composer-bar {
+  background: rgba(14, 16, 22, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+}
+
+.next-chat-root .chat-composer-field-wrap .chat-composer-textarea,
+.next-chat-root .text-input.chat-composer-textarea {
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 10px 14px;
+}
+
+.next-chat-root .chat-send-btn {
+  border-radius: 50%;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.next-chat-root .icon-btn {
+  border-radius: 12px;
+}
+
+/* FAB «вниз» — чуть мягче */
+.next-chat-root .chat-scroll-down-fab {
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
