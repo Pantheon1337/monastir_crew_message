@@ -13,9 +13,13 @@ function ChatRowInner({ chat, peerOnline, onActivate, style }) {
   const pinned = chat.pinned === true;
   const rowBg = saved
     ? 'rgba(140, 145, 155, 0.16)'
-    : unread
-      ? 'rgba(193, 123, 75, 0.06)'
-      : 'transparent';
+    : pinned && unread
+      ? 'rgba(193, 123, 75, 0.2)'
+      : pinned
+        ? 'rgba(193, 123, 75, 0.14)'
+        : unread
+          ? 'rgba(193, 123, 75, 0.06)'
+          : 'transparent';
   return (
     <div
       role="button"
