@@ -423,7 +423,7 @@ const MessageBubble = memo(function MessageBubble({
           }}
         />
         {m.body?.trim() ? (
-          <div style={{ marginTop: 6 }}>
+          <div className="chat-image-caption">
             <MentionText text={m.body} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
@@ -441,7 +441,7 @@ const MessageBubble = memo(function MessageBubble({
           style={{ width: '100%', maxHeight: 360, borderRadius: 12, display: 'block', background: '#000' }}
         />
         {cap ? (
-          <div style={{ marginTop: 8 }}>
+          <div className="chat-image-caption">
             <MentionText text={cap} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
@@ -451,28 +451,17 @@ const MessageBubble = memo(function MessageBubble({
     const name = m.body?.trim() || 'Скачать файл';
     inner = (
       <a
+        className="chat-file-chip"
         href={m.mediaUrl}
         download={name}
         target="_blank"
         rel="noopener noreferrer"
         onPointerDown={(e) => e.stopPropagation()}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 12px',
-          borderRadius: 10,
-          border: '1px solid rgba(0, 0, 0, 0.08)',
-          background: 'rgba(0, 0, 0, 0.03)',
-          color: 'inherit',
-          textDecoration: 'none',
-          maxWidth: '100%',
-        }}
       >
-        <span style={{ fontSize: 22 }} aria-hidden>
+        <span className="chat-file-chip__icon" aria-hidden>
           📎
         </span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+        <span className="chat-file-chip__name">{name}</span>
       </a>
     );
   } else if (kind === 'story_reaction') {
@@ -528,18 +517,16 @@ const MessageBubble = memo(function MessageBubble({
       >
         <div
           ref={shellRef}
-          className="chat-message-bubble-shell chat-tg-bubble"
+          className={`chat-message-bubble-shell chat-tg-bubble${!isMediaShell ? ' chat-message-bubble--solid' : ''}`}
           {...lp}
           onContextMenu={(e) => {
             e.preventDefault();
             onOpenActionMenu?.(m, e.clientX, e.clientY);
           }}
           style={{
-            border: isMediaShell ? 'none' : 'none',
             borderRadius: isMediaShell ? 0 : bubbleRadius,
-            padding: isMediaShell ? 0 : '9px 11px 7px',
+            padding: isMediaShell ? 0 : undefined,
             background: isMediaShell ? 'transparent' : bubbleBg,
-            boxShadow: isMediaShell ? 'none' : '0 1px 1px var(--chat-bubble-shadow)',
             overflow: isMediaShell ? 'visible' : 'hidden',
             maxWidth: isMediaShell ? 'var(--chat-bubble-max)' : undefined,
             userSelect: 'none',
@@ -549,27 +536,18 @@ const MessageBubble = memo(function MessageBubble({
           }}
         >
         {m.forwardFrom?.originalAuthorNickname ? (
-          <div className="muted" style={{ fontSize: 10, marginBottom: 6, lineHeight: 1.3 }}>
+          <div className="chat-bubble-forward-label muted">
             Переслано от @{m.forwardFrom.originalAuthorNickname}
           </div>
         ) : null}
         {m.replyTo ? (
-          <div
-            style={{
-              borderLeft: '3px solid var(--chat-bubble-reply-border)',
-              paddingLeft: 8,
-              marginBottom: 8,
-              opacity: 0.95,
-            }}
-          >
-            <div className="muted" style={{ fontSize: 10 }}>
-              @{m.replyTo.senderNickname || 'user'}
-            </div>
-            <div style={{ fontSize: 11, marginTop: 2, lineHeight: 1.35 }}>{m.replyTo.preview}</div>
+          <div className="chat-bubble-reply">
+            <div className="chat-bubble-reply__author">@{m.replyTo.senderNickname || 'user'}</div>
+            <div className="chat-bubble-reply__preview">{m.replyTo.preview}</div>
           </div>
         ) : null}
         {!mine && !isRevoked && roomId && isFirstInGroup ? (
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 5, color: 'var(--chat-bubble-meta-name)' }}>
+          <div className="chat-sender-name">
             @{m.senderNickname || 'user'}
             {m.senderAffiliationEmoji ? <span aria-hidden> {m.senderAffiliationEmoji}</span> : null}
           </div>
