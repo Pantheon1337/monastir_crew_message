@@ -394,7 +394,8 @@ export default function AuthScreen({ onAuthSuccess }) {
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? 'Вход…' : 'Войти'}
           </button>
-          <button
+          {/* Вернуть после внедрения подтверждения по SMS (режим reset + handleResetPassword). */}
+          {/* <button
             type="button"
             onClick={() => {
               setMode('reset');
@@ -415,7 +416,7 @@ export default function AuthScreen({ onAuthSuccess }) {
             }}
           >
             Забыли пароль?
-          </button>
+          </button> */}
         </form>
       ) : (
         <form className="block" style={{ padding: 16 }} onSubmit={handleRegister}>
