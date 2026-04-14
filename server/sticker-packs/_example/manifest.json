@@ -1,0 +1,19 @@
+{
+  "setName": "example_pack",
+  "title": "Пример пака",
+  "stickerType": "regular",
+  "importedAt": "2026-04-13T00:00:00.000Z",
+  "stickers": [
+    {
+      "index": 0,
+      "fileUniqueId": "local_0",
+      "emoji": "🙂",
+      "file": "000_local_0.webp",
+      "isAnimated": false,
+      "isVideo": false,
+      "width": 512,
+      "height": 512
+    }
+  ],
+  "skipped": 0
+}
