@@ -13,12 +13,17 @@ export default function AuthScreen({ onAuthSuccess }) {
   const [nickInput, setNickInput] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
+  const [forgotIdentifier, setForgotIdentifier] = useState('');
+  const [forgotPassword, setForgotPassword] = useState('');
+  const [forgotPassword2, setForgotPassword2] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [loginHint, setLoginHint] = useState(null);
 
   async function handleLogin(e) {
     e.preventDefault();
     setError(null);
+    setLoginHint(null);
     const nick = nickInput.trim().replace(/^@+/, '');
     if (nick.length < 3) {
       setError('Укажите никнейм (от 3 символов после @)');
@@ -94,6 +99,50 @@ export default function AuthScreen({ onAuthSuccess }) {
     }
   }
 
+  async function handleResetPassword(e) {
+    e.preventDefault();
+    setError(null);
+    const id = forgotIdentifier.trim();
+    if (!id) {
+      setError('Укажите телефон или никнейм');
+      return;
+    }
+    if (forgotPassword !== forgotPassword2) {
+      setError('Пароли не совпадают');
+      return;
+    }
+    if (forgotPassword.length < 8) {
+      setError('Пароль не короче 8 символов');
+      return;
+    }
+    setLoading(true);
+    try {
+      const r = await fetch(apiPath('/api/auth/reset-password'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: id,
+          password: forgotPassword,
+          passwordConfirm: forgotPassword2,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setError(data.error || 'Не удалось сменить пароль');
+        return;
+      }
+      setForgotIdentifier('');
+      setForgotPassword('');
+      setForgotPassword2('');
+      setMode('login');
+      setLoginHint('Пароль обновлён. Войдите с новым паролем.');
+    } catch {
+      setError('Нет связи с сервером');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div
       style={{
@@ -118,16 +167,7 @@ export default function AuthScreen({ onAuthSuccess }) {
         Ruscord - Crew
       </h1>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          marginBottom: 16,
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          padding: 4,
-        }}
-      >
+      {mode === 'reset' ? (
         <button
           type="button"
           onClick={() => {
@@ -135,39 +175,126 @@ export default function AuthScreen({ onAuthSuccess }) {
             setError(null);
           }}
           style={{
-            flex: 1,
-            padding: '8px 10px',
+            alignSelf: 'flex-start',
+            marginBottom: 12,
+            padding: '6px 0',
             fontSize: 12,
-            borderRadius: 4,
             border: 'none',
-            background: mode === 'login' ? 'var(--accent)' : 'transparent',
-            color: mode === 'login' ? 'var(--bg)' : 'var(--muted)',
+            background: 'none',
+            color: 'var(--accent)',
+            cursor: 'pointer',
+            textDecoration: 'underline',
           }}
         >
-          Вход
+          ← Назад ко входу
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMode('register');
-            setError(null);
-          }}
+      ) : (
+        <div
           style={{
-            flex: 1,
-            padding: '8px 10px',
-            fontSize: 12,
-            borderRadius: 4,
-            border: 'none',
-            background: mode === 'register' ? 'var(--accent)' : 'transparent',
-            color: mode === 'register' ? 'var(--bg)' : 'var(--muted)',
+            display: 'flex',
+            gap: 8,
+            marginBottom: 16,
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            padding: 4,
           }}
         >
-          Регистрация
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('login');
+              setError(null);
+              setLoginHint(null);
+            }}
+            style={{
+              flex: 1,
+              padding: '8px 10px',
+              fontSize: 12,
+              borderRadius: 4,
+              border: 'none',
+              background: mode === 'login' ? 'var(--accent)' : 'transparent',
+              color: mode === 'login' ? 'var(--bg)' : 'var(--muted)',
+            }}
+          >
+            Вход
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('register');
+              setError(null);
+              setLoginHint(null);
+            }}
+            style={{
+              flex: 1,
+              padding: '8px 10px',
+              fontSize: 12,
+              borderRadius: 4,
+              border: 'none',
+              background: mode === 'register' ? 'var(--accent)' : 'transparent',
+              color: mode === 'register' ? 'var(--bg)' : 'var(--muted)',
+            }}
+          >
+            Регистрация
+          </button>
+        </div>
+      )}
 
-      {mode === 'login' ? (
+      {mode === 'reset' ? (
+        <form className="block" style={{ padding: 16 }} onSubmit={handleResetPassword}>
+          <p className="muted" style={{ margin: '0 0 12px', fontSize: 11, lineHeight: 1.45 }}>
+            Укажите номер телефона (как при регистрации) или никнейм. Задайте новый пароль дважды. Подтверждение по почте
+            позже.
+          </p>
+          <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
+            Телефон или никнейм
+          </label>
+          <input
+            className="text-input"
+            type="text"
+            autoComplete="username"
+            placeholder="+7 … или @nickname"
+            value={forgotIdentifier}
+            onChange={(e) => setForgotIdentifier(e.target.value)}
+            style={{ width: '100%', marginBottom: 12 }}
+            required
+          />
+          <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
+            Новый пароль
+          </label>
+          <input
+            className="text-input"
+            type="password"
+            autoComplete="new-password"
+            value={forgotPassword}
+            onChange={(e) => setForgotPassword(e.target.value)}
+            style={{ width: '100%', marginBottom: 12 }}
+            required
+          />
+          <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
+            Новый пароль ещё раз
+          </label>
+          <input
+            className="text-input"
+            type="password"
+            autoComplete="new-password"
+            value={forgotPassword2}
+            onChange={(e) => setForgotPassword2(e.target.value)}
+            style={{ width: '100%', marginBottom: 12 }}
+            required
+          />
+          {error ? (
+            <p style={{ margin: '0 0 10px', fontSize: 11, color: '#c45c5c' }}>{error}</p>
+          ) : null}
+          <button type="submit" className="btn-primary" disabled={loading}>
+            {loading ? 'Сохранение…' : 'Сохранить новый пароль'}
+          </button>
+        </form>
+      ) : mode === 'login' ? (
         <form className="block" style={{ padding: 16 }} onSubmit={handleLogin}>
+          {loginHint ? (
+            <p style={{ margin: '0 0 12px', fontSize: 11, color: 'var(--online)' }}>{loginHint}</p>
+          ) : null}
           <label className="muted" style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
             Никнейм
           </label>
@@ -218,6 +345,28 @@ export default function AuthScreen({ onAuthSuccess }) {
 
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? 'Вход…' : 'Войти'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode('reset');
+              setError(null);
+              setLoginHint(null);
+            }}
+            style={{
+              display: 'block',
+              width: '100%',
+              marginTop: 12,
+              padding: '8px 0',
+              fontSize: 11,
+              border: 'none',
+              background: 'none',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              textDecoration: 'underline',
+            }}
+          >
+            Забыли пароль?
           </button>
         </form>
       ) : (

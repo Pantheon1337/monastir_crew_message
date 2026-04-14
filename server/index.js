@@ -381,6 +381,54 @@ app.post('/api/auth/register', registerLimiter, (req, res) => {
   }
 });
 
+/** Восстановление пароля по телефону или нику (без e-mail/SMS — временная схема). */
+function findUserForPasswordReset(identifierRaw) {
+  const trimmed = String(identifierRaw ?? '').trim();
+  if (!trimmed) return null;
+  const digits = trimmed.replace(/\D/g, '');
+  if (digits.length >= 10) {
+    let d = digits;
+    if (d[0] === '8') d = '7' + d.slice(1);
+    if (d.length === 10 && d[0] !== '7') d = '7' + d;
+    const phone = normalizePhone(d.slice(0, 15));
+    if (phone) {
+      const u = findUserByPhone(phone);
+      if (u) return u;
+    }
+  }
+  const nick = normalizeNickname(trimmed.startsWith('@') ? trimmed : `@${trimmed}`);
+  if (nick) return findUserByNickname(nick);
+  return null;
+}
+
+app.post('/api/auth/reset-password', registerLimiter, (req, res) => {
+  const { identifier, password, passwordConfirm } = req.body || {};
+  if (typeof identifier !== 'string' || !identifier.trim()) {
+    res.status(400).json({ error: 'Укажите телефон или никнейм' });
+    return;
+  }
+  if (typeof password !== 'string' || !password) {
+    res.status(400).json({ error: 'Укажите новый пароль' });
+    return;
+  }
+  if (password !== passwordConfirm) {
+    res.status(400).json({ error: 'Пароли не совпадают' });
+    return;
+  }
+  const pwdErr = validatePasswordStrength(password);
+  if (pwdErr) {
+    res.status(400).json({ error: pwdErr });
+    return;
+  }
+  const user = findUserForPasswordReset(identifier);
+  if (!user) {
+    res.status(404).json({ error: 'Пользователь с таким номером или ником не найден' });
+    return;
+  }
+  setUserPasswordHash(user.id, hashPassword(password));
+  res.json({ ok: true });
+});
+
 app.post('/api/auth/change-password', loginLimiter, (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;

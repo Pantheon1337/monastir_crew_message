@@ -5,9 +5,9 @@ import { REACTION_ICONS, REACTION_KEYS } from '../reactionConstants.js';
 import StoryViewersModal from './StoryViewersModal.jsx';
 
 const SLIDE_MS = 4800;
-/** Закрытие как в Telegram: уезд вниз + лёгкое сжатие от верхнего края */
-const STORY_DISMISS_MS = 360;
+/** Во время жеста — плавное сопротивление; по отпускании при закрытии вызывается onClose сразу, без ожидания анимации */
 const STORY_DISMISS_EASE = 'cubic-bezier(0.4, 0, 0.2, 1)';
+const STORY_SNAP_BACK_MS = 220;
 const STORY_VERTICAL_THRESHOLD = 72;
 const STORY_AXIS_LOCK_PX = 14;
 
@@ -75,8 +75,6 @@ export default function StoryViewer({
   const stageAxisRef = useRef(null);
   const [sheetY, setSheetY] = useState(0);
   const [sheetDragging, setSheetDragging] = useState(false);
-  const closingRef = useRef(false);
-  const closeFallbackTimerRef = useRef(null);
 
   const sessionKey = useMemo(() => {
     if (!story?.authorId) return '';
@@ -97,35 +95,11 @@ export default function StoryViewer({
     });
   }, [onAfterLastItem, onClose, total]);
 
-  const finishClose = useCallback(() => {
-    if (closeFallbackTimerRef.current != null) {
-      window.clearTimeout(closeFallbackTimerRef.current);
-      closeFallbackTimerRef.current = null;
-    }
-    if (!closingRef.current) return;
-    closingRef.current = false;
+  const dismissStoryNow = useCallback(() => {
+    setSheetDragging(false);
+    setSheetY(0);
     onClose();
   }, [onClose]);
-
-  const closeAnimated = useCallback(
-    (direction) => {
-      const h = typeof window !== 'undefined' ? window.innerHeight : 800;
-      closingRef.current = true;
-      setSheetDragging(false);
-      setSheetY(direction === 'down' ? h : -h);
-      if (closeFallbackTimerRef.current != null) window.clearTimeout(closeFallbackTimerRef.current);
-      closeFallbackTimerRef.current = window.setTimeout(() => {
-        closeFallbackTimerRef.current = null;
-        if (closingRef.current) finishClose();
-      }, STORY_DISMISS_MS + 100);
-    },
-    [finishClose],
-  );
-
-  function onDismissTransitionEnd(e) {
-    if (e.propertyName !== 'transform') return;
-    finishClose();
-  }
 
   const goPrev = useCallback(() => {
     setSlide((s) => {
@@ -181,10 +155,6 @@ export default function StoryViewer({
       if (replyToastTimerRef.current != null) {
         window.clearTimeout(replyToastTimerRef.current);
       }
-      if (closeFallbackTimerRef.current != null) {
-        window.clearTimeout(closeFallbackTimerRef.current);
-      }
-      closingRef.current = false;
     };
   }, []);
 
@@ -323,7 +293,7 @@ export default function StoryViewer({
     if (verticalIntent) {
       const thr = axis === 'vertical' ? Math.max(64, STORY_VERTICAL_THRESHOLD - 12) : STORY_VERTICAL_THRESHOLD;
       if (Math.abs(dy) >= thr && Math.abs(dy) >= Math.abs(dx) * 0.65) {
-        closeAnimated(dy > 0 ? 'down' : 'up');
+        dismissStoryNow();
         return;
       }
       setSheetY(0);
@@ -466,7 +436,6 @@ export default function StoryViewer({
       role="dialog"
       aria-modal="true"
       className="story-viewer-root"
-      onTransitionEnd={onDismissTransitionEnd}
       style={{
         position: 'fixed',
         inset: 0,
@@ -479,7 +448,7 @@ export default function StoryViewer({
         borderRadius: sheetRadius > 0.5 ? `${sheetRadius}px` : 0,
         transition: sheetDragging
           ? 'none'
-          : `transform ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, opacity ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}, border-radius ${STORY_DISMISS_MS}ms ${STORY_DISMISS_EASE}`,
+          : `transform ${STORY_SNAP_BACK_MS}ms ${STORY_DISMISS_EASE}, opacity ${STORY_SNAP_BACK_MS}ms ${STORY_DISMISS_EASE}, border-radius ${STORY_SNAP_BACK_MS}ms ${STORY_DISMISS_EASE}`,
         boxShadow:
           sheetRadius > 1
             ? '0 32px 100px rgba(0,0,0,0.65), 0 0 0 0.5px rgba(255,255,255,0.08)'
