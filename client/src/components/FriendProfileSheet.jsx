@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '../api.js';
+import ChatMediaSheet from './ChatMediaSheet.jsx';
 import UserAvatar from './UserAvatar.jsx';
 import { formatPhoneRu } from '../formatPhone.js';
 import { profileHeroTintBg } from '../profileHeroTints.js';
@@ -45,6 +46,7 @@ export default function FriendProfileSheet({
   const [isSelf, setIsSelf] = useState(false);
   const [friendship, setFriendship] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -209,6 +211,19 @@ export default function FriendProfileSheet({
                       <span className="friend-mini-action-btn__label">Чат</span>
                     </button>
                   ) : null}
+                  {!isSelf && friendship?.hasDirectChat && friendship?.directChatId ? (
+                    <button
+                      type="button"
+                      className="friend-mini-action-btn friend-mini-action-btn--sm"
+                      onClick={() => setMediaOpen(true)}
+                      title="Медиа из чата"
+                    >
+                      <span className="friend-mini-action-btn__icon" aria-hidden>
+                        🖼
+                      </span>
+                      <span className="friend-mini-action-btn__label">Медиа</span>
+                    </button>
+                  ) : null}
                   {!isSelf && typeof onViewFullProfile === 'function' ? (
                     <button type="button" className="friend-mini-action-btn friend-mini-action-btn--sm" onClick={onViewFullProfile} title="Профиль">
                       <span className="friend-mini-action-btn__icon" aria-hidden>
@@ -286,6 +301,15 @@ export default function FriendProfileSheet({
           </>
         ) : null}
       </div>
+      {mediaOpen && friendship?.directChatId && viewerId ? (
+        <ChatMediaSheet
+          open={mediaOpen}
+          onClose={() => setMediaOpen(false)}
+          chatId={friendship.directChatId}
+          viewerId={viewerId}
+          title="Медиа"
+        />
+      ) : null}
     </div>
   );
 }

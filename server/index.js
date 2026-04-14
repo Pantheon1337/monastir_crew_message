@@ -50,6 +50,7 @@ import {
   setDirectChatHiddenForUser,
   resumeDirectChatWithPeer,
   listMessagesForChat,
+  listMediaMessagesForChat,
   insertDirectMessage,
   updateDirectMessage,
   insertChatMediaMessage,
@@ -1054,6 +1055,22 @@ app.get('/api/chats/:chatId/messages', (req, res) => {
     });
   }
   res.json({ messages, hasMore });
+});
+
+app.get('/api/chats/:chatId/media', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const { limit, beforeCreatedAt, beforeId } = req.query || {};
+  const out = listMediaMessagesForChat(req.params.chatId, userId, {
+    limit: limit != null ? Number(limit) : undefined,
+    beforeCreatedAt: beforeCreatedAt != null ? Number(beforeCreatedAt) : undefined,
+    beforeId: typeof beforeId === 'string' ? beforeId : undefined,
+  });
+  if (out === null) {
+    res.status(404).json({ error: 'Чат не найден или нет доступа' });
+    return;
+  }
+  res.json({ messages: out.messages, hasMore: out.hasMore });
 });
 
 app.post('/api/chats/:chatId/messages/ack-delivered', (req, res) => {

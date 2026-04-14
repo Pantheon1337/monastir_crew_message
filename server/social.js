@@ -133,6 +133,7 @@ export function getFriendshipMetaForProfile(viewerId, targetId) {
   const canMessage = friendsActive && !theyBlockedYou;
   return {
     hasDirectChat: true,
+    directChatId: chat.id,
     friendsActive,
     youBlockedThem,
     theyBlockedYou,
@@ -853,6 +854,61 @@ export function listMessagesForChat(chatId, userId, options = {}) {
       : null;
 
   return { messages, hasMore, inboundDelivered };
+}
+
+const MEDIA_PAGE_DEFAULT = 48;
+const MEDIA_PAGE_MAX = 120;
+
+/** Сообщения с вложениями для сетки «Медиа» (фото, видео, стикеры, голос, файлы с медиа). */
+export function listMediaMessagesForChat(chatId, userId, options = {}) {
+  if (!userInDirectChat(chatId, userId)) return null;
+  let limit = Number(options.limit);
+  if (!Number.isFinite(limit) || limit < 1) limit = MEDIA_PAGE_DEFAULT;
+  if (limit > MEDIA_PAGE_MAX) limit = MEDIA_PAGE_MAX;
+
+  const beforeCreatedAt = options.beforeCreatedAt;
+  const beforeId = options.beforeId != null ? String(options.beforeId).trim() : '';
+  const useCursor =
+    beforeCreatedAt != null &&
+    Number.isFinite(Number(beforeCreatedAt)) &&
+    beforeId.length > 0;
+
+  let sql = `SELECT m.id, m.sender_id AS senderId, m.body, m.kind, m.media_path AS mediaPath, m.duration_ms AS durationMs,
+        m.created_at AS createdAt, m.edited_at AS editedAt, m.revoked_for_all AS revokedForAll,
+        m.reply_to_id AS replyToIdRaw, m.forward_json AS forwardJson,
+        u.nickname AS senderNickname, u.display_role AS senderStoredRole, u.display_role_emoji AS senderEmoji,
+        m.ref_story_id AS refStoryId, m.story_reaction_key AS storyReactionKey,
+        rs.media_path AS refStoryMediaPath,
+        rp.id AS replyRefId, rp.revoked_for_all AS replyParentRevoked,
+        ru.nickname AS replyToSenderNick, rp.body AS replyToBodyRaw, rp.kind AS replyToKindRaw,
+        m.delivered_to_peer_at AS deliveredToPeerAt
+      FROM messages m
+      JOIN users u ON u.id = m.sender_id
+      LEFT JOIN stories rs ON rs.id = m.ref_story_id
+      LEFT JOIN messages rp ON rp.id = m.reply_to_id AND rp.chat_id = m.chat_id
+      LEFT JOIN users ru ON ru.id = rp.sender_id
+      WHERE m.chat_id = ?
+      AND NOT EXISTS (SELECT 1 FROM direct_message_hide h WHERE h.message_id = m.id AND h.user_id = ?)
+      AND COALESCE(m.revoked_for_all,0)=0
+      AND m.media_path IS NOT NULL AND TRIM(m.media_path) <> ''
+      AND m.kind IN ('image', 'video_note', 'sticker', 'voice', 'file')`;
+  const params = [chatId, userId];
+  if (useCursor) {
+    sql += ` AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))`;
+    params.push(Number(beforeCreatedAt), Number(beforeCreatedAt), beforeId);
+  }
+  sql += ` ORDER BY m.created_at DESC, m.id DESC LIMIT ?`;
+  params.push(limit);
+
+  const rows = getDb().prepare(sql).all(...params);
+  rows.reverse();
+
+  const ids = rows.map((r) => r.id);
+  const getReact = ids.length ? loadReactionSummaryForMessages(ids, userId) : null;
+  const messages = rows.map((r) => mapMessageRow(r, getReact));
+
+  const hasMore = rows.length >= limit;
+  return { messages, hasMore };
 }
 
 export function pinDirectMessage(chatId, userId, messageId, scopeRaw) {
