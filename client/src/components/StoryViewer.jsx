@@ -18,12 +18,12 @@ function formatStoryArchiveEta(expiresAt) {
   const hoursLeft = msLeft / 3600000;
   if (hoursLeft >= 1) {
     const h = Math.max(1, Math.round(hoursLeft));
-    return `≈ ${h} ч до архива`;
+    return `≈ ${h} ч до истечения`;
   }
   const minLeft = msLeft / 60000;
-  if (minLeft < 1) return 'меньше минуты до архива';
+  if (minLeft < 1) return 'меньше минуты до истечения';
   const m = Math.max(1, Math.ceil(minLeft));
-  return `≈ ${m} мин до архива`;
+  return `≈ ${m} мин до истечения`;
 }
 
 function formatStorySlideTime(ts) {
@@ -58,7 +58,7 @@ export default function StoryViewer({
   const [replyToast, setReplyToast] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [replyBusy, setReplyBusy] = useState(false);
-  const [archiving, setArchiving] = useState(false);
+  const [hidingFromProfile, setHidingFromProfile] = useState(false);
   const [viewersOpen, setViewersOpen] = useState(false);
   const [viewersLoading, setViewersLoading] = useState(false);
   const [viewersList, setViewersList] = useState([]);
@@ -338,16 +338,17 @@ export default function StoryViewer({
   const canInteract = Boolean(userId) && !story.isSelf;
   const pct = total > 0 ? (slide / total) * 100 : 0;
 
-  async function archiveCurrentToFeed() {
+  /** Убрать кадр из сетки профиля (не зависит от 24 ч ленты — в отличие от старого «Архивировать»). */
+  async function removeCurrentFromProfile() {
     if (!userId || !cur?.id || !story?.isSelf) return;
-    setArchiving(true);
-    const { ok, data } = await api(`/api/stories/${encodeURIComponent(cur.id)}/archive`, {
+    setHidingFromProfile(true);
+    const { ok, data } = await api(`/api/stories/${encodeURIComponent(cur.id)}/hide-from-profile`, {
       method: 'POST',
       userId,
     });
-    setArchiving(false);
+    setHidingFromProfile(false);
     if (!ok) {
-      alert(data?.error || 'Не удалось архивировать');
+      alert(data?.error || 'Не удалось убрать из профиля');
       return;
     }
     onStoryArchived?.(story.authorId, story.profileReel === true);
@@ -704,8 +705,8 @@ export default function StoryViewer({
           {story.isSelf ? (
             <button
               type="button"
-              disabled={archiving}
-              onClick={() => void archiveCurrentToFeed()}
+              disabled={hidingFromProfile}
+              onClick={() => void removeCurrentFromProfile()}
               style={{
                 border: '1px solid rgba(255,255,255,0.25)',
                 borderRadius: 'var(--radius)',
@@ -713,12 +714,12 @@ export default function StoryViewer({
                 fontSize: 11,
                 background: 'rgba(0,0,0,0.35)',
                 color: '#fff',
-                opacity: archiving ? 0.6 : 1,
+                opacity: hidingFromProfile ? 0.6 : 1,
                 flexShrink: 0,
               }}
-              title="Убрать этот кадр из ленты кружков; останется в архиве до истечения 24 ч"
+              title="Убрать этот кадр из сетки публикаций на вашей странице у гостей"
             >
-              {archiving ? '…' : 'Архивировать'}
+              {hidingFromProfile ? '…' : 'Убрать из профиля'}
             </button>
           ) : null}
           <button

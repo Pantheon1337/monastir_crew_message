@@ -9,13 +9,23 @@ const CHAT_COMPOSER_FILE = {
 };
 
 /**
+ * Версия в URL сбрасывает кэш PNG. По умолчанию 1; при замене иконок задайте VITE_CHAT_COMPOSER_ICONS=2 в client/.env или поменяйте число по умолчанию ниже.
+ */
+function chatComposerIconCacheVer() {
+  const env = typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_CHAT_COMPOSER_ICONS;
+  if (env !== undefined && env !== null && String(env).trim() !== '') return String(env).trim();
+  return '2';
+}
+
+/**
  * Иконка из /chat-composer/*.png; при отсутствии файла — запасной символ.
  * name: attach | stickers | video | mic
  */
 export default function ChatComposerIcon({ name, fallback, alt = '', size = 22, style, ...rest }) {
   const [broken, setBroken] = useState(false);
   const file = CHAT_COMPOSER_FILE[name] || `icon-${name}.png`;
-  const src = `/chat-composer/${file}`;
+  const v = chatComposerIconCacheVer();
+  const src = `/chat-composer/${file}?v=${encodeURIComponent(v)}`;
 
   if (broken) {
     return (
