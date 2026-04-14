@@ -126,10 +126,17 @@ header.chat-header {
   justify-content: flex-end;
 }
 
-/* Пузырёк: базовые стили примера; перебиваем .chat-tg-bubble из index.css (var + text-wrap: pretty) */
+/*
+ * Пузырёк: базовые стили примера; перебиваем .chat-tg-bubble из index.css.
+ * Важно: не использовать width:max-content — в связке с flex и word-break даёт «по слову на строку».
+ * Как в обычных мессенджерах: ограничиваем только max-width, ширина по содержимому до этого предела.
+ */
 .chat-scaffold.chat-container .chat-message-bubble-shell.bubble,
 .chat-scaffold.chat-container .bubble.chat-message-bubble-shell {
   display: block;
+  width: auto;
+  min-width: 0;
+  max-width: min(85%, var(--chat-bubble-max, 100%));
   padding: 10px 14px;
   border-radius: 18px;
   font-size: 15px;
@@ -137,17 +144,23 @@ header.chat-header {
   letter-spacing: -0.2px;
   box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.1);
   transition: background 0.1s ease, transform 0.1s ease;
-  hyphens: auto;
-  -webkit-hyphens: auto;
   text-wrap: wrap;
-  width: max-content;
-  max-width: min(85%, var(--chat-bubble-max, 100%));
   box-sizing: border-box;
+  /* наследуется на детей; убираем агрессивный break-word / hyphens из index для нормальных переносов по словам */
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: none;
+  -webkit-hyphens: none;
 }
 
-/* Текст как в примере: явные переводы строк (textarea — pre-wrap); убираем «pretty»-переносы отличные от демо */
+/* Тело: явные Enter из сообщения (pre-wrap); перенос длинных слов/URL без разрыва каждого слова */
 .chat-scaffold.chat-container .chat-message-bubble-shell .chat-message-text {
   white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: none;
+  -webkit-hyphens: none;
   text-wrap: wrap;
 }
 
@@ -272,7 +285,8 @@ header.chat-header {
   outline: none;
   max-height: 100px;
   overflow-y: auto;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: break-word;
   white-space: pre-wrap;
   padding: 4px 0;
   box-shadow: none;
