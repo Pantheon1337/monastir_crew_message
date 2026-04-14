@@ -1632,8 +1632,8 @@ video.chat-video-note {
 }
 
 /*
- * Пузырь: inline-block + width: max-content — ширина как у одной строки до max-width,
- * иначе fit-content/shrink-to-fit даёт слишком узкую колонку и переносы «раньше времени».
+ * Пузырь: стикеры/медиа — по содержимому; текст (.chat-message-bubble--solid) — на всю ширину
+ * колонки до --chat-bubble-max (как Telegram: область переноса = ширина чата, не узкий shrink).
  */
 .chat-tg-bubble {
   display: inline-block;
@@ -1650,9 +1650,7 @@ video.chat-video-note {
   letter-spacing: var(--chat-letter-spacing);
   color: var(--chat-bubble-text);
   text-align: start;
-  /* pretty переразбивает строки ради «типографики» — переносы слишком рано */
   text-wrap: wrap;
-  /* normal: не рвать слово «Здорово» на «Здоров»+«о» — целиком на следующую строку (break-word так ломает) */
   word-wrap: normal;
   overflow-wrap: normal;
   word-break: normal;
@@ -1664,6 +1662,21 @@ video.chat-video-note {
   backface-visibility: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Текстовый пузырь: полная ширина полосы сообщения (до max), исходящие — прижаты вправо */
+.chat-tg-bubble.chat-message-bubble--solid {
+  display: block;
+  width: min(var(--chat-bubble-max), 100%);
+  max-width: min(var(--chat-bubble-max), 100%);
+}
+
+.chat-message-row--out .chat-swipe-reply-inner .chat-tg-bubble.chat-message-bubble--solid {
+  margin-left: auto;
+}
+
+.chat-message-row--in .chat-swipe-reply-inner .chat-tg-bubble.chat-message-bubble--solid {
+  margin-right: auto;
 }
 
 /* Пузырь с фоном (не стикер/видеонота): отступы и «карточная» тень как в TG / Element */
@@ -1772,8 +1785,7 @@ video.chat-video-note {
  */
 .chat-message-text {
   display: block;
-  /* Без max-width:100% — при расчёте max-content пузыря давало преждевременные переносы */
-  max-width: none;
+  max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
   white-space: pre-wrap;
