@@ -648,6 +648,10 @@ export function getDb() {
     db.pragma('synchronous = NORMAL');
     db.pragma('foreign_keys = ON');
     db.pragma('busy_timeout = 5000');
+    /** ~32 МБ кэша страниц БД; на сервере 1 ГБ ОЗУ не поднимаем mmap слишком высоко */
+    db.pragma('cache_size = -32000');
+    db.pragma('temp_store = MEMORY');
+    db.pragma('mmap_size = 67108864');
   }
   return db;
 }

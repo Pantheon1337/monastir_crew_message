@@ -127,6 +127,7 @@ import { listStickerPacks } from './stickers.js';
 import { storyImageUpload, storyMediaRelativePath } from './storyUpload.js';
 import { feedPostUpload, feedMediaRelativePath } from './feedPostUpload.js';
 import { enforceVideoMaxSize } from './uploadLimits.js';
+import { optimizeRasterToWebp, isRasterImageMime, relativeFromUploads } from './imageOptimize.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
@@ -586,20 +587,31 @@ app.post('/api/feed/upload', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   feedPostUpload.single('file')(req, res, (err) => {
-    if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
-      return;
-    }
-    if (!req.file) {
-      res.status(400).json({ error: 'Выберите файл' });
-      return;
-    }
-    const videoErr = enforceVideoMaxSize(req.file);
-    if (videoErr) {
-      res.status(400).json({ error: videoErr });
-      return;
-    }
-    res.json({ mediaPath: feedMediaRelativePath(req.file.filename) });
+    void (async () => {
+      if (err) {
+        res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ error: 'Выберите файл' });
+        return;
+      }
+      const videoErr = enforceVideoMaxSize(req.file);
+      if (videoErr) {
+        res.status(400).json({ error: videoErr });
+        return;
+      }
+      let filename = req.file.filename;
+      if (isRasterImageMime(req.file.mimetype)) {
+        const opt = await optimizeRasterToWebp(req.file.path, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 82,
+        });
+        filename = opt.baseName;
+      }
+      res.json({ mediaPath: feedMediaRelativePath(filename) });
+    })();
   });
 });
 
@@ -978,22 +990,29 @@ app.post('/api/users/me/avatar', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   avatarUpload.single('avatar')(req, res, (err) => {
-    if (err) {
-      const msg =
-        err.code === 'LIMIT_FILE_SIZE'
-          ? 'Файл слишком большой (максимум 8 МБ). Выберите другое фото или уменьшите его в галерее.'
-          : err.message || 'Ошибка загрузки';
-      res.status(400).json({ error: msg });
-      return;
-    }
-    if (!req.file) {
-      res.status(400).json({ error: 'Выберите файл изображения' });
-      return;
-    }
-    const rel = `avatars/${req.file.filename}`;
-    setUserAvatarPath(userId, rel);
-    const user = findUserById(userId);
-    res.json({ user });
+    void (async () => {
+      if (err) {
+        const msg =
+          err.code === 'LIMIT_FILE_SIZE'
+            ? 'Файл слишком большой (максимум 8 МБ). Выберите другое фото или уменьшите его в галерее.'
+            : err.message || 'Ошибка загрузки';
+        res.status(400).json({ error: msg });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ error: 'Выберите файл изображения' });
+        return;
+      }
+      const opt = await optimizeRasterToWebp(req.file.path, {
+        maxWidth: 512,
+        maxHeight: 512,
+        quality: 80,
+      });
+      const rel = relativeFromUploads(opt.absPath);
+      setUserAvatarPath(userId, rel);
+      const user = findUserById(userId);
+      res.json({ user });
+    })();
   });
 });
 
@@ -1205,43 +1224,54 @@ app.post('/api/chats/:chatId/messages/video-note', uploadLimiter, (req, res) => 
 
 app.post('/api/chats/:chatId/messages/media', uploadLimiter, (req, res) => {
   chatAttachmentUpload.single('file')(req, res, (err) => {
-    if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
-      return;
-    }
-    const userId = requireUser(req, res);
-    if (!userId) return;
-    if (!req.file) {
-      res.status(400).json({ error: 'Нет файла' });
-      return;
-    }
-    const videoErr = enforceVideoMaxSize(req.file);
-    if (videoErr) {
-      res.status(400).json({ error: videoErr });
-      return;
-    }
-    const mime = (req.file.mimetype || '').toLowerCase();
-    const kind = mime.startsWith('image/') ? 'image' : 'file';
-    const rel = chatMediaRelativePath(req.file.filename);
-    const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
-    const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
-    const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
-    const result = insertChatAttachmentMessage(req.params.chatId, userId, kind, rel, bodyField, {
-      clientMessageId: req.body?.clientMessageId,
-    });
-    if (result.error) {
-      const code = result.error.includes('доступ') ? 403 : 400;
-      res.status(code).json({ error: result.error });
-      return;
-    }
-    const chatId = req.params.chatId;
-    const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
-    if (result.duplicate) {
-      res.status(200).json({ duplicate: true, message: msgOut });
-      return;
-    }
-    pushDirectChatNewMessage(chatId, result.peerId, msgOut);
-    res.status(201).json({ message: msgOut });
+    void (async () => {
+      if (err) {
+        res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+        return;
+      }
+      const userId = requireUser(req, res);
+      if (!userId) return;
+      if (!req.file) {
+        res.status(400).json({ error: 'Нет файла' });
+        return;
+      }
+      const videoErr = enforceVideoMaxSize(req.file);
+      if (videoErr) {
+        res.status(400).json({ error: videoErr });
+        return;
+      }
+      const mime = (req.file.mimetype || '').toLowerCase();
+      const kind = mime.startsWith('image/') ? 'image' : 'file';
+      let filename = req.file.filename;
+      if (kind === 'image' && isRasterImageMime(mime)) {
+        const opt = await optimizeRasterToWebp(req.file.path, {
+          maxWidth: 1600,
+          maxHeight: 1600,
+          quality: 82,
+        });
+        filename = opt.baseName;
+      }
+      const rel = chatMediaRelativePath(filename);
+      const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
+      const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
+      const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
+      const result = insertChatAttachmentMessage(req.params.chatId, userId, kind, rel, bodyField, {
+        clientMessageId: req.body?.clientMessageId,
+      });
+      if (result.error) {
+        const code = result.error.includes('доступ') ? 403 : 400;
+        res.status(code).json({ error: result.error });
+        return;
+      }
+      const chatId = req.params.chatId;
+      const msgOut = getMessageByIdForChat(chatId, result.message.id, userId) || result.message;
+      if (result.duplicate) {
+        res.status(200).json({ duplicate: true, message: msgOut });
+        return;
+      }
+      pushDirectChatNewMessage(chatId, result.peerId, msgOut);
+      res.status(201).json({ message: msgOut });
+    })();
   });
 });
 
@@ -1608,46 +1638,57 @@ app.post('/api/rooms/:roomId/messages/video-note', uploadLimiter, (req, res) => 
 
 app.post('/api/rooms/:roomId/messages/media', uploadLimiter, (req, res) => {
   chatAttachmentUpload.single('file')(req, res, (err) => {
-    if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
-      return;
-    }
-    const userId = requireUser(req, res);
-    if (!userId) return;
-    if (!req.file) {
-      res.status(400).json({ error: 'Нет файла' });
-      return;
-    }
-    const videoErr = enforceVideoMaxSize(req.file);
-    if (videoErr) {
-      res.status(400).json({ error: videoErr });
-      return;
-    }
-    const mime = (req.file.mimetype || '').toLowerCase();
-    const kind = mime.startsWith('image/') ? 'image' : 'file';
-    const rel = chatMediaRelativePath(req.file.filename);
-    const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
-    const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
-    const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
-    const result = insertRoomAttachmentMessage(req.params.roomId, userId, kind, rel, bodyField, {
-      clientMessageId: req.body?.clientMessageId,
-    });
-    if (result.error) {
-      const code = result.error.includes('доступ') ? 403 : 400;
-      res.status(code).json({ error: result.error });
-      return;
-    }
-    const roomId = req.params.roomId;
-    const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
-    if (result.duplicate) {
-      res.status(200).json({ duplicate: true, message: msgOut });
-      return;
-    }
-    broadcastRoom(roomId, {
-      type: 'room:message:new',
-      payload: { roomId, message: msgOut },
-    });
-    res.status(201).json({ message: msgOut });
+    void (async () => {
+      if (err) {
+        res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+        return;
+      }
+      const userId = requireUser(req, res);
+      if (!userId) return;
+      if (!req.file) {
+        res.status(400).json({ error: 'Нет файла' });
+        return;
+      }
+      const videoErr = enforceVideoMaxSize(req.file);
+      if (videoErr) {
+        res.status(400).json({ error: videoErr });
+        return;
+      }
+      const mime = (req.file.mimetype || '').toLowerCase();
+      const kind = mime.startsWith('image/') ? 'image' : 'file';
+      let filename = req.file.filename;
+      if (kind === 'image' && isRasterImageMime(mime)) {
+        const opt = await optimizeRasterToWebp(req.file.path, {
+          maxWidth: 1600,
+          maxHeight: 1600,
+          quality: 82,
+        });
+        filename = opt.baseName;
+      }
+      const rel = chatMediaRelativePath(filename);
+      const rawName = String(req.file.originalname || 'файл').replace(/[<>"]/g, '').trim() || 'файл';
+      const caption = typeof req.body?.caption === 'string' ? req.body.caption : '';
+      const bodyField = kind === 'image' ? caption : rawName.slice(0, 400);
+      const result = insertRoomAttachmentMessage(req.params.roomId, userId, kind, rel, bodyField, {
+        clientMessageId: req.body?.clientMessageId,
+      });
+      if (result.error) {
+        const code = result.error.includes('доступ') ? 403 : 400;
+        res.status(code).json({ error: result.error });
+        return;
+      }
+      const roomId = req.params.roomId;
+      const msgOut = getMessageByIdForRoom(roomId, result.message.id, userId) || result.message;
+      if (result.duplicate) {
+        res.status(200).json({ duplicate: true, message: msgOut });
+        return;
+      }
+      broadcastRoom(roomId, {
+        type: 'room:message:new',
+        payload: { roomId, message: msgOut },
+      });
+      res.status(201).json({ message: msgOut });
+    })();
   });
 });
 
@@ -1917,25 +1958,32 @@ app.post('/api/stories/upload', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   storyImageUpload.single('media')(req, res, (err) => {
-    if (err) {
-      res.status(400).json({ error: err.message || 'Ошибка загрузки' });
-      return;
-    }
-    if (!req.file) {
-      res.status(400).json({ error: 'Прикрепите изображение' });
-      return;
-    }
-    const rel = storyMediaRelativePath(req.file.filename);
-    const caption = typeof req.body?.body === 'string' ? req.body.body : '';
-    let sip = req.body?.showInProfile;
-    if (typeof sip === 'string') sip = sip === '1' || sip === 'true';
-    const out = createStory(userId, { body: caption, mediaPath: rel, showInProfile: sip });
-    if (out.error) {
-      res.status(400).json({ error: out.error });
-      return;
-    }
-    broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
-    res.status(201).json(out);
+    void (async () => {
+      if (err) {
+        res.status(400).json({ error: err.message || 'Ошибка загрузки' });
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ error: 'Прикрепите изображение' });
+        return;
+      }
+      const opt = await optimizeRasterToWebp(req.file.path, {
+        maxWidth: 1920,
+        maxHeight: 1920,
+        quality: 82,
+      });
+      const rel = storyMediaRelativePath(opt.baseName);
+      const caption = typeof req.body?.body === 'string' ? req.body.body : '';
+      let sip = req.body?.showInProfile;
+      if (typeof sip === 'string') sip = sip === '1' || sip === 'true';
+      const out = createStory(userId, { body: caption, mediaPath: rel, showInProfile: sip });
+      if (out.error) {
+        res.status(400).json({ error: out.error });
+        return;
+      }
+      broadcastToAllAuthenticatedUsers({ type: 'stories:new', payload: { authorId: userId } });
+      res.status(201).json(out);
+    })();
   });
 });
 

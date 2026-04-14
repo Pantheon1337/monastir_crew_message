@@ -1,6 +1,16 @@
 import fs from 'fs';
 import path from 'path';
+import { LRUCache } from 'lru-cache';
 import { uploadsRoot } from './avatarUpload.js';
+
+const stickerListCache = new LRUCache({
+  max: 8,
+  ttl: 60_000,
+});
+
+export function invalidateStickerListCache() {
+  stickerListCache.clear();
+}
 
 /** Имя папки пака: латиница, цифры, _, - */
 function safePackDir(name) {
@@ -22,8 +32,15 @@ function safeStickerFileName(name) {
  * Сканирует каталоги uploads/stickers/<пак>/manifest.json для панели стикеров.
  */
 export function listStickerPacks() {
+  const cached = stickerListCache.get('list');
+  if (cached) return cached;
+
   const root = path.join(uploadsRoot, 'stickers');
-  if (!fs.existsSync(root)) return { packs: [] };
+  if (!fs.existsSync(root)) {
+    const empty = { packs: [] };
+    stickerListCache.set('list', empty);
+    return empty;
+  }
 
   const entries = fs.readdirSync(root, { withFileTypes: true });
   const packs = [];
@@ -63,7 +80,9 @@ export function listStickerPacks() {
   }
 
   packs.sort((a, b) => String(a.title).localeCompare(String(b.title), 'ru'));
-  return { packs };
+  const out = { packs };
+  stickerListCache.set('list', out);
+  return out;
 }
 
 /**
