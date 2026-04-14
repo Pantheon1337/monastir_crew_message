@@ -1,5 +1,5 @@
 /** Версия клиента (синхронизируйте при релизах). */
-export const APP_VERSION = '0.2.4 (бета)';
+export const APP_VERSION = '0.2.7 (пред-релиз)';
 
 function wsRu(status) {
   switch (status) {
