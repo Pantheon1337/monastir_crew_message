@@ -1,12 +1,21 @@
 import { useState } from 'react';
 
+/** Имена файлов в public/chat-composer/ (как на сервере: file.png, sticker.png, …). */
+const CHAT_COMPOSER_FILE = {
+  attach: 'file.png',
+  stickers: 'sticker.png',
+  video: 'video.png',
+  mic: 'mic.png',
+};
+
 /**
- * Иконка из /chat-composer/icon-{name}.png; при отсутствии файла — запасной символ.
+ * Иконка из /chat-composer/*.png; при отсутствии файла — запасной символ.
  * name: attach | stickers | video | mic
  */
 export default function ChatComposerIcon({ name, fallback, alt = '', size = 22, style, ...rest }) {
   const [broken, setBroken] = useState(false);
-  const src = `/chat-composer/icon-${name}.png`;
+  const file = CHAT_COMPOSER_FILE[name] || `icon-${name}.png`;
+  const src = `/chat-composer/${file}`;
 
   if (broken) {
     return (
