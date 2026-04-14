@@ -2211,9 +2211,10 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
       createdAt: r.createdAt,
       expiresAt: exp,
+      /** Явно для клиента (archivedEarly ложен после истечения срока). */
+      feedHidden,
       showInProfile,
       archivedEarly: feedHidden && notExpired,
-      /** Явные флаги — клиент не пересчитывает (даты/типы из JSON). */
       canRestoreToFeed: feedHidden && notExpired,
       canRestoreToProfile: !showInProfile && notExpired,
       feedHiddenAt: r.feedHiddenAt ?? null,

@@ -11,20 +11,6 @@ function formatViewerCount(n) {
   return `${n} просмотров`;
 }
 
-/** API может отдать boolean или 0/1; `0 !== false` в JS — true, из‑за этого кнопка «в профиль» пропадала. */
-function storyShownInProfile(it) {
-  const v = it?.showInProfile;
-  if (v === false || v === 0) return false;
-  if (v === true || v === 1) return true;
-  return true;
-}
-
-function storyArchivedEarlyFromFeed(it) {
-  const v = it?.archivedEarly;
-  if (v === true || v === 1) return true;
-  return false;
-}
-
 function expiresAtMs(it) {
   const v = it?.expiresAt;
   if (v == null) return NaN;
@@ -36,15 +22,42 @@ function expiresAtMs(it) {
   return Number.isFinite(p) ? p : NaN;
 }
 
-/** Запасной вариант, если сервер ещё без полей canRestoreToFeed / canRestoreToProfile. */
-function deriveRestoreFlags(it, userId, now) {
+function isYes(v) {
+  return v === true || v === 1;
+}
+
+/** Снято с ленты кружков: смотрим feedHidden; archivedEarly у истёкших кадров на сервере становится ложным. */
+function isFeedHiddenStory(it) {
+  const fh = it?.feedHidden;
+  if (fh === true || fh === 1) return true;
+  if (fh === false || fh === 0) return false;
+  return isYes(it?.archivedEarly);
+}
+
+/** Убрано из сетки профиля у гостей. */
+function isHiddenFromProfileGrid(it) {
+  const sp = it?.showInProfile;
+  if (sp === false || sp === 0) return true;
+  if (sp === true || sp === 1) return false;
+  return false;
+}
+
+/**
+ * Кнопки восстановления: не опираться только на canRestore* === false (раньше отключала запасную логику).
+ * Сервер true ИЛИ явные сырые поля + срок не истёк.
+ */
+function computeRestoreButtons(it, userId, now) {
   const own = String(it.userId) === String(userId);
   const exp = expiresAtMs(it);
   const notExpired = Number.isFinite(exp) && exp > now;
-  return {
-    feed: own && storyArchivedEarlyFromFeed(it) && notExpired,
-    profile: own && !storyShownInProfile(it) && notExpired,
-  };
+  if (!own || !notExpired) {
+    return { feed: false, profile: false };
+  }
+  const srvFeed = isYes(it.canRestoreToFeed);
+  const srvProf = isYes(it.canRestoreToProfile);
+  const feed = srvFeed || isFeedHiddenStory(it);
+  const profile = srvProf || isHiddenFromProfileGrid(it);
+  return { feed, profile };
 }
 
 export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
@@ -205,11 +218,7 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {items.map((it) => {
               const own = String(it.userId) === String(userId);
-              const fallback = deriveRestoreFlags(it, userId, now);
-              const canRestoreFeed =
-                typeof it.canRestoreToFeed === 'boolean' ? it.canRestoreToFeed && own : fallback.feed;
-              const canRestoreProfile =
-                typeof it.canRestoreToProfile === 'boolean' ? it.canRestoreToProfile && own : fallback.profile;
+              const { feed: canRestoreFeed, profile: canRestoreProfile } = computeRestoreButtons(it, userId, now);
               const canDelete = own;
               const vc = typeof it.viewerCount === 'number' ? it.viewerCount : 0;
               return (
