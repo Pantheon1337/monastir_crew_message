@@ -2,7 +2,7 @@ import { memo, Fragment } from 'react';
 import { splitMentions } from '../../chat/mentionParts.js';
 
 /**
- * Текст сообщения как в test/1.html: один поток переносов (pre-wrap в .chat-message-text).
+ * Текст сообщения: один поток переносов (white-space: pre-wrap в .chat-message-text).
  * Без @ — один дочерний текстовый узел внутри span (как один текстовый узел в innerHTML).
  * С @ — фрагменты текста и inline-кнопки упоминаний без лишней обёртки вокруг всей строки.
  */

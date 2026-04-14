@@ -1628,15 +1628,17 @@ video.chat-video-note {
 }
 
 /*
- * Пузырь во flex-ряду (.chat-swipe-reply-inner): inline-block давал min-content-ширину ≈ одно слово.
- * block + max-content — ширина фразы в строку, max-width ограничивает длинные сообщения.
+ * Пузырь во flex-ряду (.chat-swipe-reply-inner): короткие сообщения — по ширине текста,
+ * длинные — не шире ленты (max) и с переносами внутри (flex: min-width:0 + shrink).
+ * Раньше flex-shrink:0 + width:max-content давали горизонтальный вылет за экран.
  */
 .chat-tg-bubble {
   display: block;
   box-sizing: border-box;
-  width: max-content;
-  max-width: var(--chat-bubble-max);
-  flex-shrink: 0;
+  width: fit-content;
+  max-width: min(var(--chat-bubble-max), 100%);
+  min-width: 0;
+  flex: 0 1 auto;
   font-family: var(--chat-font-family);
   font-size: var(--chat-font-size);
   line-height: var(--chat-line-height);
@@ -1646,9 +1648,9 @@ video.chat-video-note {
   text-wrap: wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  word-break: normal;
-  -webkit-hyphens: manual;
-  hyphens: manual;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
   line-break: auto;
   outline: none;
   -webkit-backface-visibility: hidden;
@@ -1758,8 +1760,8 @@ video.chat-video-note {
 }
 
 /*
- * Тело сообщения (test/*.html): pre-line — явные переводы строк из сообщения;
- * перенос длинных слов/URL + дефисация при lang на ленте (напр. ru).
+ * Тело сообщения: pre-wrap — явные переводы строк из сообщения (как в композере);
+ * перенос длинных слов и URL (как test/1.html .message: break-word + overflow-wrap).
  */
 .chat-message-text {
   display: block;
@@ -1769,10 +1771,10 @@ video.chat-video-note {
   box-sizing: border-box;
   white-space: pre-wrap;
   word-wrap: break-word;
-  overflow-wrap: break-word;
-  word-break: normal;
-  -webkit-hyphens: manual;
-  hyphens: manual;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
   text-wrap: wrap;
   line-height: inherit;
   letter-spacing: inherit;
