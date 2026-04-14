@@ -1,0 +1,36 @@
+/**
+ * Визуальный слой экранов чата (после сброса example1).
+ * Подключается после index.css. Разметка: ChatScaffold + DirectChatScreen / RoomChatScreen.
+ */
+
+/* Оболочка: фон за фиксированным слоем (подложка при прозрачных краях) */
+.chat-scaffold {
+  background: var(--bg);
+}
+
+/* Лента: на случай если inline-стиль обоев не задан */
+.chat-scaffold-timeline {
+  color: var(--text);
+}
+
+/* Пузырь с заливкой: скругление (inline задаёт 16px; здесь дублируем для согласованности) */
+.chat-message-bubble-shell.chat-tg-bubble.chat-message-bubble--solid {
+  border-radius: 16px;
+}
+
+.chat-message-row--out .chat-message-bubble-shell.chat-message-bubble--solid {
+  border-bottom-right-radius: 6px;
+}
+
+.chat-message-row--in .chat-message-bubble-shell.chat-message-bubble--solid {
+  border-bottom-left-radius: 6px;
+}
+
+/* Поле ввода в композере — явный цвет текста (перебивает .text-input из темы) */
+.chat-composer-field-wrap .chat-composer-textarea.text-input {
+  color: var(--text);
+}
+
+.chat-composer-field-wrap .chat-composer-textarea.text-input::placeholder {
+  color: var(--muted);
+}

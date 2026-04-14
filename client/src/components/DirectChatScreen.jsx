@@ -519,7 +519,7 @@ const MessageBubble = memo(function MessageBubble({
           style={{
             borderRadius: isMediaShell ? 0 : undefined,
             padding: isMediaShell ? 0 : undefined,
-            background: isMediaShell ? 'transparent' : isRevoked ? bubbleBg : undefined,
+            background: isMediaShell ? 'transparent' : bubbleBg,
             overflow: isMediaShell ? 'visible' : 'hidden',
             maxWidth: isMediaShell ? 'var(--chat-bubble-max)' : undefined,
             userSelect: 'none',
