@@ -8,7 +8,6 @@ export default function SettingsModal({
   onNotificationsEnabledChange,
   theme,
   onThemeChange,
-  onOpenTestChat,
 }) {
   if (!open) return null;
 
@@ -107,6 +106,7 @@ export default function SettingsModal({
             </div>
           </div>
 
+          {/* Разработка: тестовый чат — см. App.jsx (openTestChat / TestChatScreen)
           {typeof onOpenTestChat === 'function' ? (
             <div>
               <p style={{ margin: '0 0 8px', fontSize: 11 }} className="muted">
@@ -128,6 +128,7 @@ export default function SettingsModal({
               </p>
             </div>
           ) : null}
+          */}
 
         </div>
       </div>

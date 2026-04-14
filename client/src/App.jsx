@@ -1072,7 +1072,6 @@ export default function App() {
               saveTheme(t);
               applyThemeToDocument(t);
             }}
-            onOpenTestChat={() => setOpenTestChat(true)}
           />
         </Suspense>
       ) : menuStub === 'privacy' ? (

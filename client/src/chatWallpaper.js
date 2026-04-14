@@ -1,3 +1,5 @@
+import { mediaPublicUrl } from './api.js';
+
 const PREFIX = 'chatWallpaper';
 
 export function getChatWallpaperRelPath(userId) {
@@ -24,7 +26,8 @@ export function setChatWallpaperRelPath(userId, relPath) {
 export function getChatWallpaperTimelineStyle(userId) {
   const rel = getChatWallpaperRelPath(userId);
   if (!rel) return undefined;
-  const url = `/uploads/${rel.split('/').map(encodeURIComponent).join('/')}`;
+  const path = `/uploads/${rel.split('/').map(encodeURIComponent).join('/')}`;
+  const url = mediaPublicUrl(path);
   return {
     backgroundColor: 'var(--chat-timeline-bg)',
     backgroundImage: `linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url(${url})`,

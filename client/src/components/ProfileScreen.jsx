@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { clearStoredUser, setStoredUser } from '../authStorage.js';
-import { api, apiUpload } from '../api.js';
+import { api, apiUpload, mediaPublicUrl } from '../api.js';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
 import { AFFILIATION_EMOJI_CHOICES } from '../affiliationConstants.js';
@@ -1090,7 +1090,7 @@ export default function ProfileScreen({
                     <div
                       style={{
                         height: 88,
-                        backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url(${w.url})`,
+                        backgroundImage: `linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35)), url(${mediaPublicUrl(w.url)})`,
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                       }}
