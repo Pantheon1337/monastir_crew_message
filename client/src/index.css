@@ -1632,17 +1632,18 @@ video.chat-video-note {
 }
 
 /*
- * Пузырь во flex-ряду: ширина по содержимому до max; без flex-shrink — иначе узкий пузырь
- * и строки переносятся раньше, чем нужно (напр. «Как твои - дела» в две строки).
+ * Пузырь: inline-block + width: max-content — ширина как у одной строки до max-width,
+ * иначе fit-content/shrink-to-fit даёт слишком узкую колонку и переносы «раньше времени».
  */
 .chat-tg-bubble {
-  display: block;
+  display: inline-block;
   box-sizing: border-box;
-  width: fit-content;
+  width: max-content;
   max-width: min(var(--chat-bubble-max), 100%);
-  min-width: 0;
+  min-width: auto;
   flex: 0 0 auto;
   align-self: flex-start;
+  vertical-align: top;
   font-family: var(--chat-font-family);
   font-size: var(--chat-font-size);
   line-height: var(--chat-line-height);
@@ -1771,8 +1772,8 @@ video.chat-video-note {
  */
 .chat-message-text {
   display: block;
-  width: auto;
-  max-width: 100%;
+  /* Без max-width:100% — при расчёте max-content пузыря давало преждевременные переносы */
+  max-width: none;
   min-width: 0;
   box-sizing: border-box;
   white-space: pre-wrap;
