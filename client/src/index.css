@@ -1649,13 +1649,11 @@ video.chat-video-note {
   letter-spacing: var(--chat-letter-spacing);
   color: var(--chat-bubble-text);
   text-align: start;
-  /* «Умные» концы строк там, где движок умеет (как в современных мессенджерах) */
   text-wrap: pretty;
-  word-wrap: break-word;
-  /* break-word: перенос по границам слов; длинные токены ломаются только при переполнении (не как anywhere) */
-  overflow-wrap: break-word;
+  /* normal: не рвать слово «Здорово» на «Здоров»+«о» — целиком на следующую строку (break-word так ломает) */
+  word-wrap: normal;
+  overflow-wrap: normal;
   word-break: normal;
-  /* Без автодефисов: иначе слова вроде «здорово» режутся как «здо-рово» */
   -webkit-hyphens: none;
   hyphens: none;
   line-break: auto;
@@ -1708,7 +1706,7 @@ video.chat-video-note {
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
   -webkit-hyphens: none;
   hyphens: none;
@@ -1720,7 +1718,7 @@ video.chat-video-note {
   margin-bottom: 5px;
   line-height: 1.25;
   color: var(--chat-bubble-meta-name);
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
 }
 
@@ -1760,7 +1758,7 @@ video.chat-video-note {
 
 .chat-image-caption {
   margin-top: 8px;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
   -webkit-hyphens: none;
   hyphens: none;
@@ -1768,7 +1766,7 @@ video.chat-video-note {
 
 /*
  * Тело сообщения: pre-wrap — явные переводы строк из сообщения (как в композере).
- * Переносы слов как в test/1.html: сначала границы слов, не «ломать посередине» без нужды.
+ * overflow-wrap: normal — целые слова; break-word рвёт посимвольно, если не влезает в остаток строки.
  */
 .chat-message-text {
   display: block;
@@ -1777,8 +1775,8 @@ video.chat-video-note {
   min-width: 0;
   box-sizing: border-box;
   white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+  word-wrap: normal;
+  overflow-wrap: normal;
   word-break: normal;
   -webkit-hyphens: none;
   hyphens: none;
@@ -1929,7 +1927,7 @@ video.chat-video-note {
   border-radius: 5px;
   vertical-align: baseline;
   word-break: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   max-width: 100%;
   -webkit-user-select: none;
   user-select: none;

@@ -143,9 +143,9 @@
   opacity: 0.9;
 }
 
-/* Без автодефисов — только перенос целых слов и крайний случай длинной строки */
+/* Как в основном чате: overflow-wrap normal — не рвать «Здорово» посередине */
 .next-chat-root--tg-html .chat-message-text {
-  overflow-wrap: break-word;
+  overflow-wrap: normal;
   word-break: normal;
   -webkit-hyphens: none;
   hyphens: none;
