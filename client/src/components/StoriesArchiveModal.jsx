@@ -25,6 +25,28 @@ function storyArchivedEarlyFromFeed(it) {
   return false;
 }
 
+function expiresAtMs(it) {
+  const v = it?.expiresAt;
+  if (v == null) return NaN;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'bigint') return Number(v);
+  const n = Number(v);
+  if (Number.isFinite(n)) return n;
+  const p = Date.parse(String(v));
+  return Number.isFinite(p) ? p : NaN;
+}
+
+/** Запасной вариант, если сервер ещё без полей canRestoreToFeed / canRestoreToProfile. */
+function deriveRestoreFlags(it, userId, now) {
+  const own = String(it.userId) === String(userId);
+  const exp = expiresAtMs(it);
+  const notExpired = Number.isFinite(exp) && exp > now;
+  return {
+    feed: own && storyArchivedEarlyFromFeed(it) && notExpired,
+    profile: own && !storyShownInProfile(it) && notExpired,
+  };
+}
+
 export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -183,9 +205,11 @@ export default function StoriesArchiveModal({ userId, onClose, onChanged }) {
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {items.map((it) => {
               const own = String(it.userId) === String(userId);
-              const notExpired = Number(it.expiresAt) > now;
-              const canRestoreFeed = own && storyArchivedEarlyFromFeed(it) && notExpired;
-              const canRestoreProfile = own && !storyShownInProfile(it) && notExpired;
+              const fallback = deriveRestoreFlags(it, userId, now);
+              const canRestoreFeed =
+                typeof it.canRestoreToFeed === 'boolean' ? it.canRestoreToFeed && own : fallback.feed;
+              const canRestoreProfile =
+                typeof it.canRestoreToProfile === 'boolean' ? it.canRestoreToProfile && own : fallback.profile;
               const canDelete = own;
               const vc = typeof it.viewerCount === 'number' ? it.viewerCount : 0;
               return (

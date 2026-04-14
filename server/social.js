@@ -2190,21 +2190,39 @@ export function listArchivedStoriesForViewer(viewerId, limit = 80) {
       LIMIT ?`
     )
     .all(viewerId, now, now, limit);
-  return rows.map((r) => ({
-    id: r.id,
-    userId: r.userId,
-    body: r.body || '',
-    mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
-    createdAt: r.createdAt,
-    expiresAt: r.expiresAt,
-    showInProfile: Number(r.showInProfile) === 1,
-    archivedEarly: Number(r.feedHidden) === 1 && r.expiresAt > now,
-    feedHiddenAt: r.feedHiddenAt ?? null,
-    viewerCount: Number(r.viewerCount) || 0,
-    authorLabel: r.nickname ? `@${r.nickname}` : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
-    authorAffiliationEmoji: effectiveAffiliationEmoji(r.nickname, r.authorRole, r.authorEmoji),
-    authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
-  }));
+  return rows.map((r) => {
+    const row = /** @type {Record<string, unknown>} */ (r);
+    const expRaw = row.expiresAt ?? row.expires_at;
+    const exp =
+      typeof expRaw === 'bigint'
+        ? Number(expRaw)
+        : typeof expRaw === 'number'
+          ? expRaw
+          : Number(expRaw);
+    const notExpired = Number.isFinite(exp) && exp > now;
+    const fhRaw = row.feedHidden ?? row.feed_hidden;
+    const feedHidden = Number(fhRaw ?? 0) === 1;
+    const sipRaw = row.showInProfile ?? row.show_in_profile;
+    const showInProfile = Number(sipRaw ?? 1) === 1;
+    return {
+      id: r.id,
+      userId: r.userId,
+      body: r.body || '',
+      mediaUrl: r.mediaPath ? `/uploads/${r.mediaPath}` : null,
+      createdAt: r.createdAt,
+      expiresAt: exp,
+      showInProfile,
+      archivedEarly: feedHidden && notExpired,
+      /** Явные флаги — клиент не пересчитывает (даты/типы из JSON). */
+      canRestoreToFeed: feedHidden && notExpired,
+      canRestoreToProfile: !showInProfile && notExpired,
+      feedHiddenAt: r.feedHiddenAt ?? null,
+      viewerCount: Number(r.viewerCount) || 0,
+      authorLabel: r.nickname ? `@${r.nickname}` : `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim(),
+      authorAffiliationEmoji: effectiveAffiliationEmoji(r.nickname, r.authorRole, r.authorEmoji),
+      authorAvatarUrl: r.avatarPath ? `/uploads/${r.avatarPath}` : null,
+    };
+  });
 }
 
 function formatParticipantsRu(n) {
