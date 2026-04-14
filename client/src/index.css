@@ -1628,30 +1628,27 @@ video.chat-video-note {
 }
 
 /*
- * Пузырь: inline-block + max-width — классическая схема мессенджеров.
- * Типографика и переносы — как в test/1–3.html: break-word, hyphens, pretty wrap.
+ * Пузырь во flex-ряду (.chat-swipe-reply-inner): inline-block давал min-content-ширину ≈ одно слово.
+ * block + max-content — ширина фразы в строку, max-width ограничивает длинные сообщения.
  */
 .chat-tg-bubble {
-  display: inline-block;
+  display: block;
   box-sizing: border-box;
-  width: auto;
+  width: max-content;
   max-width: var(--chat-bubble-max);
-  vertical-align: top;
   flex-shrink: 0;
-  min-width: 0;
   font-family: var(--chat-font-family);
   font-size: var(--chat-font-size);
   line-height: var(--chat-line-height);
   letter-spacing: var(--chat-letter-spacing);
   color: var(--chat-bubble-text);
   text-align: start;
-  text-wrap: pretty;
+  text-wrap: wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  word-break: break-word;
-  -webkit-hyphens: auto;
-  hyphens: auto;
-  hyphenate-limit-chars: 10 4 2;
+  word-break: normal;
+  -webkit-hyphens: manual;
+  hyphens: manual;
   line-break: auto;
   outline: none;
   -webkit-backface-visibility: hidden;
@@ -1770,13 +1767,13 @@ video.chat-video-note {
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  white-space: pre-line;
+  white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  word-break: break-word;
-  -webkit-hyphens: auto;
-  hyphens: auto;
-  text-wrap: pretty;
+  word-break: normal;
+  -webkit-hyphens: manual;
+  hyphens: manual;
+  text-wrap: wrap;
   line-height: inherit;
   letter-spacing: inherit;
   font-family: var(--chat-font-family);

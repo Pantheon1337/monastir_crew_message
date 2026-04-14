@@ -4,7 +4,6 @@ import { initAppPreferences, getNotificationsEnabled } from './appPreferences.js
 import { setAppNotificationsEnabled } from './browserNotification.js';
 import App from './App.jsx';
 import './index.css';
-import './chat/example1/telegramExample1.css';
 
 initAppPreferences();
 setAppNotificationsEnabled(getNotificationsEnabled());
