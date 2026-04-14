@@ -1,14 +1,5 @@
-import DirectChatScreen from '../components/DirectChatScreen.jsx';
-import './next-chat.css';
-
 /**
- * Личный чат на новой оболочке (стили next-chat.css).
- * Логика сообщений — в useDirectChatMessageChannel внутри DirectChatScreen.
+ * Алиас на тестовую реализацию личного чата (для будущей подмены в App.jsx).
+ * @deprecated Используйте прямой импорт из `./TestDirectChatScreen.jsx`.
  */
-export default function NextDirectChatScreen(props) {
-  return (
-    <div className="next-chat-root">
-      <DirectChatScreen {...props} />
-    </div>
-  );
-}
+export { default } from './TestDirectChatScreen.jsx';

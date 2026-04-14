@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
-import NextDirectChatScreen from '../../nextChat/NextDirectChatScreen.jsx';
+import TestDirectChatScreen from '../../nextChat/TestDirectChatScreen.jsx';
 
 /**
- * Тестовый полноэкранный чат: новая оболочка (next-chat.css) + тот же DirectChatScreen внутри.
+ * Тестовый полноэкранный чат: nextChat/TestDirectChatScreen — отдельная ветка разработки (замена DirectChatScreen позже).
  * Поток — «Избранное».
  */
 export default function TestChatScreen({
@@ -88,7 +88,7 @@ export default function TestChatScreen({
   }
 
   return (
-    <NextDirectChatScreen
+    <TestDirectChatScreen
       userId={userId}
       chatId={chatId}
       isSavedMessages

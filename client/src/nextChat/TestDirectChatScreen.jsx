@@ -1,23 +1,24 @@
 import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { api, apiUpload } from '../api.js';
-import MentionAutocomplete from './chat/MentionAutocomplete.jsx';
-import UserAvatar from './UserAvatar.jsx';
-import NicknameWithBadge from './NicknameWithBadge.jsx';
-import ChatScaffold from './chat/ChatScaffold.jsx';
-import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
-import ChatMessageBubble from './chat/ChatMessageBubble.jsx';
-import AvatarLightbox from './AvatarLightbox.jsx';
-import ForwardMessageModal from './ForwardMessageModal.jsx';
-import ReactionUsersModal from './ReactionUsersModal.jsx';
+import MentionAutocomplete from '../components/chat/MentionAutocomplete.jsx';
+import UserAvatar from '../components/UserAvatar.jsx';
+import NicknameWithBadge from '../components/NicknameWithBadge.jsx';
+import ChatScaffold from '../components/chat/ChatScaffold.jsx';
+import ChatScrollDownFab from '../components/chat/ChatScrollDownFab.jsx';
+import ChatMessageBubble from '../components/chat/ChatMessageBubble.jsx';
+import AvatarLightbox from '../components/AvatarLightbox.jsx';
+import ForwardMessageModal from '../components/ForwardMessageModal.jsx';
+import ReactionUsersModal from '../components/ReactionUsersModal.jsx';
 import { REACTION_KEYS, REACTION_ICONS } from '../reactionConstants.js';
 import { useVisualViewportRect } from '../hooks/useVisualViewportRect.js';
 import { useLeftEdgeSwipeBack } from '../hooks/useLeftEdgeSwipeBack.js';
 import { releaseCameraStreamNow } from '../cameraSession.js';
-import VideoNoteRecordModal from './chat/VideoNoteRecordModal.jsx';
-import ChatStickerPanel from './chat/ChatStickerPanel.jsx';
-import ChatComposerIcon from './chat/ChatComposerIcon.jsx';
+import VideoNoteRecordModal from '../components/chat/VideoNoteRecordModal.jsx';
+import ChatStickerPanel from '../components/chat/ChatStickerPanel.jsx';
+import ChatComposerIcon from '../components/chat/ChatComposerIcon.jsx';
 import { messageGroupFlags } from '../chat/messageGrouping.js';
-import { loadDirectThreadCache, saveDirectThreadCache } from '../chatThreadCache.js';
+import { useDirectChatMessageChannel } from './hooks/useDirectChatMessageChannel.js';
+import './next-chat.css';
 import { peerPresenceSubtitle } from '../presenceSubtitle.js';
 import { useChatWallpaperTimelineStyle } from '../hooks/useChatWallpaperTimelineStyle.js';
 import { scrollChatTimelineToBottom, syncChatComposerTextareaHeight } from '../chat/telegramStyleChatLogic.js';
@@ -59,7 +60,7 @@ function newClientMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
-export default function DirectChatScreen({
+export default function TestDirectChatScreen({
   userId,
   chatId,
   peerLabel,
@@ -87,10 +88,7 @@ export default function DirectChatScreen({
   /** Разрешить тап по шапке/аватару, чтобы открыть свой профиль (тестовый режим). */
   savedMessagesAllowOpenProfile = false,
 }) {
-  const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState(null);
   const [voiceRecording, setVoiceRecording] = useState(false);
   const [videoModal, setVideoModal] = useState(false);
   /** Пустое поле: «кружок» (видео) ↔ микрофон (аудио) */
@@ -104,8 +102,6 @@ export default function DirectChatScreen({
   const [mediaUploading, setMediaUploading] = useState(false);
   const [stickerPanelOpen, setStickerPanelOpen] = useState(false);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
-  const [hasMoreOlder, setHasMoreOlder] = useState(false);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const composerInputRef = useRef(null);
   const chatFileInputRef = useRef(null);
   /** Не скроллить ленту сразу после отправки — иначе iOS снимает фокус с поля и закрывает клавиатуру. */
@@ -118,6 +114,21 @@ export default function DirectChatScreen({
   const stickScrollRafRef = useRef(0);
 
   const scrollRef = useRef(null);
+
+  const {
+    messages,
+    setMessages,
+    loading,
+    err,
+    setErr,
+    hasMoreOlder,
+    loadingOlder,
+    load,
+    loadOlder,
+    appendMessage,
+    handleReactionLocalUpdate,
+  } = useDirectChatMessageChannel({ chatId, userId, lastEvent, onAfterChange, scrollRef });
+
   const messagesEndRef = useRef(null);
   const voiceCtxRef = useRef(null);
   const voiceStreamRef = useRef(null);
@@ -162,164 +173,14 @@ export default function DirectChatScreen({
     [userId, onOpenProfileByUserId],
   );
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    loadEndedAtRef.current = 0;
-    setHasMoreOlder(false);
-    const cached = loadDirectThreadCache(userId, chatId);
-    setMessages(cached?.length ? cached.map(normalizeChatMessage) : []);
-    const { ok, data } = await api(
-      `/api/chats/${encodeURIComponent(chatId)}/messages?limit=200`,
-      { userId },
-    );
-    if (!ok) {
-      setErr(data?.error || 'Не удалось загрузить чат');
-      setLoading(false);
-      return;
-    }
-    const raw = data.messages || [];
-    setMessages(raw.map(normalizeChatMessage));
-    setHasMoreOlder(data.hasMore === true);
-    saveDirectThreadCache(userId, chatId, raw);
-    setErr(null);
-    loadEndedAtRef.current = Date.now();
-    setLoading(false);
-  }, [chatId, userId]);
-
-  const loadOlder = useCallback(async () => {
-    if (!chatId || !userId || loadingOlder || !hasMoreOlder) return;
-    const oldest = messages[0];
-    if (!oldest?.id || oldest.createdAt == null) return;
-    const el = scrollRef.current;
-    const prevScrollHeight = el?.scrollHeight ?? 0;
-    const prevScrollTop = el?.scrollTop ?? 0;
-    setLoadingOlder(true);
-    try {
-      const q = new URLSearchParams({
-        limit: '100',
-        beforeCreatedAt: String(oldest.createdAt),
-        beforeId: String(oldest.id),
-      });
-      const { ok, data } = await api(
-        `/api/chats/${encodeURIComponent(chatId)}/messages?${q.toString()}`,
-        { userId },
-      );
-      if (!ok) return;
-      const raw = data.messages || [];
-      const batch = raw.map(normalizeChatMessage);
-      setMessages((prev) => {
-        const seen = new Set(prev.map((m) => m.id));
-        const merged = [...batch.filter((m) => m.id && !seen.has(m.id)), ...prev];
-        return merged;
-      });
-      setHasMoreOlder(data.hasMore === true);
-      requestAnimationFrame(() => {
-        const root = scrollRef.current;
-        if (!root) return;
-        const h = root.scrollHeight - prevScrollHeight;
-        root.scrollTop = prevScrollTop + h;
-      });
-    } finally {
-      setLoadingOlder(false);
-    }
-  }, [chatId, userId, loadingOlder, hasMoreOlder, messages]);
-
   useEffect(() => {
-    load();
-  }, [load]);
+    if (loading) loadEndedAtRef.current = 0;
+    else loadEndedAtRef.current = Date.now();
+  }, [loading]);
 
   useLayoutEffect(() => {
     stickToBottomRef.current = true;
   }, [chatId]);
-
-  useEffect(() => {
-    if (!chatId || !userId) return undefined;
-    let cancelled = false;
-    (async () => {
-      await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
-      if (!cancelled) onAfterChange?.();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [chatId, userId, onAfterChange]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:message:new') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const m = normalizeChatMessage(lastEvent.payload?.message);
-    if (!m?.id) return;
-    setMessages((prev) => {
-      if (prev.some((x) => x.id === m.id)) return prev;
-      return [...prev, m];
-    });
-    (async () => {
-      await api(`/api/chats/${encodeURIComponent(chatId)}/read`, { method: 'POST', userId });
-      onAfterChange?.();
-    })();
-  }, [lastEvent, chatId, userId, onAfterChange]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:peerRead') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const readAt = lastEvent.payload.readAt;
-    if (readAt == null) return;
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.senderId === userId && (msg.createdAt ?? 0) <= readAt
-          ? { ...msg, readByPeer: true, deliveredToPeer: true }
-          : msg,
-      ),
-    );
-  }, [lastEvent, chatId, userId]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:message:delivered') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const messageId = lastEvent.payload?.messageId;
-    if (!messageId) return;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === messageId && m.senderId === userId ? { ...m, deliveredToPeer: true } : m,
-      ),
-    );
-  }, [lastEvent, chatId, userId]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:messages:delivered') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const ids = lastEvent.payload?.messageIds;
-    if (!Array.isArray(ids) || ids.length === 0) return;
-    const idSet = new Set(ids);
-    setMessages((prev) =>
-      prev.map((m) =>
-        idSet.has(m.id) && m.senderId === userId ? { ...m, deliveredToPeer: true } : m,
-      ),
-    );
-  }, [lastEvent, chatId, userId]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:message:reaction') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const { messageId, reactions } = lastEvent.payload || {};
-    if (!messageId || !reactions) return;
-    setMessages((prev) => prev.map((x) => (x.id === messageId ? { ...x, reactions } : x)));
-  }, [lastEvent, chatId]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:message:updated') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    const m = normalizeChatMessage(lastEvent.payload?.message);
-    if (!m?.id) return;
-    setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
-    onAfterChange?.();
-  }, [lastEvent, chatId, onAfterChange]);
-
-  useEffect(() => {
-    if (lastEvent?.type !== 'chat:pinsChanged') return;
-    if (lastEvent.payload?.chatId !== chatId) return;
-    void load();
-  }, [lastEvent, chatId, load]);
 
   useEffect(() => {
     if (!messageMenu) return undefined;
@@ -474,14 +335,6 @@ export default function DirectChatScreen({
   useEffect(() => {
     syncScrollDownFab();
   }, [scrollLayoutKey, loading, syncScrollDownFab]);
-
-  const appendMessage = useCallback((m) => {
-    const row = normalizeChatMessage(m);
-    setMessages((prev) => {
-      if (prev.some((x) => x.id === row.id)) return prev;
-      return [...prev, row];
-    });
-  }, []);
 
   const sendChatAttachment = useCallback(
     async (file) => {
@@ -688,10 +541,6 @@ export default function DirectChatScreen({
     }
   }, []);
 
-  const handleReactionLocalUpdate = useCallback((id, reactions) => {
-    setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, reactions } : x)));
-  }, []);
-
   const handleOpenActionMenu = useCallback((msg, x, y) => {
     setMessageMenu({ m: msg, x, y, submenu: 'quick' });
   }, []);
@@ -893,7 +742,7 @@ export default function DirectChatScreen({
   }, [text]);
 
   return (
-    <>
+    <div className="next-chat-root">
       <ChatScaffold
         vvRect={vvRect}
         zIndex={80}
@@ -1767,6 +1616,6 @@ export default function DirectChatScreen({
       {imagePreviewUrl ? (
         <AvatarLightbox fullSize url={imagePreviewUrl} onClose={() => setImagePreviewUrl(null)} />
       ) : null}
-    </>
+    </div>
   );
 }
