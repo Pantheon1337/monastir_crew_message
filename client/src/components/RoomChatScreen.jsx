@@ -1483,6 +1483,7 @@ export default function RoomChatScreen({
               <textarea
                 ref={composerInputRef}
                 className="text-input chat-composer-textarea"
+                lang="ru"
                 style={{ width: '100%' }}
                 rows={1}
                 placeholder="Сообщение…"

@@ -1730,6 +1730,7 @@ export default function DirectChatScreen({
               <textarea
                 ref={composerInputRef}
                 className="text-input chat-composer-textarea"
+                lang="ru"
                 style={{ width: '100%' }}
                 rows={1}
                 placeholder={canMessage === false ? 'Отправка недоступна' : 'Сообщение…'}

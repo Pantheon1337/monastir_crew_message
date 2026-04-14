@@ -1302,13 +1302,23 @@ a:hover {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Многострочный композер (аналог TextComposer): min/max; точная высота — из JS */
+/*
+ * Композер чата: как в test/*.html — pre-wrap (пробелы + переносы), перенос длинных токенов.
+ * Точная высота строк — из JS в экранах чата.
+ */
 textarea.chat-composer-textarea {
   min-height: 40px;
   max-height: 130px;
-  line-height: 1.35;
+  line-height: 1.4;
   resize: none;
   overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  tab-size: 4;
 }
 
 .btn-primary {
@@ -1615,15 +1625,11 @@ video.chat-video-note {
   user-select: none;
   -moz-user-select: none;
   -webkit-touch-callout: none;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  word-break: normal;
-  hyphens: none;
 }
 
 /*
- * Пузырь: inline-block + max-width — классическая схема мессенджеров: текст набирает строки
- * по всей доступной ширине до лимита; короткие сообщения не растягиваются на всю полосу.
+ * Пузырь: inline-block + max-width — классическая схема мессенджеров.
+ * Типографика и переносы — как в test/1–3.html: break-word, hyphens, pretty wrap.
  */
 .chat-tg-bubble {
   display: inline-block;
@@ -1639,11 +1645,14 @@ video.chat-video-note {
   letter-spacing: var(--chat-letter-spacing);
   color: var(--chat-bubble-text);
   text-align: start;
-  word-break: normal;
-  overflow-wrap: break-word;
+  text-wrap: pretty;
   word-wrap: break-word;
-  hyphens: none;
-  -webkit-hyphens: none;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  hyphenate-limit-chars: 10 4 2;
+  line-break: auto;
   outline: none;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
@@ -1693,6 +1702,10 @@ video.chat-video-note {
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
 }
 
 .chat-sender-name {
@@ -1701,6 +1714,8 @@ video.chat-video-note {
   margin-bottom: 5px;
   line-height: 1.25;
   color: var(--chat-bubble-meta-name);
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* Вложение-файл в пузыре */
@@ -1739,9 +1754,16 @@ video.chat-video-note {
 
 .chat-image-caption {
   margin-top: 8px;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
 }
 
-/* Тело текстового сообщения: длинные URL/токены без горизонтального рывка; смешанный RTL */
+/*
+ * Тело сообщения (test/*.html): pre-line — явные переводы строк из сообщения;
+ * перенос длинных слов/URL + дефисация при lang на ленте (напр. ru).
+ */
 .chat-message-text {
   display: block;
   width: auto;
@@ -1749,8 +1771,12 @@ video.chat-video-note {
   min-width: 0;
   box-sizing: border-box;
   white-space: pre-line;
+  word-wrap: break-word;
   overflow-wrap: break-word;
-  word-break: normal;
+  word-break: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  text-wrap: pretty;
   line-height: inherit;
   letter-spacing: inherit;
   font-family: var(--chat-font-family);
@@ -1777,6 +1803,7 @@ video.chat-video-note {
   color: var(--chat-bubble-time);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
   opacity: 0.95;
   letter-spacing: 0.02em;
 }
@@ -1893,7 +1920,7 @@ video.chat-video-note {
   cursor: pointer;
   border-radius: 5px;
   vertical-align: baseline;
-  word-break: normal;
+  word-break: break-word;
   overflow-wrap: break-word;
   max-width: 100%;
   -webkit-user-select: none;
@@ -1909,7 +1936,7 @@ video.chat-video-note {
 .chat-tg-bubble .chat-mention {
   background: var(--chat-mention-bg);
   color: var(--chat-mention-fg);
-  word-break: normal;
+  word-break: break-word;
 }
 
 /* Просмотр историй: без выделения текста; пауза по удержанию на области контента */

@@ -69,6 +69,7 @@ export default function ChatScaffold({
         className="chat-scaffold-timeline"
         role="region"
         aria-label="Сообщения чата"
+        lang="ru"
         style={timelineSurfaceStyle}
       >
         {timeline}
