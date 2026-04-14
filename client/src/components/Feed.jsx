@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import PostCard from './PostCard.jsx';
 import { api, apiUpload } from '../api.js';
 
@@ -61,6 +62,20 @@ export default function Feed({
     const t = window.setTimeout(() => setNewFeedToastOpen(false), FEED_NEW_TOAST_MS);
     return () => window.clearTimeout(t);
   }, [newFeedToastOpen]);
+
+  useEffect(() => {
+    if (!feedImageLightbox) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape') setFeedImageLightbox(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [feedImageLightbox]);
 
   const canSend = !!(draft.trim() || pendingMediaPath) && userId;
 
@@ -251,46 +266,66 @@ export default function Feed({
           />
         ))
       )}
-      {feedImageLightbox ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Просмотр фото"
-          className="feed-image-lightbox"
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 200,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 12,
-            background: 'rgba(0,0,0,0.88)',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-          onClick={() => setFeedImageLightbox(null)}
-          onKeyDown={(e) => e.key === 'Escape' && setFeedImageLightbox(null)}
-        >
-          <button
-            type="button"
-            className="feed-image-lightbox__close icon-btn"
-            aria-label="Закрыть"
-            style={{ position: 'absolute', top: 'max(12px, env(safe-area-inset-top))', right: 12, zIndex: 2 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setFeedImageLightbox(null);
-            }}
-          >
-            ✕
-          </button>
-          <img
-            src={feedImageLightbox}
-            alt=""
-            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', pointerEvents: 'none' }}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
-      ) : null}
+      {feedImageLightbox
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Просмотр фото"
+              className="feed-image-lightbox"
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 10000,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 12,
+                paddingTop: 'max(12px, env(safe-area-inset-top))',
+                paddingBottom: 'max(12px, env(safe-area-inset-bottom))',
+                background: 'rgba(0,0,0,0.92)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+              onClick={() => setFeedImageLightbox(null)}
+            >
+              <button
+                type="button"
+                aria-label="Закрыть"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFeedImageLightbox(null);
+                }}
+                style={{
+                  position: 'absolute',
+                  top: 'max(12px, env(safe-area-inset-top))',
+                  right: 12,
+                  zIndex: 2,
+                  width: 44,
+                  height: 44,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 'var(--radius)',
+                  border: '1px solid rgba(255,255,255,0.35)',
+                  background: 'rgba(0,0,0,0.45)',
+                  color: '#fff',
+                  fontSize: 22,
+                  lineHeight: 1,
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+              <img
+                src={feedImageLightbox}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', pointerEvents: 'none' }}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }
