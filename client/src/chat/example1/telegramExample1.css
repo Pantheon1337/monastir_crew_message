@@ -13,6 +13,8 @@
   flex-direction: column;
   box-shadow: none;
   overflow: hidden;
+  /* как body в test/1.html — иначе тянется шрифт приложения из index.css */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 [data-theme='light'] .chat-scaffold.chat-container {
@@ -22,7 +24,7 @@
 /* Шапка */
 .chat-tg-header.chat-header,
 header.chat-header {
-  padding: 14px 16px;
+  padding: 14px 20px;
   background: #1f1f23;
   border-bottom: 0.5px solid #2c2c2e;
   backdrop-filter: blur(10px);
@@ -62,8 +64,8 @@ header.chat-header {
   color: var(--muted);
 }
 
-/* Лента сообщений (как .messages-area в примере) */
-.chat-scaffold-timeline.messages-area {
+/* Лента сообщений (как .messages-area в примере) — перебиваем index.css (.chat-scaffold-timeline один класс) */
+.chat-scaffold.chat-container .chat-scaffold-timeline.messages-area {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -72,20 +74,27 @@ header.chat-header {
   display: flex;
   flex-direction: column;
   gap: 0;
-  /* фон/паттерн задаётся в index.css через --chat-timeline-*; поверх можно обойтись без переопределения */
+  /* в примере плоский фон #0e0e10, без паттерна из темы приложения */
+  background-color: #0e0e10;
+  background-image: none;
+  background-size: auto;
 }
 
-.chat-scaffold-timeline.messages-area::-webkit-scrollbar {
+.chat-scaffold.chat-container .chat-scaffold-timeline.messages-area::-webkit-scrollbar {
   width: 4px;
 }
 
-.chat-scaffold-timeline.messages-area::-webkit-scrollbar-track {
+.chat-scaffold.chat-container .chat-scaffold-timeline.messages-area::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.chat-scaffold-timeline.messages-area::-webkit-scrollbar-thumb {
+.chat-scaffold.chat-container .chat-scaffold-timeline.messages-area::-webkit-scrollbar-thumb {
   background: #3a3a3c;
   border-radius: 10px;
+}
+
+[data-theme='light'] .chat-scaffold.chat-container .chat-scaffold-timeline.messages-area {
+  background-color: var(--bg);
 }
 
 /* Строка сообщения: ряд на всю ширину (свайп), пузырёк ограничен как в примере */
@@ -117,13 +126,10 @@ header.chat-header {
   justify-content: flex-end;
 }
 
-.message .chat-message-bubble-shell.bubble {
-  max-width: 85%;
-}
-
-/* Пузырёк: базовые стили примера; медиа/цитаты дополняются в index.css */
-.chat-message-bubble-shell.bubble,
-.bubble.chat-message-bubble-shell {
+/* Пузырёк: базовые стили примера; перебиваем .chat-tg-bubble из index.css (var + text-wrap: pretty) */
+.chat-scaffold.chat-container .chat-message-bubble-shell.bubble,
+.chat-scaffold.chat-container .bubble.chat-message-bubble-shell {
+  display: block;
   padding: 10px 14px;
   border-radius: 18px;
   font-size: 15px;
@@ -133,6 +139,16 @@ header.chat-header {
   transition: background 0.1s ease, transform 0.1s ease;
   hyphens: auto;
   -webkit-hyphens: auto;
+  text-wrap: wrap;
+  width: max-content;
+  max-width: min(85%, var(--chat-bubble-max, 100%));
+  box-sizing: border-box;
+}
+
+/* Текст как в примере: явные переводы строк (textarea — pre-wrap); убираем «pretty»-переносы отличные от демо */
+.chat-scaffold.chat-container .chat-message-bubble-shell .chat-message-text {
+  white-space: pre-wrap;
+  text-wrap: wrap;
 }
 
 .message.incoming .chat-message-bubble-shell.bubble,

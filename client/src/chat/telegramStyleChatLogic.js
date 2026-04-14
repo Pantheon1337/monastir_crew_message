@@ -29,7 +29,7 @@ export function escapeHtml(str) {
  */
 export function syncChatComposerTextareaHeight(textarea, options = {}) {
   if (!textarea || textarea.tagName !== 'TEXTAREA') return;
-  const maxHeightPx = options.maxHeightPx ?? 130;
+  const maxHeightPx = options.maxHeightPx ?? 100;
   const minHeightPx = options.minHeightPx ?? 40;
   textarea.style.height = 'auto';
   const next = Math.min(Math.max(textarea.scrollHeight, minHeightPx), maxHeightPx);

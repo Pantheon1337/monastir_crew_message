@@ -38,6 +38,7 @@ const CHAT_TIMELINE_STACK_STYLE = {
   flexDirection: 'column',
   justifyContent: 'flex-end',
   boxSizing: 'border-box',
+  gap: 12,
 };
 
 function pickAudioMime() {
@@ -287,7 +288,6 @@ function MessageBubble({
   onSwipeReply,
   onOpenImagePreview,
   isFirstInGroup = true,
-  isLastInGroup = true,
 }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
@@ -449,7 +449,7 @@ function MessageBubble({
     <div
       className={mine ? 'message outgoing' : 'message incoming'}
       style={{
-        marginBottom: isLastInGroup ? 12 : 3,
+        marginBottom: 0,
         userSelect: 'none',
         WebkitUserSelect: 'none',
       }}
@@ -1258,7 +1258,7 @@ export default function RoomChatScreen({
   const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
 
   useLayoutEffect(() => {
-    syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 130, minHeightPx: 40 });
+    syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 100, minHeightPx: 40 });
   }, [text]);
 
   return (
@@ -1317,7 +1317,6 @@ export default function RoomChatScreen({
                   roomId={roomId}
                   formatTime={formatTime}
                   isFirstInGroup={g.isFirstInGroup}
-                  isLastInGroup={g.isLastInGroup}
                   allowSwipeReply
                   onSwipeReply={(draft) => {
                     setReplyDraft(draft);
@@ -1337,7 +1336,13 @@ export default function RoomChatScreen({
             <div
               ref={messagesEndRef}
               aria-hidden
-              style={{ height: 1, width: '100%', overflow: 'hidden', flexShrink: 0 }}
+              style={{
+                height: 1,
+                width: '100%',
+                overflow: 'hidden',
+                flexShrink: 0,
+                marginTop: -12,
+              }}
             />
           </div>
         }

@@ -43,6 +43,8 @@ const CHAT_TIMELINE_STACK_STYLE = {
   flexDirection: 'column',
   justifyContent: 'flex-end',
   boxSizing: 'border-box',
+  /* как gap в test/1.html .messages-area — между строками сообщений */
+  gap: 12,
 };
 
 function pickAudioMime() {
@@ -325,7 +327,6 @@ const MessageBubble = memo(function MessageBubble({
   onOpenImagePreview,
   savedChat = false,
   isFirstInGroup = true,
-  isLastInGroup = true,
 }) {
   const mine = m.senderId === userId;
   const kind = m.kind || 'text';
@@ -488,7 +489,7 @@ const MessageBubble = memo(function MessageBubble({
       id={m.id ? `chat-msg-${m.id}` : undefined}
       className={mine ? 'message outgoing' : 'message incoming'}
       style={{
-        marginBottom: isLastInGroup ? 12 : 3,
+        marginBottom: 0,
         userSelect: 'none',
         WebkitUserSelect: 'none',
       }}
@@ -1408,7 +1409,7 @@ export default function DirectChatScreen({
   const timelineWallpaperStyle = useChatWallpaperTimelineStyle(userId);
 
   useLayoutEffect(() => {
-    syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 130, minHeightPx: 40 });
+    syncChatComposerTextareaHeight(composerInputRef.current, { maxHeightPx: 100, minHeightPx: 40 });
   }, [text]);
 
   return (
@@ -1543,7 +1544,6 @@ export default function DirectChatScreen({
                     formatTime={formatChatMessageTime}
                     savedChat={isSavedMessages}
                     isFirstInGroup={g.isFirstInGroup}
-                    isLastInGroup={g.isLastInGroup}
                     allowSwipeReply={canMessage}
                     onSwipeReply={handleSwipeReply}
                     onReactionsLocalUpdate={handleReactionLocalUpdate}
@@ -1558,7 +1558,13 @@ export default function DirectChatScreen({
             <div
               ref={messagesEndRef}
               aria-hidden
-              style={{ height: 1, width: '100%', overflow: 'hidden', flexShrink: 0 }}
+              style={{
+                height: 1,
+                width: '100%',
+                overflow: 'hidden',
+                flexShrink: 0,
+                marginTop: -12,
+              }}
             />
           </div>
         }
