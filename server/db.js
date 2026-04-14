@@ -637,6 +637,16 @@ function migrate(database) {
     setSchemaVersion(database, 30);
     ver = 30;
   }
+
+  if (ver < 31) {
+    const dcus = database.prepare('PRAGMA table_info(direct_chat_user_state)').all();
+    const dcusNames = new Set(dcus.map((row) => row.name));
+    if (!dcusNames.has('pinned')) {
+      database.exec(`ALTER TABLE direct_chat_user_state ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;`);
+    }
+    setSchemaVersion(database, 31);
+    ver = 31;
+  }
 }
 
 export function getDb() {

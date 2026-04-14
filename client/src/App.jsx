@@ -718,6 +718,22 @@ export default function App() {
     [user?.id, openChat, refreshSocial],
   );
 
+  const handleToggleChatPin = useCallback(
+    async (chat, pinned) => {
+      if (!user?.id || !chat?.id || chat.isSavedMessages) return;
+      const path = pinned
+        ? `/api/chats/${encodeURIComponent(chat.id)}/pin`
+        : `/api/chats/${encodeURIComponent(chat.id)}/unpin`;
+      const { ok, data } = await api(path, { method: 'POST', userId: user.id });
+      if (!ok) {
+        alert(data?.error || 'Не удалось');
+        return;
+      }
+      await refreshSocial();
+    },
+    [user?.id, refreshSocial],
+  );
+
   const openFeedAuthorProfile = useCallback(
     (authorId) => {
       if (!authorId || !user?.id) return;
@@ -745,6 +761,7 @@ export default function App() {
         friendsActive: c.friendsActive !== false,
         canMessage: c.canMessage !== false,
         isSavedMessages: c.isSavedMessages === true,
+        pinned: c.pinned === true,
       };
     });
   }, [user?.id]);
@@ -822,7 +839,7 @@ export default function App() {
       ) : null}
 
       {showMainChrome ? (
-        <PullToRefresh navKey={nav} onRefresh={refreshMainTab} disabled={nav === 'chats'}>
+        <PullToRefresh navKey={nav} onRefresh={refreshMainTab}>
           {nav === 'home' && (
             <Suspense fallback={<AppChunkFallback label="Загрузка ленты…" />}>
               <StoriesBar
@@ -846,17 +863,11 @@ export default function App() {
 
           {nav === 'chats' && (
             <Suspense fallback={<AppChunkFallback label="Загрузка…" />}>
-              <StoriesBar
-                user={user}
-                buckets={storyBuckets}
-                presenceOnline={presenceOnline}
-                onAddStory={() => setStoryCreateOpen(true)}
-                onOpenAuthor={openStoryAuthor}
-              />
-              <div style={{ padding: '8px 12px 16px' }}>
+              <div className="chats-tab-root">
                 <Dashboard
                   chats={chats}
                   onDeleteChatForMe={handleDeleteChatForMe}
+                  onToggleChatPin={handleToggleChatPin}
                   rooms={[]}
                   singleColumn="chats"
                   presenceOnline={presenceOnline}

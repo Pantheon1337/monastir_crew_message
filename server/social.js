@@ -143,9 +143,9 @@ export function getFriendshipMetaForProfile(viewerId, targetId) {
 
 function getDirectChatUserState(userId, chatId) {
   const row = getDb()
-    .prepare(`SELECT archived, hidden FROM direct_chat_user_state WHERE user_id = ? AND chat_id = ?`)
+    .prepare(`SELECT archived, hidden, COALESCE(pinned, 0) AS pinned FROM direct_chat_user_state WHERE user_id = ? AND chat_id = ?`)
     .get(userId, chatId);
-  return { archived: row?.archived === 1, hidden: row?.hidden === 1 };
+  return { archived: row?.archived === 1, hidden: row?.hidden === 1, pinned: row?.pinned === 1 };
 }
 
 export function setDirectChatArchivedForUser(userId, chatId, archived) {
@@ -154,7 +154,7 @@ export function setDirectChatArchivedForUser(userId, chatId, archived) {
   if (String(peerId) === String(userId)) return { error: 'Избранное нельзя архивировать' };
   getDb()
     .prepare(
-      `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden) VALUES (?, ?, ?, 0)
+      `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden, pinned) VALUES (?, ?, ?, 0, 0)
        ON CONFLICT(user_id, chat_id) DO UPDATE SET archived = excluded.archived, hidden = 0`,
     )
     .run(userId, chatId, archived ? 1 : 0);
@@ -168,13 +168,26 @@ export function setDirectChatHiddenForUser(userId, chatId, hidden) {
   if (hidden) {
     getDb()
       .prepare(
-        `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden) VALUES (?, ?, 0, 1)
-         ON CONFLICT(user_id, chat_id) DO UPDATE SET hidden = 1, archived = 0`,
+        `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden, pinned) VALUES (?, ?, 0, 1, 0)
+         ON CONFLICT(user_id, chat_id) DO UPDATE SET hidden = 1, archived = 0, pinned = 0`,
       )
       .run(userId, chatId);
   } else {
     getDb().prepare(`DELETE FROM direct_chat_user_state WHERE user_id = ? AND chat_id = ?`).run(userId, chatId);
   }
+  return { ok: true };
+}
+
+/** Закрепить диалог вверху списка (только у этого пользователя). */
+export function setDirectChatPinnedForUser(userId, chatId, pinned) {
+  if (!userInDirectChat(chatId, userId)) return { error: 'Нет доступа к чату' };
+  const want = pinned === true || pinned === 1 || pinned === '1';
+  getDb()
+    .prepare(
+      `INSERT INTO direct_chat_user_state (user_id, chat_id, archived, hidden, pinned) VALUES (?, ?, 0, 0, ?)
+       ON CONFLICT(user_id, chat_id) DO UPDATE SET pinned = excluded.pinned`,
+    )
+    .run(userId, chatId, want ? 1 : 0);
   return { ok: true };
 }
 
@@ -359,6 +372,7 @@ export function listDirectChatsForUser(userId, options = {}) {
       if (scope === 'main' && st.archived) continue;
       if (scope === 'archive' && !st.archived) continue;
     }
+    const pinned = st.pinned === true;
     out.push({
       id: row.chatId,
       kind: 'direct',
@@ -376,12 +390,16 @@ export function listDirectChatsForUser(userId, options = {}) {
       unreadCount,
       friendsActive,
       canMessage,
+      pinned,
       _sortAt: lastActivityAt,
     });
   }
   out.sort((a, b) => {
     if (a.isSavedMessages && !b.isSavedMessages) return -1;
     if (!a.isSavedMessages && b.isSavedMessages) return 1;
+    const ap = a.pinned ? 1 : 0;
+    const bp = b.pinned ? 1 : 0;
+    if (ap !== bp) return bp - ap;
     return (b._sortAt ?? 0) - (a._sortAt ?? 0);
   });
   return out.map(({ _sortAt: _s, ...rest }) => rest);

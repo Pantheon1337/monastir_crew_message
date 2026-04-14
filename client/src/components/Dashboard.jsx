@@ -9,6 +9,7 @@ const MOVE_CANCEL_PX = 22;
 function ChatRowInner({ chat, peerOnline, onActivate, style }) {
   const unread = (chat.unreadCount ?? 0) > 0;
   const saved = chat.isSavedMessages === true;
+  const pinned = chat.pinned === true;
   const rowBg = saved
     ? 'rgba(140, 145, 155, 0.16)'
     : unread
@@ -48,7 +49,21 @@ function ChatRowInner({ chat, peerOnline, onActivate, style }) {
         presenceOnline={typeof peerOnline === 'boolean' ? peerOnline : undefined}
       />
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: unread ? 700 : 500 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: unread ? 700 : 500,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            minWidth: 0,
+          }}
+        >
+          {pinned ? (
+            <span aria-hidden title="Закреплён" style={{ fontSize: 12, lineHeight: 1, flexShrink: 0 }}>
+              📌
+            </span>
+          ) : null}
           {saved ? (
             chat.name
           ) : (() => {
@@ -154,7 +169,7 @@ function useLongPress(onLongPress, { ms = LONG_PRESS_MS } = {}) {
 }
 
 /** Удаление только через удержание → нижнее меню (без горизонтального свайпа — не мешает скроллу списка). */
-function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
+function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe, onTogglePin }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const skipNextOpenChat = useRef(false);
 
@@ -179,7 +194,7 @@ function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
         className="chat-list-row"
         {...lp}
         onSelectStart={(e) => e.preventDefault()}
-        title="Удерживайте строку, чтобы удалить диалог из списка"
+        title="Удерживайте строку: закрепить или удалить из списка"
       >
         <ChatRowInner chat={chat} peerOnline={peerOnline} onActivate={openChat} />
       </div>
@@ -214,6 +229,16 @@ function ChatListRow({ chat, peerOnline, onOpen, onDeleteForMe }) {
             }}
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              className="chat-actions-sheet-item"
+              onClick={() => {
+                setSheetOpen(false);
+                onTogglePin?.(chat, !chat.pinned);
+              }}
+            >
+              {chat.pinned ? 'Открепить' : 'Закрепить'}
+            </button>
             <button
               type="button"
               className="chat-actions-sheet-item chat-actions-sheet-item--danger"
@@ -359,6 +384,7 @@ export default function Dashboard({
   presenceOnline = {},
   chatsBare = false,
   onDeleteChatForMe,
+  onToggleChatPin,
 }) {
   const chatsInner =
     chats.length === 0 ? (
@@ -387,23 +413,31 @@ export default function Dashboard({
             peerOnline={peerOnline}
             onOpen={onOpenChat}
             onDeleteForMe={onDeleteChatForMe}
+            onTogglePin={onToggleChatPin}
           />
         );
       })
     );
 
   const scrollArea = (
-    <div className="dashboard-chat-scroll" style={{ overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: 'min(72dvh, 560px)' }}>
+    <div
+      className={chatsBare ? 'dashboard-chat-scroll dashboard-chat-scroll--monolith' : 'dashboard-chat-scroll'}
+      style={
+        chatsBare
+          ? undefined
+          : { overflow: 'auto', WebkitOverflowScrolling: 'touch', maxHeight: 'min(72dvh, 560px)' }
+      }
+    >
       {chatsInner}
     </div>
   );
 
   const chatsBlock = chatsBare ? (
+    scrollArea
+  ) : (
     <div className="dashboard-chat-card">
       <Panel title="Чаты">{scrollArea}</Panel>
     </div>
-  ) : (
-    <Panel title="Чаты">{scrollArea}</Panel>
   );
 
   const roomsBlock = (
@@ -438,7 +472,14 @@ export default function Dashboard({
   );
 
   if (singleColumn === 'chats') {
-    return <section style={{ display: 'grid', gridTemplateColumns: '1fr' }}>{chatsBlock}</section>;
+    return (
+      <section
+        className={chatsBare ? 'dashboard-chats-monolith' : undefined}
+        style={{ display: 'grid', gridTemplateColumns: '1fr', minHeight: 0 }}
+      >
+        {chatsBlock}
+      </section>
+    );
   }
   if (singleColumn === 'rooms') {
     return <section style={{ display: 'grid', gridTemplateColumns: '1fr' }}>{roomsBlock}</section>;

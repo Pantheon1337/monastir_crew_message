@@ -177,6 +177,27 @@ a:hover {
   padding-bottom: max(64px, calc(52px + env(safe-area-inset-bottom, 0px)));
 }
 
+/* Вкладка «Чаты»: список на всю ширину без вложенной «карточки», прокрутка общая с pull-to-refresh */
+.chats-tab-root {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-chats-monolith {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.dashboard-chat-scroll--monolith {
+  border-radius: 0;
+  flex: 1 1 auto;
+  width: 100%;
+}
+
 .muted {
   color: var(--muted);
   font-size: 11px;

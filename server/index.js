@@ -48,6 +48,7 @@ import {
   listDirectChatsForUser,
   setDirectChatArchivedForUser,
   setDirectChatHiddenForUser,
+  setDirectChatPinnedForUser,
   resumeDirectChatWithPeer,
   listMessagesForChat,
   listMediaMessagesForChat,
@@ -815,6 +816,29 @@ app.post('/api/chats/:chatId/unarchive', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
   const out = setDirectChatArchivedForUser(userId, req.params.chatId, false);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+/** Закрепить диалог вверху списка (не путать с закреплением сообщения внутри чата). */
+app.post('/api/chats/:chatId/pin', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = setDirectChatPinnedForUser(userId, req.params.chatId, true);
+  if (out.error) {
+    res.status(403).json({ error: out.error });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+app.post('/api/chats/:chatId/unpin', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const out = setDirectChatPinnedForUser(userId, req.params.chatId, false);
   if (out.error) {
     res.status(403).json({ error: out.error });
     return;
