@@ -322,13 +322,11 @@ a:hover {
   width: 100%;
   height: auto;
   display: block;
-  vertical-align: bottom;
 }
 .feed-post-media-plain {
   width: 100%;
   height: auto;
   display: block;
-  vertical-align: bottom;
 }
 .feed-post-card__text-wrap {
   padding: 10px 12px 4px;
@@ -1719,6 +1717,7 @@ video.chat-video-note {
   opacity: 0.88;
   display: -webkit-box;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: normal;
@@ -1875,9 +1874,12 @@ video.chat-video-note {
   color: var(--chat-check-read);
 }
 
-/* Обёртка свайпа: без flex-shrink — иначе пузырь сжимается, текст ломается посередине слова */
+/* Обёртка свайпа: на всю ширину ряда — иначе у .chat-swipe-reply-inner/bubble ломается разрешение
+   width: min(..., 100%) и пузырь остаётся shrink-to-fit (ранние переносы как при узкой колонке). */
 .chat-swipe-reply-row {
   flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
 }
