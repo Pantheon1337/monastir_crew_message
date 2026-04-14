@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, mem
 import { api, apiUpload } from '../api.js';
 import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
-import MentionText from './chat/MentionText.jsx';
+import ChatMessageText from './chat/ChatMessageText.jsx';
 import MentionAutocomplete from './chat/MentionAutocomplete.jsx';
 import UserAvatar from './UserAvatar.jsx';
 import NicknameWithBadge from './NicknameWithBadge.jsx';
@@ -417,7 +417,7 @@ const MessageBubble = memo(function MessageBubble({
         />
         {m.body?.trim() ? (
           <div className="chat-image-caption">
-            <MentionText text={m.body} onMentionClick={onMentionProfile} />
+            <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
       </div>
@@ -435,7 +435,7 @@ const MessageBubble = memo(function MessageBubble({
         />
         {cap ? (
           <div className="chat-image-caption">
-            <MentionText text={cap} onMentionClick={onMentionProfile} />
+            <ChatMessageText text={cap} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
       </div>
@@ -479,7 +479,7 @@ const MessageBubble = memo(function MessageBubble({
       </div>
     );
   } else {
-    inner = <MentionText text={m.body} onMentionClick={onMentionProfile} />;
+    inner = <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />;
   }
 
   const swipeReplyDisabled = isRevoked || allowSwipeReply === false;

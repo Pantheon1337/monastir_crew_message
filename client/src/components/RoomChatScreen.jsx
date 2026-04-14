@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } fr
 import { api, apiUpload } from '../api.js';
 import VoiceMessagePlayer from './VoiceMessagePlayer.jsx';
 import VideoNoteInChat from './chat/VideoNoteInChat.jsx';
-import MentionText from './chat/MentionText.jsx';
+import ChatMessageText from './chat/ChatMessageText.jsx';
 import MentionAutocomplete from './chat/MentionAutocomplete.jsx';
 import ChatScaffold from './chat/ChatScaffold.jsx';
 import ChatScrollDownFab from './chat/ChatScrollDownFab.jsx';
@@ -378,7 +378,7 @@ function MessageBubble({
         />
         {m.body?.trim() ? (
           <div className="chat-image-caption">
-            <MentionText text={m.body} onMentionClick={onMentionProfile} />
+            <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
       </div>
@@ -396,7 +396,7 @@ function MessageBubble({
         />
         {cap ? (
           <div className="chat-image-caption">
-            <MentionText text={cap} onMentionClick={onMentionProfile} />
+            <ChatMessageText text={cap} onMentionClick={onMentionProfile} />
           </div>
         ) : null}
       </div>
@@ -440,7 +440,7 @@ function MessageBubble({
       </div>
     );
   } else {
-    inner = <MentionText text={m.body} onMentionClick={onMentionProfile} />;
+    inner = <ChatMessageText text={m.body} onMentionClick={onMentionProfile} />;
   }
 
   const swipeReplyDisabled = isRevoked || allowSwipeReply === false;

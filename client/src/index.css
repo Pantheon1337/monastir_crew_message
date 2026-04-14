@@ -1917,7 +1917,7 @@ video.chat-video-note {
   cursor: pointer;
   border-radius: 5px;
   vertical-align: baseline;
-  word-break: break-word;
+  word-break: normal;
   overflow-wrap: break-word;
   max-width: 100%;
   -webkit-user-select: none;
@@ -1933,7 +1933,7 @@ video.chat-video-note {
 .chat-tg-bubble .chat-mention {
   background: var(--chat-mention-bg);
   color: var(--chat-mention-fg);
-  word-break: break-word;
+  word-break: normal;
 }
 
 /* Просмотр историй: без выделения текста; пауза по удержанию на области контента */
